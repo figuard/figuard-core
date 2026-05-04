@@ -1,7 +1,5 @@
 .git
-.mvn
-src
-!target/core-*.jar
-*.md
+target/
 sdk/
 demo/
+*.md

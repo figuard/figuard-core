@@ -72,7 +72,7 @@ class FiGuardClient:
     def __init__(
         self,
         api_key: str,
-        base_url: str = "https://api.figuard.io",
+        base_url: str = "http://localhost:8080",
         timeout: int = 30,
     ) -> None:
         self._api_key = api_key

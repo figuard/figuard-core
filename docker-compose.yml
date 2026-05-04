@@ -3,15 +3,15 @@ services:
   postgres:
     image: postgres:15
     environment:
-      POSTGRES_DB: agent_billing
-      POSTGRES_USER: agent_billing
-      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: figuard
+      POSTGRES_USER: figuard
+      POSTGRES_PASSWORD: figuard_local
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agent_billing"]
+      test: ["CMD-SHELL", "pg_isready -U figuard"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -21,9 +21,9 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/agent_billing
-      SPRING_DATASOURCE_USERNAME: agent_billing
-      SPRING_DATASOURCE_PASSWORD: secret
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/figuard
+      SPRING_DATASOURCE_USERNAME: figuard
+      SPRING_DATASOURCE_PASSWORD: figuard_local
     depends_on:
       postgres:
         condition: service_healthy
