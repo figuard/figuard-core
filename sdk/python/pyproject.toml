@@ -36,6 +36,17 @@ dependencies = [
 [project.optional-dependencies]
 async = ["aiohttp>=3.9"]
 langchain = ["langchain-core>=0.1"]
+crewai = ["crewai>=0.28"]
+openai-agents = ["openai>=1.50"]
+openai = ["openai>=1.0"]
+anthropic = ["anthropic>=0.25"]
+all = [
+    "aiohttp>=3.9",
+    "langchain-core>=0.1",
+    "crewai>=0.28",
+    "openai>=1.50",
+    "anthropic>=0.25",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
