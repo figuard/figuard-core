@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "figuard"
+dynamic = ["version"]
+description = "FiGuard Python SDK — pre-flight spend authorization for AI agents"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = [
+    "ai-agents",
+    "spend-control",
+    "authorization",
+    "budget",
+    "langchain",
+    "openai",
+    "crewai",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Office/Business :: Financial",
+    "Typing :: Typed",
+]
+dependencies = [
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+async = ["aiohttp>=3.9"]
+langchain = ["langchain-core>=0.1"]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "responses>=0.25",
+    "pytest-asyncio>=0.23",
+    "aioresponses>=0.7",
+    "aiohttp>=3.9",
+]
+
+[project.urls]
+Homepage = "https://figuard.io"
+Documentation = "https://docs.figuard.io"
+Repository = "https://github.com/figuard/figuard-core"
+"Bug Tracker" = "https://github.com/figuard/figuard-core/issues"
+
+[tool.hatch.version]
+path = "figuard/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["figuard"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

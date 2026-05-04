@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spend Receipt</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+               background: #f5f5f5; color: #1a1a1a; padding: 2rem 1rem; }
+        .receipt { max-width: 640px; margin: 0 auto; background: #fff;
+                   border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12); overflow: hidden; }
+        .header  { background: #0f172a; color: #fff; padding: 2rem; }
+        .header h1 { font-size: 1.25rem; font-weight: 600; letter-spacing: .02em; }
+        .header .sub { margin-top: .25rem; font-size: .85rem; opacity: .6; }
+        .summary { padding: 1.5rem 2rem; border-bottom: 1px solid #e5e7eb; }
+        .summary-row { display: flex; justify-content: space-between;
+                       padding: .35rem 0; font-size: .9rem; }
+        .summary-row .label { color: #6b7280; }
+        .summary-row .value { font-weight: 500; }
+        .summary-row .value.green { color: #16a34a; }
+        .events { padding: 1.5rem 2rem; }
+        .events h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
+                     color: #9ca3af; margin-bottom: 1rem; }
+        .event { display: flex; justify-content: space-between; align-items: flex-start;
+                 padding: .75rem 0; border-bottom: 1px solid #f3f4f6; }
+        .event:last-child { border-bottom: none; }
+        .event-left .description { font-size: .9rem; font-weight: 500; }
+        .event-left .meta { font-size: .78rem; color: #9ca3af; margin-top: .2rem; }
+        .event-right { text-align: right; }
+        .event-right .amount { font-size: .95rem; font-weight: 600; }
+        .event-right .agent { font-size: .75rem; color: #9ca3af; margin-top: .15rem; }
+        .empty { padding: 2rem; text-align: center; color: #9ca3af; font-size: .9rem; }
+        .footer { padding: 1rem 2rem; background: #f9fafb;
+                  font-size: .75rem; color: #9ca3af; text-align: center; }
+    </style>
+</head>
+<body>
+<div class="receipt">
+
+    <div class="header">
+        <h1>Spend Receipt</h1>
+        <div class="sub" th:text="'Generated ' + ${#temporals.format(generatedAt, 'MMM d, yyyy')}">Generated Jan 1, 2024</div>
+    </div>
+
+    <div class="summary">
+        <div class="summary-row">
+            <span class="label">Budget ID</span>
+            <span class="value" th:text="${budget.id}">—</span>
+        </div>
+        <div class="summary-row">
+            <span class="label">User</span>
+            <span class="value" th:text="${budget.userId}">—</span>
+        </div>
+        <div class="summary-row">
+            <span class="label">Total Limit</span>
+            <span class="value" th:text="${budget.currency + ' ' + #numbers.formatDecimal(budget.totalLimit, 1, 2)}">—</span>
+        </div>
+        <div class="summary-row">
+            <span class="label">Total Spent</span>
+            <span class="value green" th:text="${budget.currency + ' ' + #numbers.formatDecimal(budget.amountSpent, 1, 2)}">—</span>
+        </div>
+        <div class="summary-row">
+            <span class="label">Transactions</span>
+            <span class="value" th:text="${#lists.size(events)}">0</span>
+        </div>
+    </div>
+
+    <div class="events" th:if="${not #lists.isEmpty(events)}">
+        <h2>Confirmed Transactions</h2>
+        <div class="event" th:each="event : ${events}">
+            <div class="event-left">
+                <div class="description" th:text="${event.description}">Description</div>
+                <div class="meta"
+                     th:text="${event.actionType + ' · ' + #temporals.format(event.createdAt, 'MMM d, yyyy HH:mm')}">
+                    PURCHASE · Jan 1, 2024
+                </div>
+            </div>
+            <div class="event-right">
+                <div class="amount"
+                     th:text="${event.currency + ' ' + #numbers.formatDecimal(event.confirmedAmount, 1, 2)}">
+                    USD 0.00
+                </div>
+                <div class="agent" th:text="${event.agentId}">agent-id</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="empty" th:if="${#lists.isEmpty(events)}">
+        No confirmed transactions yet.
+    </div>
+
+    <div class="footer">
+        Powered by FiGuard · figuard.io
+    </div>
+</div>
+</body>
+</html>

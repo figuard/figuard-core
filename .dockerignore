@@ -1,0 +1,7 @@
+.git
+.mvn
+src
+!target/core-*.jar
+*.md
+sdk/
+demo/

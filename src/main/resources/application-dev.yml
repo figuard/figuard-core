@@ -1,0 +1,5 @@
+spring:
+  jpa:
+    properties:
+      hibernate:
+        show_sql: false   # flip to true if you need to debug queries locally

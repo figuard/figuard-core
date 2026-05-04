@@ -1,0 +1,588 @@
+package io.figuard;
+
+import io.figuard.exception.FiGuardApiException;
+import io.figuard.exception.FiGuardDeniedException;
+import io.figuard.model.*;
+import okhttp3.OkHttpClient;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.RecordedRequest;
+import org.junit.jupiter.api.*;
+
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.*;
+
+/**
+ * Unit tests for {@link FiGuardClient} using OkHttp's {@link MockWebServer}.
+ *
+ * <p>Each nested class starts its own server so tests are fully isolated.
+ */
+class FiGuardClientTest {
+
+    // -------------------------------------------------------------------------
+    // Shared helpers
+    // -------------------------------------------------------------------------
+
+    private static final String API_KEY = "ab_test_1234567890";
+
+    static FiGuardClient clientFor(MockWebServer server) {
+        OkHttpClient fast = new OkHttpClient.Builder()
+                .callTimeout(Duration.ofSeconds(5))
+                .build();
+        return FiGuardClient.builder()
+                .apiKey(API_KEY)
+                .baseUrl(server.url("/").toString())
+                .httpClient(fast)
+                .build();
+    }
+
+    static MockResponse json(String body) {
+        return new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(body);
+    }
+
+    static final String BUDGET_ACTIVE = """
+            {
+              "id": "bud-1",
+              "userId": "user-42",
+              "totalLimit": 500.00,
+              "currency": "USD",
+              "amountSpent": 0.00,
+              "amountReserved": 0.00,
+              "availableAmount": 500.00,
+              "status": "ACTIVE",
+              "expiresAt": "2024-12-31T23:59:59Z",
+              "createdAt": "2024-01-01T00:00:00Z",
+              "sessionTokenPrefix": "ab_sess_1",
+              "sessionToken": "ab_sess_1234567890abcdef",
+              "allocations": []
+            }
+            """;
+
+    static final String BUDGET_PAUSED = """
+            {
+              "id": "bud-3",
+              "userId": "user-9",
+              "totalLimit": 300.00,
+              "currency": "USD",
+              "amountSpent": 0.00,
+              "amountReserved": 0.00,
+              "availableAmount": 300.00,
+              "status": "ACTIVE",
+              "expiresAt": "2025-06-01T00:00:00Z",
+              "createdAt": "2024-01-01T00:00:00Z",
+              "allocations": []
+            }
+            """;
+
+    // -------------------------------------------------------------------------
+    // Budget management
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class BudgetManagement {
+
+        MockWebServer server = new MockWebServer();
+        FiGuardClient client;
+
+        @BeforeEach void setUp() throws Exception {
+            server.start();
+            client = clientFor(server);
+        }
+
+        @AfterEach void tearDown() throws IOException { server.shutdown(); }
+
+        @Test
+        void create_budget_returns_budget_with_session_token() throws Exception {
+            server.enqueue(json(BUDGET_ACTIVE));
+
+            Budget budget = client.createBudget("user-42", new BigDecimal("500.00"),
+                    "2024-12-31T23:59:59Z");
+
+            assertThat(budget.id()).isEqualTo("bud-1");
+            assertThat(budget.sessionToken()).isEqualTo("ab_sess_1234567890abcdef");
+            assertThat(budget.totalLimit()).isEqualByComparingTo("500.00");
+            assertThat(budget.isActive()).isTrue();
+            assertThat(budget.isPaused()).isFalse();
+
+            RecordedRequest req = server.takeRequest();
+            assertThat(req.getMethod()).isEqualTo("POST");
+            assertThat(req.getPath()).isEqualTo("/api/v1/budgets");
+            assertThat(req.getHeader("X-Agent-Budget-Key")).isEqualTo(API_KEY);
+        }
+
+        @Test
+        void get_budget_returns_current_state() throws Exception {
+            server.enqueue(json("""
+                    {
+                      "id": "bud-2",
+                      "userId": "user-5",
+                      "totalLimit": 1000.00,
+                      "currency": "USD",
+                      "amountSpent": 250.00,
+                      "amountReserved": 100.00,
+                      "availableAmount": 650.00,
+                      "status": "ACTIVE",
+                      "expiresAt": "2025-01-01T00:00:00Z",
+                      "createdAt": "2024-06-01T00:00:00Z",
+                      "allocations": []
+                    }
+                    """));
+
+            Budget budget = client.getBudget("bud-2");
+
+            assertThat(budget.id()).isEqualTo("bud-2");
+            assertThat(budget.amountSpent()).isEqualByComparingTo("250.00");
+            assertThat(budget.availableAmount()).isEqualByComparingTo("650.00");
+
+            RecordedRequest req = server.takeRequest();
+            assertThat(req.getMethod()).isEqualTo("GET");
+            assertThat(req.getPath()).isEqualTo("/api/v1/budgets/bud-2");
+        }
+
+        @Test
+        void resume_budget_returns_active_status() throws Exception {
+            server.enqueue(json(BUDGET_PAUSED));
+
+            Budget resumed = client.resumeBudget("bud-3", "Manual override after review");
+
+            assertThat(resumed.isActive()).isTrue();
+
+            RecordedRequest req = server.takeRequest();
+            assertThat(req.getPath()).isEqualTo("/api/v1/budgets/bud-3/resume");
+            assertThat(req.getBody().readUtf8()).contains("Manual override after review");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Authorize
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class Authorize {
+
+        MockWebServer server = new MockWebServer();
+        FiGuardClient client;
+
+        @BeforeEach void setUp() throws Exception {
+            server.start();
+            client = clientFor(server);
+        }
+
+        @AfterEach void tearDown() throws IOException { server.shutdown(); }
+
+        AuthorizeRequest validRequest() {
+            return AuthorizeRequest.builder()
+                    .agentId("agent-007")
+                    .actionType("PURCHASE")
+                    .description("Cloud GPU credits")
+                    .requestedAmount(new BigDecimal("49.99"))
+                    .idempotencyKey(UUID.randomUUID().toString())
+                    .sessionToken("ab_sess_abcdef1234567890")
+                    .build();
+        }
+
+        @Test
+        void throws_when_idempotency_key_is_null() {
+            AuthorizeRequest req = AuthorizeRequest.builder()
+                    .agentId("agent-007")
+                    .actionType("PURCHASE")
+                    .requestedAmount(new BigDecimal("10.00"))
+                    .sessionToken("ab_sess_xyz")
+                    .build(); // idempotencyKey defaults to null
+
+            assertThatThrownBy(() -> client.authorize(req))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("idempotencyKey");
+        }
+
+        @Test
+        void throws_when_idempotency_key_is_blank() {
+            AuthorizeRequest req = AuthorizeRequest.builder()
+                    .agentId("agent-007")
+                    .actionType("PURCHASE")
+                    .requestedAmount(new BigDecimal("10.00"))
+                    .idempotencyKey("   ")
+                    .sessionToken("ab_sess_xyz")
+                    .build();
+
+            assertThatThrownBy(() -> client.authorize(req))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        void authorized_result_is_authorized_true() throws Exception {
+            server.enqueue(json("""
+                    {
+                      "eventId": "evt-001",
+                      "decision": "AUTHORIZED",
+                      "approvedAmount": 49.99,
+                      "authorizedAt": "2024-06-01T10:00:00Z"
+                    }
+                    """));
+
+            AuthorizationResult result = client.authorize(validRequest());
+
+            assertThat(result.isAuthorized()).isTrue();
+            assertThat(result.eventId()).isEqualTo("evt-001");
+            assertThat(result.approvedAmount()).isEqualByComparingTo("49.99");
+
+            RecordedRequest req = server.takeRequest();
+            assertThat(req.getHeader("X-Session-Token")).isEqualTo("ab_sess_abcdef1234567890");
+            assertThat(req.getPath()).isEqualTo("/api/v1/authorize");
+        }
+
+        @Test
+        void denied_result_is_authorized_false() throws Exception {
+            server.enqueue(json("""
+                    {
+                      "eventId": "evt-002",
+                      "decision": "DENIED",
+                      "denialReason": "BUDGET_EXCEEDED",
+                      "denialMessage": "Insufficient budget balance"
+                    }
+                    """));
+
+            AuthorizationResult result = client.authorize(validRequest());
+
+            assertThat(result.isAuthorized()).isFalse();
+            assertThat(result.denialReason()).isEqualTo("BUDGET_EXCEEDED");
+        }
+
+        @Test
+        void raise_if_denied_throws_figuard_denied_exception() throws Exception {
+            server.enqueue(json("""
+                    {
+                      "eventId": "evt-003",
+                      "decision": "DENIED",
+                      "denialReason": "POLICY_VIOLATION",
+                      "denialMessage": "Category not permitted"
+                    }
+                    """));
+
+            assertThatThrownBy(() -> client.authorize(validRequest()).raiseIfDenied())
+                    .isInstanceOf(FiGuardDeniedException.class)
+                    .satisfies(ex -> {
+                        FiGuardDeniedException denied = (FiGuardDeniedException) ex;
+                        assertThat(denied.getDenialReason()).isEqualTo("POLICY_VIOLATION");
+                        assertThat(denied.getMessage()).contains("Category not permitted");
+                    });
+        }
+
+        @Test
+        void raise_if_denied_passes_through_on_authorized() throws Exception {
+            server.enqueue(json("""
+                    {
+                      "eventId": "evt-004",
+                      "decision": "AUTHORIZED",
+                      "approvedAmount": 49.99
+                    }
+                    """));
+
+            AuthorizationResult result = client.authorize(validRequest()).raiseIfDenied();
+
+            assertThat(result.isAuthorized()).isTrue();
+            assertThat(result.eventId()).isEqualTo("evt-004");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Payment lifecycle
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class PaymentLifecycle {
+
+        MockWebServer server = new MockWebServer();
+        FiGuardClient client;
+
+        @BeforeEach void setUp() throws Exception {
+            server.start();
+            client = clientFor(server);
+        }
+
+        @AfterEach void tearDown() throws IOException { server.shutdown(); }
+
+        @Test
+        void confirm_event_posts_to_confirm_path() throws Exception {
+            server.enqueue(json("""
+                    {
+                      "id": "evt-100",
+                      "decision": "AUTHORIZED",
+                      "requestedAmount": 99.00,
+                      "confirmedAmount": 95.50,
+                      "currency": "USD"
+                    }
+                    """));
+
+            SpendEventResponse event = client.confirmEvent("evt-100", new BigDecimal("95.50"));
+
+            assertThat(event.id()).isEqualTo("evt-100");
+            assertThat(event.confirmedAmount()).isEqualByComparingTo("95.50");
+
+            RecordedRequest req = server.takeRequest();
+            assertThat(req.getPath()).isEqualTo("/api/v1/events/evt-100/confirm");
+            assertThat(req.getBody().readUtf8()).contains("confirmedAmount");
+        }
+
+        @Test
+        void fail_event_posts_to_fail_path() throws Exception {
+            server.enqueue(json("""
+                    {
+                      "id": "evt-101",
+                      "decision": "AUTHORIZED",
+                      "requestedAmount": 50.00,
+                      "failureReason": "PAYMENT_GATEWAY_ERROR"
+                    }
+                    """));
+
+            SpendEventResponse event = client.failEvent("evt-101", "PAYMENT_GATEWAY_ERROR",
+                    "Stripe returned 402");
+
+            assertThat(event.failureReason()).isEqualTo("PAYMENT_GATEWAY_ERROR");
+
+            RecordedRequest req = server.takeRequest();
+            assertThat(req.getPath()).isEqualTo("/api/v1/events/evt-101/fail");
+        }
+
+        @Test
+        void void_event_returns_voided_result() throws Exception {
+            server.enqueue(json("""
+                    {
+                      "id": "evt-102",
+                      "decision": "VOIDED",
+                      "requestedAmount": 30.00
+                    }
+                    """));
+
+            VoidResult result = client.voidEvent("evt-102", "TASK_CANCELLED");
+
+            assertThat(result.isVoided()).isTrue();
+
+            RecordedRequest req = server.takeRequest();
+            assertThat(req.getPath()).isEqualTo("/api/v1/events/evt-102/void");
+            assertThat(req.getBody().readUtf8()).contains("TASK_CANCELLED");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Retry behaviour
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class RetryBehaviour {
+
+        MockWebServer server = new MockWebServer();
+        FiGuardClient client;
+
+        @BeforeEach void setUp() throws Exception {
+            server.start();
+            client = clientFor(server);
+        }
+
+        @AfterEach void tearDown() throws IOException { server.shutdown(); }
+
+        @Test
+        void retries_on_500_then_succeeds() throws Exception {
+            server.enqueue(new MockResponse().setResponseCode(500).setBody("{\"error\":\"oops\"}"));
+            server.enqueue(json(BUDGET_ACTIVE));
+
+            Budget budget = client.createBudget("user-42", new BigDecimal("500.00"),
+                    "2024-12-31T23:59:59Z");
+
+            assertThat(budget.id()).isEqualTo("bud-1");
+            assertThat(server.getRequestCount()).isEqualTo(2);
+        }
+
+        @Test
+        void does_not_retry_on_4xx() throws Exception {
+            server.enqueue(new MockResponse()
+                    .setResponseCode(403)
+                    .setBody("{\"message\":\"Forbidden\"}"));
+
+            assertThatThrownBy(() -> client.getBudget("bud-missing"))
+                    .isInstanceOf(FiGuardApiException.class)
+                    .satisfies(ex -> assertThat(((FiGuardApiException) ex).getStatusCode()).isEqualTo(403));
+
+            // Only one request — no retry on 4xx
+            assertThat(server.getRequestCount()).isEqualTo(1);
+        }
+
+        @Test
+        void exhausts_all_retries_on_persistent_500() throws Exception {
+            server.enqueue(new MockResponse().setResponseCode(500).setBody("{\"error\":\"err\"}"));
+            server.enqueue(new MockResponse().setResponseCode(500).setBody("{\"error\":\"err\"}"));
+            server.enqueue(new MockResponse().setResponseCode(500).setBody("{\"error\":\"err\"}"));
+
+            assertThatThrownBy(() -> client.getBudget("bud-bad"))
+                    .isInstanceOf(FiGuardApiException.class)
+                    .satisfies(ex -> assertThat(((FiGuardApiException) ex).getStatusCode()).isEqualTo(500));
+
+            assertThat(server.getRequestCount()).isEqualTo(3);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Ledger
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class Ledger {
+
+        MockWebServer server = new MockWebServer();
+        FiGuardClient client;
+
+        @BeforeEach void setUp() throws Exception {
+            server.start();
+            client = clientFor(server);
+        }
+
+        @AfterEach void tearDown() throws IOException { server.shutdown(); }
+
+        @Test
+        void get_ledger_returns_paged_events() throws Exception {
+            server.enqueue(json("""
+                    {
+                      "content": [
+                        {"id": "evt-200", "decision": "AUTHORIZED", "requestedAmount": 10.00, "currency": "USD"},
+                        {"id": "evt-201", "decision": "VOIDED",     "requestedAmount":  5.00, "currency": "USD"}
+                      ],
+                      "totalElements": 2,
+                      "totalPages": 1,
+                      "number": 0,
+                      "size": 20
+                    }
+                    """));
+
+            LedgerPage page = client.getLedger("bud-ledger");
+
+            assertThat(page.events()).hasSize(2);
+            assertThat(page.events().get(0).id()).isEqualTo("evt-200");
+            assertThat(page.totalElements()).isEqualTo(2L);
+            assertThat(page.hasNext()).isFalse();
+
+            RecordedRequest req = server.takeRequest();
+            assertThat(req.getPath()).contains("/api/v1/budgets/bud-ledger/ledger");
+            assertThat(req.getPath()).contains("page=0");
+            assertThat(req.getPath()).contains("size=20");
+        }
+
+        @Test
+        void has_next_true_when_more_pages_exist() throws Exception {
+            server.enqueue(json("""
+                    {
+                      "content": [],
+                      "totalElements": 100,
+                      "totalPages": 5,
+                      "number": 0,
+                      "size": 20
+                    }
+                    """));
+
+            LedgerPage page = client.getLedger("bud-multi");
+
+            assertThat(page.hasNext()).isTrue();
+            assertThat(page.totalPages()).isEqualTo(5);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Session token rotation
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class SessionToken {
+
+        MockWebServer server = new MockWebServer();
+        FiGuardClient client;
+
+        @BeforeEach void setUp() throws Exception {
+            server.start();
+            client = clientFor(server);
+        }
+
+        @AfterEach void tearDown() throws IOException { server.shutdown(); }
+
+        @Test
+        void rotate_returns_new_token() throws Exception {
+            server.enqueue(json("{\"sessionToken\": \"ab_sess_newtoken9999\"}"));
+
+            String newToken = client.rotateSessionToken("bud-rotate");
+
+            assertThat(newToken).isEqualTo("ab_sess_newtoken9999");
+
+            RecordedRequest req = server.takeRequest();
+            assertThat(req.getPath()).isEqualTo("/api/v1/budgets/bud-rotate/rotate-token");
+            assertThat(req.getMethod()).isEqualTo("POST");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // AuthorizeRequest builder validation
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class AuthorizeRequestBuilderValidation {
+
+        @Test
+        void throws_when_agent_id_missing() {
+            assertThatThrownBy(() ->
+                    AuthorizeRequest.builder()
+                            .actionType("PURCHASE")
+                            .requestedAmount(new BigDecimal("10.00"))
+                            .build()
+            ).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("agentId");
+        }
+
+        @Test
+        void throws_when_action_type_missing() {
+            assertThatThrownBy(() ->
+                    AuthorizeRequest.builder()
+                            .agentId("agent-1")
+                            .requestedAmount(new BigDecimal("10.00"))
+                            .build()
+            ).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("actionType");
+        }
+
+        @Test
+        void throws_when_requested_amount_missing() {
+            assertThatThrownBy(() ->
+                    AuthorizeRequest.builder()
+                            .agentId("agent-1")
+                            .actionType("PURCHASE")
+                            .build()
+            ).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("requestedAmount");
+        }
+
+        @Test
+        void defaults_currency_to_usd() {
+            AuthorizeRequest req = AuthorizeRequest.builder()
+                    .agentId("agent-1")
+                    .actionType("PURCHASE")
+                    .requestedAmount(new BigDecimal("10.00"))
+                    .build();
+
+            assertThat(req.currency()).isEqualTo("USD");
+        }
+
+        @Test
+        void optional_fields_are_null_when_not_set() {
+            AuthorizeRequest req = AuthorizeRequest.builder()
+                    .agentId("agent-1")
+                    .actionType("PURCHASE")
+                    .requestedAmount(new BigDecimal("10.00"))
+                    .build();
+
+            assertThat(req.sessionToken()).isNull();
+            assertThat(req.entityId()).isNull();
+            assertThat(req.intentContext()).isNull();
+            assertThat(req.parentEventId()).isNull();
+        }
+    }
+}

@@ -1,0 +1,55 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/agent_billing
+    username: ${DB_USERNAME:agent_billing}
+    password: ${DB_PASSWORD:secret}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+  jpa:
+    hibernate:
+      ddl-auto: validate   # Flyway manages schema — never let Hibernate modify it
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          batch_size: 50
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+
+agent-billing:
+  authorization:
+    max-authorize-amount: 1000000
+    default-currency: USD
+  budget:
+    max-expiry-hours: 24
+    default-first-authorize-deadline-seconds: 900
+    stale-budget-sweep-interval-minutes: 5
+    stale-budget-sweep-interval-ms: 300000
+    expiry-grace-period-seconds: 60
+  token:
+    rotation-grace-period-seconds: 60
+  webhook:
+    retry-attempts: 3
+    retry-delay-ms: 1000
+  rate-limit:
+    authorize-per-minute: 1000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+logging:
+  level:
+    com.figuard: INFO
