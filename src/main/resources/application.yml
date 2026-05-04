@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/agent_billing
-    username: ${DB_USERNAME:agent_billing}
-    password: ${DB_PASSWORD:secret}
+    url: jdbc:postgresql://localhost:5432/figuard
+    username: ${DB_USERNAME:figuard}
+    password: ${DB_PASSWORD:figuard_local}
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5

@@ -13,11 +13,11 @@ import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
-@Profile("dev")
+@Profile("!prod")
 @RequiredArgsConstructor
 public class DataSeeder implements CommandLineRunner {
 
-    static final String RAW_KEY = "ab_live_testkey123";
+    static final String RAW_KEY = "ab_live_demo";
 
     private final TenantRepository tenantRepository;
     private final ApiKeyRepository apiKeyRepository;
@@ -37,7 +37,7 @@ public class DataSeeder implements CommandLineRunner {
         apiKey.setTenant(tenant);
         apiKey.setKeyHash(ApiKeyAuthFilter.sha256(RAW_KEY));
         apiKey.setKeyPrefix(RAW_KEY.substring(0, 8));
-        apiKey.setDescription("Dev test key");
+        apiKey.setDescription("Demo API key");
         apiKey.setActive(true);
         apiKeyRepository.save(apiKey);
 
