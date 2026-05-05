@@ -208,3 +208,151 @@ client = FiGuardClient(
 - The raw `session_token` is returned **once** on `create_budget()` and never again. Store it securely — treat it like a password.
 - The SDK logs only the first 8 characters of the session token. The full token never appears in logs.
 - `idempotency_key` is **required** on every `authorize()` call. Use a stable unique key per logical spend intent so retries are safe.
+
+---
+
+## Framework integrations
+
+Each integration is an optional extra. Install only what you need.
+
+### LangChain / LangGraph
+
+```bash
+pip install figuard[langchain]
+```
+
+```python
+from figuard.integrations.langchain import FiGuardCallbackHandler, FiGuardToolGuard
+
+# Option A — callback handler: guards every tool in an AgentExecutor
+executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    handle_tool_error=True,   # required — sends denial to the LLM
+    callbacks=[FiGuardCallbackHandler(
+        client=client,
+        session_token=budget.session_token,
+        tool_category_map={"book_flight": "flight", "book_hotel": "hotel"},
+        ignore_tools={"search_web"},   # skip authorization for read-only tools
+    )],
+)
+
+# Option B — tool guard: wraps a single tool in-place, hard enforcement
+FiGuardToolGuard(
+    tool=book_flight_tool,
+    client=client,
+    session_token=budget.session_token,
+    category="flight",
+    amount_key="price",
+)
+```
+
+`FiGuardCallbackHandler` raises `ToolException` on denial — the LLM receives the denial reason and can try an alternative. `FiGuardToolGuard` patches `tool._run` directly so the tool never runs regardless of `AgentExecutor` configuration.
+
+### CrewAI
+
+```bash
+pip install figuard[crewai]
+```
+
+```python
+from figuard.integrations.crewai import FiGuardCrewGuard
+
+FiGuardCrewGuard(
+    tool=book_flight_tool,
+    client=client,
+    session_token=budget.session_token,
+    category="flight",
+    amount_key="price",
+)
+travel_agent = Agent(role="Travel Coordinator", tools=[book_flight_tool])
+```
+
+### OpenAI Agents SDK
+
+```bash
+pip install figuard[openai-agents]
+```
+
+```python
+from agents import function_tool
+from figuard.integrations.openai_agents import guarded_function_tool
+
+@function_tool
+@guarded_function_tool(
+    client=client,
+    session_token=budget.session_token,
+    category="flight",
+    amount_key="price",
+)
+def book_flight(destination: str, price: float) -> str:
+    """Book a flight to the specified destination."""
+    ...
+```
+
+Apply `@guarded_function_tool` as the **inner** decorator (before `@function_tool`) so FiGuard wraps the raw function and has access to all kwargs.
+
+### OpenAI Function Calling
+
+```bash
+pip install figuard[openai]
+```
+
+```python
+import json
+from figuard.integrations.openai import guarded_openai_function
+
+@guarded_openai_function(
+    client=client,
+    session_token=budget.session_token,
+    category="flight",
+)
+def book_flight(destination: str, amount: float) -> str:
+    ...
+
+# Dispatch in your tool call loop:
+for tool_call in response.choices[0].message.tool_calls:
+    if tool_call.function.name == "book_flight":
+        result = book_flight(**json.loads(tool_call.function.arguments))
+```
+
+### Anthropic Tool Use
+
+```bash
+pip install figuard[anthropic]
+```
+
+```python
+from figuard.integrations.anthropic import guarded_anthropic_tool
+
+@guarded_anthropic_tool(
+    client=client,
+    session_token=budget.session_token,
+    category="flight",
+)
+def book_flight(destination: str, amount: float) -> str:
+    ...
+
+# Dispatch in your tool use loop (Anthropic passes block.input as a dict):
+for block in response.content:
+    if block.type == "tool_use" and block.name == "book_flight":
+        result = book_flight(**block.input)
+```
+
+### Denial handling across all integrations
+
+When a tool call is denied, each integration handles it differently:
+
+| Integration | Denial behavior |
+|---|---|
+| `FiGuardCallbackHandler` | Raises `ToolException` — LLM receives denial reason |
+| `FiGuardToolGuard` | Returns denial string — LLM receives denial reason |
+| `FiGuardCrewGuard` | Returns denial string — LLM receives denial reason |
+| `guarded_function_tool` | Returns denial string — LLM receives denial reason |
+| `guarded_openai_function` | Returns denial string — return as tool result to the model |
+| `guarded_anthropic_tool` | Returns denial string — return in `tool_result` block to Claude |
+
+The denial string format: `"FiGuard DENIED: <code> — <message>"`, e.g.:
+```
+FiGuard DENIED: INSUFFICIENT_FUNDS — flight allocation has $0.00 remaining
+```
