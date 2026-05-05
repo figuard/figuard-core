@@ -185,69 +185,143 @@ void()       →  reservation released                 (action cancelled)
 
 ## Framework Integrations
 
-### LangChain
+FiGuard works with every major agent framework. Install only what you need.
+
+### LangChain / LangGraph
+
+```bash
+pip install figuard[langchain]
+```
+
+**Callback handler** — attaches to `AgentExecutor`, guards every tool call automatically:
 
 ```python
 from figuard.integrations.langchain import FiGuardCallbackHandler
 
-agent = create_react_agent(
-    llm=llm,
+executor = AgentExecutor(
+    agent=agent,
     tools=tools,
-    callbacks=[FiGuardCallbackHandler(client=client, session_token=budget.session_token)]
+    handle_tool_error=True,   # required — delivers denial reason to the LLM
+    callbacks=[FiGuardCallbackHandler(
+        client=client,
+        session_token=budget.session_token,
+        tool_category_map={"book_flight": "flight", "book_hotel": "hotel"},
+    )],
 )
-# Every tool call is now pre-authorized. Denied calls never execute.
+# Denied tool calls raise ToolException before the tool runs.
+# The LLM receives the denial reason and can adjust its plan.
+```
+
+**Tool guard** — wraps a single tool in-place for hard enforcement:
+
+```python
+from figuard.integrations.langchain import FiGuardToolGuard
+
+FiGuardToolGuard(
+    tool=book_flight_tool,
+    client=client,
+    session_token=budget.session_token,
+    category="flight",
+    amount_key="price",   # kwarg that holds the spend amount
+)
+# book_flight_tool is now guarded — pass to create_react_agent as normal
 ```
 
 ### CrewAI
 
+```bash
+pip install figuard[crewai]
+```
+
 ```python
 from figuard.integrations.crewai import FiGuardCrewGuard
 
-guard = FiGuardCrewGuard(client=client, session_token=budget.session_token)
-result = guard.wrap(my_crew).kickoff()
+FiGuardCrewGuard(
+    tool=book_flight_tool,
+    client=client,
+    session_token=budget.session_token,
+    category="flight",
+    amount_key="price",
+)
+# Patches tool._run in-place. Pass the tool to Agent as normal.
+travel_agent = Agent(role="Travel Coordinator", tools=[book_flight_tool])
 ```
 
 ### OpenAI Agents SDK
 
-```python
-from figuard.integrations.openai_agents import figuard_guard
+```bash
+pip install figuard[openai-agents]
+```
 
-result = await figuard_guard(
-    Runner.run(agent, "Book a flight to NYC"),
+```python
+from agents import function_tool
+from figuard.integrations.openai_agents import guarded_function_tool
+
+@function_tool
+@guarded_function_tool(
     client=client,
     session_token=budget.session_token,
+    category="flight",
+    amount_key="price",
 )
+def book_flight(destination: str, price: float) -> str:
+    """Book a flight to the specified destination."""
+    ...
+# Apply @guarded_function_tool before @function_tool so FiGuard
+# wraps the raw function — full access to kwargs before schema generation.
 ```
 
-### Raw OpenAI Function Calling
-
-```python
-from figuard.integrations.openai import guarded_function
-
-@guarded_function(category="purchase", client=client, session_token=budget.session_token)
-def charge_customer(amount: float, vendor: str) -> str:
-    return stripe.charge(amount, vendor)
-# FiGuard authorizes before the function runs. Denied = function never executes.
-```
-
-### Anthropic (Claude tool use)
-
-```python
-from figuard.integrations.anthropic import FiGuardAnthropicGuard
-
-guard = FiGuardAnthropicGuard(client=client, session_token=budget.session_token)
-# Wraps tool_use blocks — authorization happens before each tool call
-```
-
-Install with framework extras:
+### OpenAI Function Calling
 
 ```bash
-pip install figuard[langchain]       # LangChain + LangGraph
-pip install figuard[crewai]          # CrewAI
-pip install figuard[openai-agents]   # OpenAI Agents SDK
-pip install figuard[openai]          # Raw OpenAI function calling
-pip install figuard[anthropic]       # Anthropic tool use
-pip install figuard[all]             # Everything
+pip install figuard[openai]
+```
+
+```python
+import json
+from figuard.integrations.openai import guarded_openai_function
+
+@guarded_openai_function(
+    client=client,
+    session_token=budget.session_token,
+    category="flight",
+    amount_key="price",
+)
+def book_flight(destination: str, price: float) -> str:
+    ...
+
+# In your tool dispatch loop:
+for tool_call in response.choices[0].message.tool_calls:
+    if tool_call.function.name == "book_flight":
+        args = json.loads(tool_call.function.arguments)
+        result = book_flight(**args)   # FiGuard authorizes here
+```
+
+### Anthropic Tool Use
+
+```bash
+pip install figuard[anthropic]
+```
+
+```python
+from figuard.integrations.anthropic import guarded_anthropic_tool
+
+@guarded_anthropic_tool(
+    client=client,
+    session_token=budget.session_token,
+    category="flight",
+)
+def book_flight(destination: str, amount: float) -> str:
+    ...
+
+# In your tool dispatch loop (Anthropic passes block.input as a dict):
+for block in response.content:
+    if block.type == "tool_use" and block.name == "book_flight":
+        result = book_flight(**block.input)   # FiGuard authorizes here
+```
+
+```bash
+pip install figuard[all]   # install every framework extra at once
 ```
 
 ---
@@ -337,6 +411,14 @@ The distinction matters because agents can take irreversible non-payment actions
 
 ---
 
+## What This Looks Like When It Goes Wrong
+
+A travel booking agent was given a $400 budget for a conference trip. The budget had no category caps — just a total limit. The agent successfully booked a $267 flight. Then it attempted to book travel insurance ($85), got a network timeout on the authorization call, and retried with a fresh idempotency key. The retry succeeded. Both the original and the retry were treated as separate authorizations. The agent then booked the hotel ($198), which pushed total reservations to $550 — $150 over the limit. The overspend slipped through because the timeout happened between the reservation write and the response, leaving a dangling authorization that wasn't visible to the agent.
+
+Three things caused this: no idempotency on retries, no reservation-aware available-amount calculation, and no per-category caps that would have caught the insurance spend before it happened. FiGuard handles all three — idempotency is required on every call, available amount is calculated as `totalLimit − amountSpent − amountReserved` (so dangling reservations always reduce what's available), and allocation budgets enforce category caps before any funds are touched.
+
+---
+
 ## Examples
 
 | Example | What you learn |
@@ -408,6 +490,24 @@ Issues, PRs, and integration requests welcome.
 - [GitHub Discussions](https://github.com/figuard/figuard-core/discussions)
 
 Looking for contributors on: TypeScript SDK · Go SDK · LlamaIndex integration · Vercel AI SDK integration · DSPy integration
+
+---
+
+## Why Not Build It Yourself?
+
+You could. The authorize endpoint looks simple — check the balance, write a record. But the parts that matter are the parts that aren't obvious until you've hit them in production:
+
+**Concurrent authorization** — two agents sharing a budget can both read the same available balance, both see enough funds, and both get approved. By the time the second write lands, you're over limit. The fix is a pessimistic write lock on the budget row during authorization. Easy to know, easy to forget.
+
+**Dangling reservations** — a network timeout between the authorization write and the HTTP response leaves the agent with no event ID and the budget with a reserved amount it can't release. You need idempotency keyed to the request, not the response, so a retry finds the original authorization instead of creating a second one.
+
+**The reservation/confirmation split** — if you use a single `amountSpent` field and deduct at authorization time, two concurrent authorizations both read the same balance before either writes. The correct model is two fields: `amountReserved` (deducted at authorization) and `amountSpent` (moved from reserved at confirmation). This is the two-phase reserve-then-capture pattern that payment processors use. It's not novel — it's just usually hidden inside Stripe.
+
+**Session token security** — you need a token that scopes to exactly one budget, is returned exactly once, and is never stored in plaintext. If you store the raw token and your database is breached, every active agent session is compromised. Hash at write time, never store the raw value.
+
+**Append-only ledger** — a mutable `status` field on an authorization record loses history. When you need to reconstruct what happened and why a budget hit its limit, you want every state transition recorded as a separate row, not an update to the previous one.
+
+None of this is architecturally exotic. It's the same set of problems that payment infrastructure teams solved 20 years ago. FiGuard is that infrastructure applied to agent systems — already built, already tested, already handling the edge cases.
 
 ---
 
