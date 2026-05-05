@@ -75,6 +75,16 @@ class TestExtractAmount:
     def test_returns_zero_for_empty_string(self):
         assert _extract_amount("", "amount") == 0.0
 
+    # Python dict repr fallback (LangGraph serializes args via str() not json.dumps)
+    def test_extracts_from_python_dict_repr(self):
+        assert _extract_amount("{'amount': 100.0, 'destination': 'NYC'}", "amount") == 100.0
+
+    def test_extracts_custom_key_from_python_dict_repr(self):
+        assert _extract_amount("{'price': 267.0}", "price") == 267.0
+
+    def test_returns_zero_when_key_missing_in_python_dict_repr(self):
+        assert _extract_amount("{'destination': 'NYC'}", "amount") == 0.0
+
 
 # ---------------------------------------------------------------------------
 # FiGuardCallbackHandler

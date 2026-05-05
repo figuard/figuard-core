@@ -23,7 +23,7 @@ public class AuthorizeSpendRequest {
     private String description;
 
     @NotNull(message = "requestedAmount is required")
-    @Positive(message = "requestedAmount must be positive")
+    @PositiveOrZero(message = "requestedAmount must be zero or positive")
     @Digits(integer = 15, fraction = 4)
     private BigDecimal requestedAmount;
 

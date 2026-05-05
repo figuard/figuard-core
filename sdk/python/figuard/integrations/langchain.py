@@ -39,6 +39,7 @@ Quick start::
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import threading
@@ -334,17 +335,34 @@ def _extract_amount(input_str: str, amount_param: str) -> float:
     """
     Extract a numeric spend amount from a tool's input string.
 
-    Attempts JSON parse first. Returns 0.0 if the key is not present or the
-    input is not valid JSON. A 0.0 amount still authorizes against FiGuard —
-    use ``FiGuardToolGuard`` with an explicit ``amount_key`` when the tool input
-    does not use a standard ``amount`` key.
+    Tries JSON parse first. Falls back to ``ast.literal_eval`` to handle
+    Python dict repr (single-quoted keys/values) which LangGraph sometimes
+    produces when it serializes tool arguments via ``str()``. Returns 0.0
+    if the key is absent or the input cannot be parsed by either method.
+
+    A 0.0 amount is a valid authorized amount — it means no funds are
+    reserved and the call is audit-only. Use ``FiGuardToolGuard`` with an
+    explicit ``amount_key`` when your tool uses a non-standard parameter name.
     """
+    # Fast path: proper JSON
     try:
         data = json.loads(input_str)
         if isinstance(data, dict):
             val = data.get(amount_param)
             if val is not None:
                 return float(val)
+        return 0.0
     except (json.JSONDecodeError, TypeError, ValueError):
         pass
+
+    # Fallback: Python dict repr — e.g. {'amount': 100.0, 'destination': 'NYC'}
+    try:
+        data = ast.literal_eval(input_str)
+        if isinstance(data, dict):
+            val = data.get(amount_param)
+            if val is not None:
+                return float(val)
+    except (ValueError, SyntaxError):
+        pass
+
     return 0.0
