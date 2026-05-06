@@ -54,6 +54,8 @@ dev = [
     "pytest-asyncio>=0.23",
     "aioresponses>=0.7",
     "aiohttp>=3.9",
+    "mypy>=1.9",
+    "types-requests>=2.31",
 ]
 
 [project.urls]
@@ -71,3 +73,11 @@ packages = ["figuard"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
