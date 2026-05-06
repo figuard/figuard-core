@@ -43,7 +43,7 @@ import ast
 import json
 import logging
 import threading
-from typing import Any, Dict, Optional, Set, Union
+from typing import Any, Dict, Optional, Set
 from uuid import UUID, uuid4
 
 try:
@@ -202,9 +202,10 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
 
     def on_tool_error(
         self,
-        error: Union[Exception, KeyboardInterrupt],
+        error: BaseException,
         *,
         run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
         """Called when a tool raises an exception. Marks the authorization as failed."""
@@ -285,7 +286,7 @@ class FiGuardToolGuard:
 
         # Wrap _run in-place — the tool itself is unchanged from the agent's perspective
         self._original_run = tool._run
-        tool._run = self._guarded_run
+        object.__setattr__(tool, "_run", self._guarded_run)
 
     def _guarded_run(self, *args: Any, **kwargs: Any) -> Any:
         amount = float(kwargs.get(self._amount_key, 0.0))

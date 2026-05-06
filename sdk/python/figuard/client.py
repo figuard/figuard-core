@@ -176,7 +176,7 @@ class FiGuardClient:
         data = self._request(
             "POST", f"/api/v1/budgets/{budget_id}/rotate-token", retryable=True
         )
-        return data["sessionToken"]
+        return str(data["sessionToken"])
 
     # -----------------------------------------------------------------------
     # Authorization
@@ -373,7 +373,7 @@ class FiGuardClient:
         data = self._request(
             "GET", f"/api/v1/budgets/{budget_id}/receipt", retryable=True
         )
-        return data["receiptUrl"]
+        return str(data["receiptUrl"])
 
     # -----------------------------------------------------------------------
     # Internal HTTP layer
@@ -438,7 +438,7 @@ class FiGuardClient:
             ) from last_exc
 
         # last attempt was a 5xx — raise it
-        return _handle_response(resp)  # type: ignore[return-value]
+        return _handle_response(resp)
 
 
 # ---------------------------------------------------------------------------
@@ -460,7 +460,7 @@ def _handle_response(resp: Response) -> Dict[str, Any]:
     if resp.status_code == 204 or not resp.content:
         return {}
 
-    return resp.json()
+    return resp.json()  # type: ignore[no-any-return]
 
 
 def _parse_budget(data: Dict[str, Any]) -> Budget:

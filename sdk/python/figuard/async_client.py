@@ -229,7 +229,7 @@ class AsyncFiGuardClient:
         data = await self._request(
             "POST", f"/api/v1/budgets/{budget_id}/rotate-token", retryable=True
         )
-        return data["sessionToken"]
+        return str(data["sessionToken"])
 
     # -----------------------------------------------------------------------
     # Authorization
@@ -426,7 +426,7 @@ class AsyncFiGuardClient:
         data = await self._request(
             "GET", f"/api/v1/budgets/{budget_id}/receipt", retryable=True
         )
-        return data["receiptUrl"]
+        return str(data["receiptUrl"])
 
     # -----------------------------------------------------------------------
     # Internal HTTP layer
@@ -518,4 +518,4 @@ async def _handle_async_response(resp: "aiohttp.ClientResponse") -> Dict[str, An
     if resp.status == 204 or resp.content_length == 0:
         return {}
 
-    return await resp.json(content_type=None)
+    return await resp.json(content_type=None)  # type: ignore[no-any-return]

@@ -120,7 +120,7 @@ class FiGuardCrewGuard:
 
         # Wrap _run in-place — the tool itself is unchanged from the agent's perspective
         self._original_run = tool._run
-        tool._run = self._guarded_run
+        object.__setattr__(tool, "_run", self._guarded_run)
 
     def _guarded_run(self, **kwargs: Any) -> Any:
         amount = float(kwargs.get(self._amount_key, 0.0))
