@@ -506,3 +506,266 @@ class TestLedger:
         assert len(page.events) == 1
         assert page.has_next is False
         assert page.events[0].decision == "CONFIRMED"
+
+    @pytest.mark.asyncio
+    async def test_get_ledger_with_decision_filter(self) -> None:
+        async with AsyncFiGuardClient(api_key=API_KEY, base_url=BASE) as client:
+            with aioresponses_ctx() as m:
+                m.get(
+                    f"{BASE}/api/v1/budgets/{BUDGET_ID}/ledger?page=0&size=50&decision=CONFIRMED",
+                    payload={
+                        "content": [_event_payload("CONFIRMED")],
+                        "totalElements": 1,
+                        "totalPages": 1,
+                        "number": 0,
+                        "size": 50,
+                    },
+                    status=200,
+                )
+
+                page = await client.get_ledger(BUDGET_ID, size=50, decision="CONFIRMED")
+
+        assert page.total_elements == 1
+        assert page.events[0].decision == "CONFIRMED"
+
+    @pytest.mark.asyncio
+    async def test_get_ledger_has_next_when_more_pages(self) -> None:
+        async with AsyncFiGuardClient(api_key=API_KEY, base_url=BASE) as client:
+            with aioresponses_ctx() as m:
+                m.get(
+                    f"{BASE}/api/v1/budgets/{BUDGET_ID}/ledger?page=0&size=20",
+                    payload={
+                        "content": [_event_payload("AUTHORIZED")],
+                        "totalElements": 45,
+                        "totalPages": 3,
+                        "number": 0,
+                        "size": 20,
+                    },
+                    status=200,
+                )
+
+                page = await client.get_ledger(BUDGET_ID)
+
+        assert page.has_next is True
+        assert page.total_pages == 3
+
+
+# ---------------------------------------------------------------------------
+# Spend tree
+# ---------------------------------------------------------------------------
+
+class TestSpendTree:
+
+    @pytest.mark.asyncio
+    async def test_empty_tree(self) -> None:
+        async with AsyncFiGuardClient(api_key=API_KEY, base_url=BASE) as client:
+            with aioresponses_ctx() as m:
+                m.get(f"{BASE}/api/v1/budgets/{BUDGET_ID}/tree",
+                      payload={"roots": [], "totalEvents": 0}, status=200)
+                tree = await client.get_spend_tree(BUDGET_ID)
+
+        assert tree.budget_id == BUDGET_ID
+        assert tree.roots == []
+        assert tree.total_events == 0
+
+    @pytest.mark.asyncio
+    async def test_nested_tree(self) -> None:
+        parent_event = {
+            "id": str(uuid.uuid4()),
+            "decision": "CONFIRMED",
+            "requestedAmount": 100.0,
+            "currency": "USD",
+            "createdAt": "2025-01-01T10:00:00Z",
+            "agentId": "parent_agent",
+        }
+        child_event = {**parent_event, "id": str(uuid.uuid4()), "agentId": "child_agent"}
+
+        async with AsyncFiGuardClient(api_key=API_KEY, base_url=BASE) as client:
+            with aioresponses_ctx() as m:
+                m.get(f"{BASE}/api/v1/budgets/{BUDGET_ID}/tree",
+                      payload={
+                          "roots": [
+                              {
+                                  "event": parent_event,
+                                  "children": [{"event": child_event, "children": []}],
+                              }
+                          ],
+                          "totalEvents": 2,
+                      }, status=200)
+                tree = await client.get_spend_tree(BUDGET_ID)
+
+        assert tree.total_events == 2
+        assert len(tree.roots) == 1
+        assert tree.roots[0].event.agent_id == "parent_agent"
+        assert len(tree.roots[0].children) == 1
+        assert tree.roots[0].children[0].event.agent_id == "child_agent"
+
+
+# ---------------------------------------------------------------------------
+# Rotate session token
+# ---------------------------------------------------------------------------
+
+class TestRotateSessionToken:
+
+    @pytest.mark.asyncio
+    async def test_returns_new_token(self) -> None:
+        new_token = "st_newtoken1234567890"
+        async with AsyncFiGuardClient(api_key=API_KEY, base_url=BASE) as client:
+            with aioresponses_ctx() as m:
+                m.post(f"{BASE}/api/v1/budgets/{BUDGET_ID}/rotate-token",
+                       payload={"sessionToken": new_token}, status=200)
+                token = await client.rotate_session_token(BUDGET_ID)
+
+        assert token == new_token
+
+    @pytest.mark.asyncio
+    async def test_api_error_propagated(self) -> None:
+        async with AsyncFiGuardClient(api_key=API_KEY, base_url=BASE) as client:
+            with aioresponses_ctx() as m:
+                m.post(f"{BASE}/api/v1/budgets/{BUDGET_ID}/rotate-token",
+                       payload={"message": "Budget not found"}, status=404)
+
+                with pytest.raises(FiGuardApiError) as exc_info:
+                    await client.rotate_session_token(BUDGET_ID)
+
+        assert exc_info.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Receipt URL
+# ---------------------------------------------------------------------------
+
+class TestReceiptUrl:
+
+    @pytest.mark.asyncio
+    async def test_returns_url_string(self) -> None:
+        receipt_url = "https://receipts.figuard.io/r/abc123xyz"
+        async with AsyncFiGuardClient(api_key=API_KEY, base_url=BASE) as client:
+            with aioresponses_ctx() as m:
+                m.get(f"{BASE}/api/v1/budgets/{BUDGET_ID}/receipt",
+                      payload={"receiptUrl": receipt_url}, status=200)
+                url = await client.get_receipt_url(BUDGET_ID)
+
+        assert url == receipt_url
+
+
+# ---------------------------------------------------------------------------
+# Connection error
+# ---------------------------------------------------------------------------
+
+class TestConnectionError:
+
+    @pytest.mark.asyncio
+    async def test_raises_figuard_connection_error_after_all_retries(self) -> None:
+        import aiohttp
+        async with AsyncFiGuardClient(api_key=API_KEY, base_url=BASE) as client:
+            with aioresponses_ctx() as m:
+                for _ in range(3):
+                    m.get(f"{BASE}/api/v1/budgets/{BUDGET_ID}",
+                          exception=aiohttp.ClientConnectionError("Connection refused"))
+
+                with mock.patch("figuard.async_client.asyncio.sleep"):
+                    with pytest.raises(FiGuardConnectionError) as exc_info:
+                        await client.get_budget(BUDGET_ID)
+
+        assert "Connection refused" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# Budget: optional fields
+# ---------------------------------------------------------------------------
+
+class TestBudgetOptionalFields:
+
+    @pytest.mark.asyncio
+    async def test_create_budget_with_allocations_parsed(self) -> None:
+        alloc_id = str(uuid.uuid4())
+        payload = {
+            **_budget_payload(session_token=True),
+            "allocations": [
+                {
+                    "id": alloc_id,
+                    "category": "flight",
+                    "allowedCategories": ["flight"],
+                    "limit": 300.0,
+                    "amountSpent": 0.0,
+                    "amountReserved": 0.0,
+                    "availableAmount": 300.0,
+                    "status": "ACTIVE",
+                    "enforcementMode": "CATEGORY_CONSTRAINED",
+                }
+            ],
+        }
+        async with AsyncFiGuardClient(api_key=API_KEY, base_url=BASE) as client:
+            with aioresponses_ctx() as m:
+                m.post(f"{BASE}/api/v1/budgets", payload=payload, status=201)
+                budget = await client.create_budget(
+                    user_id="user_test",
+                    total_limit=500.0,
+                    expires_at="2025-12-31T23:59:59Z",
+                )
+
+        assert len(budget.allocations) == 1
+        assert budget.allocations[0].category == "flight"
+        assert budget.allocations[0].limit == 300.0
+
+    @pytest.mark.asyncio
+    async def test_budget_is_paused_property(self) -> None:
+        paused_payload = {**_budget_payload(), "status": "PAUSED"}
+        async with AsyncFiGuardClient(api_key=API_KEY, base_url=BASE) as client:
+            with aioresponses_ctx() as m:
+                m.get(f"{BASE}/api/v1/budgets/{BUDGET_ID}",
+                      payload=paused_payload, status=200)
+                budget = await client.get_budget(BUDGET_ID)
+
+        assert budget.is_paused is True
+        assert budget.is_active is False
+
+
+# ---------------------------------------------------------------------------
+# Payment lifecycle extended
+# ---------------------------------------------------------------------------
+
+class TestPaymentLifecycleExtended:
+
+    @pytest.mark.asyncio
+    async def test_void_event_with_child_events_flag(self) -> None:
+        async with AsyncFiGuardClient(api_key=API_KEY, base_url=BASE) as client:
+            with aioresponses_ctx() as m:
+                m.post(f"{BASE}/api/v1/events/{EVENT_ID}/void",
+                       payload=_event_payload("VOIDED"), status=200)
+                result = await client.void_event(
+                    EVENT_ID, reason="USER_CANCELLED", void_child_events=True
+                )
+
+        assert result.is_voided is True
+
+    @pytest.mark.asyncio
+    async def test_allocation_snapshot_parsed(self) -> None:
+        payload = {
+            **_authorized_payload(),
+            "allocationSnapshot": {
+                "category": "hotel",
+                "limit": 200.0,
+                "amountSpent": 0.0,
+                "amountReserved": 100.0,
+                "availableAmount": 100.0,
+                "status": "ACTIVE",
+            },
+        }
+        async with AsyncFiGuardClient(api_key=API_KEY, base_url=BASE) as client:
+            with aioresponses_ctx() as m:
+                m.post(f"{BASE}/api/v1/authorize", payload=payload, status=200)
+                result = await client.authorize(
+                    session_token=SESSION_TOKEN,
+                    agent_id="a",
+                    action_type="PURCHASE",
+                    description="hotel",
+                    requested_amount=100.0,
+                    idempotency_key=str(uuid.uuid4()),
+                    claimed_category="hotel",
+                )
+
+        assert result.allocation_snapshot is not None
+        assert result.allocation_snapshot.category == "hotel"
+        assert result.allocation_snapshot.available_amount == 100.0

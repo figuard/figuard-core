@@ -185,3 +185,49 @@ class TestFiGuardCrewGuard:
 
         client.confirm_event.assert_not_called()
         client.fail_event.assert_not_called()
+
+    def test_confirm_failure_does_not_propagate(self):
+        """confirm_event exception (network error) must not crash the tool call."""
+        client = _mock_client(_authorized("evt_001", 100.0))
+        client.confirm_event.side_effect = Exception("network timeout")
+        tool = _make_tool()
+
+        FiGuardCrewGuard(tool=tool, client=client, session_token=SESSION_TOKEN)
+
+        result = tool._run(amount=100.0)
+        assert result == "Item purchased successfully"
+
+    def test_denied_string_format_with_message(self):
+        client = _mock_client(_denied("NO_MATCHING_ALLOCATION", "category not in budget"))
+        tool = _make_tool()
+
+        FiGuardCrewGuard(tool=tool, client=client, session_token=SESSION_TOKEN)
+        result = tool._run(amount=100.0)
+
+        assert result == "FiGuard DENIED: NO_MATCHING_ALLOCATION — category not in budget"
+
+    def test_idempotency_key_sent_as_uuid(self):
+        """Each guarded call must generate a unique idempotency_key."""
+        import re
+        client = _mock_client(_authorized())
+        tool = _make_tool()
+        call_count = [0]
+
+        original_authorize = client.authorize
+
+        def tracking_authorize(**kwargs):
+            call_count[0] += 1
+            key = kwargs.get("idempotency_key", "")
+            # Must be a UUID4 string
+            assert re.match(
+                r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                key,
+            ), f"idempotency_key is not a UUID4: {key!r}"
+            return _authorized()
+
+        client.authorize = tracking_authorize
+
+        FiGuardCrewGuard(tool=tool, client=client, session_token=SESSION_TOKEN)
+        tool._run(amount=10.0)
+
+        assert call_count[0] == 1

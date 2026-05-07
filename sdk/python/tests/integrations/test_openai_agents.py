@@ -188,3 +188,51 @@ class TestGuardedFunctionTool:
 
         client.confirm_event.assert_not_called()
         client.fail_event.assert_not_called()
+
+    def test_confirm_failure_does_not_propagate(self):
+        """confirm_event exception must not crash the tool call that already succeeded."""
+        client = _mock_client(_authorized("evt_001", 100.0))
+        client.confirm_event.side_effect = Exception("network error")
+
+        @guarded_function_tool(client=client, session_token=SESSION_TOKEN)
+        def buy(amount: float) -> str:
+            return "done"
+
+        result = buy(amount=100.0)
+        assert result == "done"
+
+    def test_denied_string_format_with_message(self):
+        client = _mock_client(_denied("BUDGET_PAUSED", "resume budget first"))
+
+        @guarded_function_tool(client=client, session_token=SESSION_TOKEN)
+        def buy(amount: float) -> str:
+            return "done"
+
+        result = buy(amount=100.0)
+        assert result == "FiGuard DENIED: BUDGET_PAUSED — resume budget first"
+
+    def test_idempotency_key_is_uuid(self):
+        import re
+        keys_seen = []
+
+        def tracking_authorize(**kwargs):
+            keys_seen.append(kwargs.get("idempotency_key", ""))
+            return _authorized()
+
+        client = _mock_client(_authorized())
+        client.authorize = tracking_authorize
+
+        @guarded_function_tool(client=client, session_token=SESSION_TOKEN)
+        def buy(amount: float) -> str:
+            return "done"
+
+        buy(amount=10.0)
+        buy(amount=20.0)
+
+        assert len(keys_seen) == 2
+        assert keys_seen[0] != keys_seen[1]
+        for key in keys_seen:
+            assert re.match(
+                r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                key,
+            )
