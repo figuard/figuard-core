@@ -28,11 +28,17 @@ Quick start::
         print(f"Spend denied: {e.denial_reason}")
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from .client import FiGuardClient
-from .async_client import AsyncFiGuardClient
 from .exceptions import FiGuardApiError, FiGuardConnectionError, FiGuardDeniedException, FiGuardError
+
+try:
+    from .async_client import AsyncFiGuardClient  # available when aiohttp is installed
+    _has_async = True
+except ImportError:
+    _has_async = False  # type: ignore[assignment]
+
 from .models import (
     AllocationResponse,
     AllocationSnapshot,
@@ -49,7 +55,6 @@ from .models import (
 __all__ = [
     "__version__",
     "FiGuardClient",
-    "AsyncFiGuardClient",
     # Exceptions
     "FiGuardError",
     "FiGuardApiError",
@@ -67,3 +72,6 @@ __all__ = [
     "AllocationSnapshot",
     "AllocationResponse",
 ]
+
+if _has_async:
+    __all__ += ["AsyncFiGuardClient"]
