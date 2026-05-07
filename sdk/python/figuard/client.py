@@ -489,7 +489,7 @@ def _parse_budget(data: Dict[str, Any]) -> Budget:
         available_amount=data["availableAmount"],
         status=data["status"],
         expires_at=data["expiresAt"],
-        created_at=data["createdAt"],
+        created_at=data.get("createdAt"),
         session_token_prefix=data["sessionTokenPrefix"],
         intent_context=data.get("intentContext"),
         intent_tags=data.get("intentTags"),

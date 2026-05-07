@@ -42,8 +42,8 @@ class Budget:
     available_amount: float
     status: str
     expires_at: str
-    created_at: str
     session_token_prefix: str
+    created_at: Optional[str] = None
     intent_context: Optional[str] = None
     intent_tags: Optional[List[str]] = None
     external_reference: Optional[str] = None
