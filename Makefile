@@ -1,4 +1,4 @@
-.PHONY: run stop reset logs
+.PHONY: run stop reset logs test test-live publish
 
 run:
 	docker compose up --build -d
@@ -23,3 +23,22 @@ reset:
 
 logs:
 	docker compose logs -f figuard
+
+# ── SDK testing ──────────────────────────────────────────────────────────────
+
+test:
+	@echo "[FiGuard] Running Python SDK unit tests..."
+	@cd sdk/python && python -m pytest tests/ --ignore=tests/live -q --tb=short
+	@echo "[FiGuard] Unit tests passed."
+
+test-live: test
+	@echo "[FiGuard] Running live integration tests (container must be running)..."
+	@cd sdk/python && python -m pytest tests/live/ -v --tb=short
+	@echo "[FiGuard] Live tests passed."
+
+publish: test-live
+	@echo "[FiGuard] Building wheel..."
+	@cd sdk/python && python -m build
+	@echo "[FiGuard] Publishing to PyPI..."
+	@cd sdk/python && python -m twine upload dist/figuard-$$(python -c "import figuard; print(figuard.__version__)")*
+	@echo "[FiGuard] Published."

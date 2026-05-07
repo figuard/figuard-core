@@ -1,14 +1,24 @@
 # FiGuard Python SDK
 
+[![PyPI version](https://img.shields.io/pypi/v/figuard.svg)](https://pypi.org/project/figuard/)
+[![Python](https://img.shields.io/pypi/pyversions/figuard.svg)](https://pypi.org/project/figuard/)
+
 Pre-flight spend authorization for AI agents. Stop your agent from overspending before it happens.
 
 ## Install
 
 ```bash
+# Core (sync client only)
 pip install figuard
 
-# Async support (LangChain, CrewAI, OpenAI Agents):
-pip install figuard[async]
+# With framework integrations
+pip install figuard[langchain]      # LangChain + LangGraph
+pip install figuard[crewai]         # CrewAI
+pip install figuard[openai]         # OpenAI function calling
+pip install figuard[openai-agents]  # OpenAI Agents SDK
+pip install figuard[anthropic]      # Anthropic tool_use
+pip install figuard[async]          # AsyncFiGuardClient (aiohttp)
+pip install figuard[all]            # everything above
 ```
 
 Requires Python 3.11+.
