@@ -22,7 +22,7 @@ pip install figuard[async]          # AsyncFiGuardClient (aiohttp)
 pip install figuard[all]            # everything above
 ```
 
-Requires Python 3.11+.
+Requires Python 3.9+.
 
 ## Quickstart
 
