@@ -564,8 +564,14 @@ def _parse_spend_event(data: Dict[str, Any]) -> SpendEventResponse:
 
 
 def _parse_tree_node(data: Dict[str, Any]) -> SpendTreeNode:
-    event = _parse_spend_event(data["event"])
-    children = [_parse_tree_node(c) for c in data.get("children", [])]
+    # The server may return nodes as {"event": {...}, "children": [...]} (nested)
+    # or as flat spend-event objects directly in the roots list (flat).
+    if "event" in data:
+        event = _parse_spend_event(data["event"])
+        children = [_parse_tree_node(c) for c in data.get("children", [])]
+    else:
+        event = _parse_spend_event(data)
+        children = [_parse_tree_node(c) for c in data.get("children", [])]
     return SpendTreeNode(event=event, children=children)
 
 

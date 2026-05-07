@@ -326,3 +326,147 @@ class TestFiGuardToolGuard:
         tool._run(vendor="acme")  # no amount kwarg
 
         assert client.authorize.call_args.kwargs["requested_amount"] == 0.0
+
+    def test_confirm_event_exception_does_not_propagate(self):
+        """confirm_event failure (network error, 5xx) must not crash the tool call."""
+        client = _mock_client(_authorized("evt_001", 100.0))
+        client.confirm_event.side_effect = Exception("network timeout")
+        tool = self._make_tool()
+
+        FiGuardToolGuard(tool=tool, client=client, session_token=SESSION_TOKEN)
+
+        # Tool itself succeeded — confirm failure must be swallowed
+        result = tool._run(amount=100.0)
+        assert result == "Item purchased successfully"
+
+    def test_denied_string_format_with_message(self):
+        client = _mock_client(_denied("NO_MATCHING_ALLOCATION", "flight not in budget"))
+        tool = self._make_tool()
+
+        FiGuardToolGuard(tool=tool, client=client, session_token=SESSION_TOKEN)
+        result = tool._run(amount=100.0)
+
+        assert result == "FiGuard DENIED: NO_MATCHING_ALLOCATION — flight not in budget"
+
+    def test_denied_string_format_without_message(self):
+        client = _mock_client(_denied("INSUFFICIENT_FUNDS"))
+        tool = self._make_tool()
+
+        FiGuardToolGuard(tool=tool, client=client, session_token=SESSION_TOKEN)
+        result = tool._run(amount=100.0)
+
+        assert result == "FiGuard DENIED: INSUFFICIENT_FUNDS"
+        assert "—" not in result
+
+    def test_custom_agent_id_passed_to_authorize(self):
+        client = _mock_client(_authorized())
+        tool = self._make_tool()
+
+        FiGuardToolGuard(
+            tool=tool, client=client,
+            session_token=SESSION_TOKEN, agent_id="custom_langchain_agent"
+        )
+        tool._run(amount=10.0)
+
+        assert client.authorize.call_args.kwargs["agent_id"] == "custom_langchain_agent"
+
+
+# ---------------------------------------------------------------------------
+# FiGuardCallbackHandler — extended coverage
+# ---------------------------------------------------------------------------
+
+class TestFiGuardCallbackHandlerExtended:
+
+    def _make_handler(self, authorize_result, **kwargs):
+        client = _mock_client(authorize_result)
+        handler = FiGuardCallbackHandler(
+            client=client,
+            session_token=SESSION_TOKEN,
+            agent_id=AGENT_ID,
+            **kwargs,
+        )
+        return handler, client
+
+    def test_on_tool_end_swallows_confirm_exception(self):
+        """If confirm_event raises, on_tool_end must not propagate — tool already succeeded."""
+        handler, client = self._make_handler(_authorized("evt_001", 100.0))
+        client.confirm_event.side_effect = Exception("server error on confirm")
+        run_id = uuid4()
+
+        handler.on_tool_start(
+            {"name": "book_flight"},
+            '{"amount": 100.0}',
+            run_id=run_id,
+        )
+        # Must not raise even though confirm_event fails
+        handler.on_tool_end("Flight booked", run_id=run_id)
+        client.confirm_event.assert_called_once()
+
+    def test_on_tool_error_swallows_fail_exception(self):
+        """If fail_event raises, on_tool_error must not double-propagate."""
+        handler, client = self._make_handler(_authorized("evt_001", 100.0))
+        client.fail_event.side_effect = Exception("server error on fail")
+        run_id = uuid4()
+
+        handler.on_tool_start(
+            {"name": "book_flight"},
+            '{"amount": 100.0}',
+            run_id=run_id,
+        )
+        # Must not raise even though fail_event itself fails
+        handler.on_tool_error(RuntimeError("original tool error"), run_id=run_id)
+        client.fail_event.assert_called_once()
+
+    def test_multiple_concurrent_runs_tracked_independently(self):
+        """Concurrent tool calls with the same handler must not cross-contaminate."""
+        handler, client = self._make_handler(_authorized("evt_noop"))
+        run_a = uuid4()
+        run_b = uuid4()
+
+        # Both calls return different event_ids via side_effect
+        client.authorize.side_effect = [
+            _authorized("evt_A", 100.0),
+            _authorized("evt_B", 200.0),
+        ]
+
+        handler.on_tool_start({"name": "buy"}, '{"amount": 100.0}', run_id=run_a)
+        handler.on_tool_start({"name": "buy"}, '{"amount": 200.0}', run_id=run_b)
+
+        assert str(run_a) in handler._pending
+        assert str(run_b) in handler._pending
+        assert handler._pending[str(run_a)][0] == "evt_A"
+        assert handler._pending[str(run_b)][0] == "evt_B"
+
+        handler.on_tool_end("done A", run_id=run_a)
+        assert str(run_a) not in handler._pending
+        assert str(run_b) in handler._pending  # B still pending
+
+        handler.on_tool_end("done B", run_id=run_b)
+        assert str(run_b) not in handler._pending
+
+    def test_denial_string_format_with_message(self):
+        handler, client = self._make_handler(
+            _denied("INSUFFICIENT_FUNDS", "only $5 remaining")
+        )
+        run_id = uuid4()
+
+        with pytest.raises(ToolException) as exc_info:
+            handler.on_tool_start({"name": "buy"}, '{"amount": 100.0}', run_id=run_id)
+
+        msg = str(exc_info.value)
+        assert "FiGuard DENIED: INSUFFICIENT_FUNDS" in msg
+        assert "only $5 remaining" in msg
+
+    def test_custom_amount_param_used(self):
+        handler, client = self._make_handler(
+            _authorized(), amount_param="price"
+        )
+        run_id = uuid4()
+
+        handler.on_tool_start(
+            {"name": "book_hotel"},
+            '{"price": 189.0, "city": "NYC"}',
+            run_id=run_id,
+        )
+
+        assert client.authorize.call_args.kwargs["requested_amount"] == 189.0

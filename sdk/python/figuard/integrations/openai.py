@@ -136,11 +136,6 @@ def guarded_openai_function(
 
             try:
                 result = fn(**kwargs)
-                client.confirm_event(auth.event_id, confirmed_amount=amount)
-                logger.debug(
-                    "figuard: CONFIRMED tool=%s event_id=%s", fn.__name__, auth.event_id
-                )
-                return result
             except Exception as exc:
                 client.fail_event(
                     event_id=auth.event_id,
@@ -148,6 +143,19 @@ def guarded_openai_function(
                     error_message=str(exc)[:500],
                 )
                 raise
+
+            try:
+                client.confirm_event(auth.event_id, confirmed_amount=amount)
+                logger.debug(
+                    "figuard: CONFIRMED tool=%s event_id=%s", fn.__name__, auth.event_id
+                )
+            except Exception as exc:
+                logger.warning(
+                    "figuard: confirm failed tool=%s event_id=%s: %s",
+                    fn.__name__, auth.event_id, exc,
+                )
+
+            return result
 
         return wrapper
     return decorator

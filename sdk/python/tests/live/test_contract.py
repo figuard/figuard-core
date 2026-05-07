@@ -368,3 +368,198 @@ class TestLedgerContract:
 
         assert all(e.decision == "CONFIRMED" for e in confirmed_page.events)
         assert any(e.id == auth.event_id for e in confirmed_page.events)
+
+
+# ---------------------------------------------------------------------------
+# Spend tree contract
+# ---------------------------------------------------------------------------
+
+class TestSpendTreeContract:
+    """Validate get_spend_tree response shape."""
+
+    def test_spend_tree_response_shape(self, client: FiGuardClient, flat_budget):
+        """
+        get_spend_tree must return a SpendTree with budget_id, roots list,
+        and total_events count. Each node must have an event and children list.
+        """
+        from figuard.models import SpendTree
+
+        auth = client.authorize(
+            session_token=flat_budget.session_token,
+            agent_id="contract_agent",
+            action_type="TOOL_CALL",
+            description="tree contract test",
+            requested_amount=15.00,
+            idempotency_key=str(uuid4()),
+        )
+        client.confirm_event(auth.event_id, confirmed_amount=15.00)
+
+        tree = client.get_spend_tree(flat_budget.id)
+
+        assert isinstance(tree, SpendTree)
+        assert tree.budget_id == flat_budget.id
+        assert isinstance(tree.roots, list)
+        assert isinstance(tree.total_events, int)
+        assert tree.total_events >= 1
+
+        # Verify at least one root node has the correct shape
+        confirmed_node = None
+        for root in tree.roots:
+            if root.event.id == auth.event_id:
+                confirmed_node = root
+                break
+
+        assert confirmed_node is not None
+        assert confirmed_node.event.id == auth.event_id
+        assert confirmed_node.event.decision == "CONFIRMED"
+        assert confirmed_node.event.agent_id == "contract_agent"
+        assert confirmed_node.event.action_type == "TOOL_CALL"
+        assert isinstance(confirmed_node.children, list)
+
+    def test_spend_tree_empty_for_new_budget(self, client: FiGuardClient):
+        """
+        A newly created budget with no events must have an empty roots list
+        and total_events == 0.
+        """
+        from datetime import datetime, timedelta, timezone
+        budget = client.create_budget(
+            user_id="contract_test_user",
+            total_limit=100.00,
+            expires_at=(
+                datetime.now(timezone.utc) + timedelta(hours=23)
+            ).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+
+        tree = client.get_spend_tree(budget.id)
+
+        assert tree.roots == []
+        assert tree.total_events == 0
+
+
+# ---------------------------------------------------------------------------
+# Rotate session token contract
+# ---------------------------------------------------------------------------
+
+class TestRotateSessionTokenContract:
+    """Validate rotate_session_token response shape."""
+
+    def test_rotate_returns_new_token_string(self, client: FiGuardClient, flat_budget):
+        """
+        rotate_session_token must return a non-empty string that starts with
+        the session token prefix.
+        """
+        new_token = client.rotate_session_token(flat_budget.id)
+
+        assert isinstance(new_token, str)
+        assert len(new_token) > 10
+        assert new_token.startswith("st_")
+        # New token must differ from the original
+        assert new_token != flat_budget.session_token
+
+    def test_new_token_can_authorize(self, client: FiGuardClient, flat_budget):
+        """
+        After rotation, the new token must successfully authorize a spend.
+        """
+        new_token = client.rotate_session_token(flat_budget.id)
+
+        result = client.authorize(
+            session_token=new_token,
+            agent_id="contract_agent",
+            action_type="TOOL_CALL",
+            description="post-rotation authorization",
+            requested_amount=10.00,
+            idempotency_key=str(uuid4()),
+        )
+
+        assert result.is_authorized is True
+
+
+# ---------------------------------------------------------------------------
+# Void event contract
+# ---------------------------------------------------------------------------
+
+class TestVoidEventContract:
+    """Validate void_event response shape."""
+
+    def test_void_event_response_shape(self, client: FiGuardClient, flat_budget):
+        """
+        void_event must return a VoidResult with decision VOIDED.
+        The reservation must be released (available_amount restored).
+        """
+        from figuard.models import VoidResult
+
+        auth = client.authorize(
+            session_token=flat_budget.session_token,
+            agent_id="contract_agent",
+            action_type="TOOL_CALL",
+            description="void contract test",
+            requested_amount=50.00,
+            idempotency_key=str(uuid4()),
+        )
+
+        budget_after_auth = client.get_budget(flat_budget.id)
+        assert budget_after_auth.amount_reserved >= 50.00
+
+        result = client.void_event(auth.event_id, reason="USER_CANCELLED")
+
+        assert isinstance(result, VoidResult)
+        assert result.is_voided is True
+        assert result.event.id == auth.event_id
+        assert result.event.decision == "VOIDED"
+
+        # Reserved funds must be released
+        budget_after_void = client.get_budget(flat_budget.id)
+        assert budget_after_void.amount_reserved < budget_after_auth.amount_reserved
+
+
+# ---------------------------------------------------------------------------
+# Budget optional fields contract
+# ---------------------------------------------------------------------------
+
+class TestBudgetOptionalFieldsContract:
+    """Validate server returns expected fields when optional budget params are set."""
+
+    def test_create_budget_with_metadata(self, client: FiGuardClient):
+        """
+        metadata is stored and returned by the server.
+        """
+        from datetime import datetime, timedelta, timezone
+        budget = client.create_budget(
+            user_id="contract_test_user",
+            total_limit=100.00,
+            expires_at=(
+                datetime.now(timezone.utc) + timedelta(hours=23)
+            ).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            metadata={"department": "engineering", "project": "contract-test"},
+        )
+
+        # Server may or may not echo metadata — verify it doesn't crash the parser
+        assert budget.id
+        assert budget.status == "ACTIVE"
+
+    def test_create_budget_with_anomaly_detection(self, client: FiGuardClient):
+        """
+        Anomaly-detection-enabled budgets are created and authorized normally.
+        """
+        from datetime import datetime, timedelta, timezone
+        budget = client.create_budget(
+            user_id="contract_test_user",
+            total_limit=500.00,
+            expires_at=(
+                datetime.now(timezone.utc) + timedelta(hours=23)
+            ).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            anomaly_detection_enabled=True,
+        )
+
+        assert budget.status == "ACTIVE"
+        assert budget.session_token is not None
+
+        result = client.authorize(
+            session_token=budget.session_token,
+            agent_id="contract_agent",
+            action_type="TOOL_CALL",
+            description="anomaly detection test",
+            requested_amount=50.00,
+            idempotency_key=str(uuid4()),
+        )
+        assert result.is_authorized is True

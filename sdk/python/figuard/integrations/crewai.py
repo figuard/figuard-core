@@ -148,11 +148,6 @@ class FiGuardCrewGuard:
 
         try:
             result = self._original_run(**kwargs)
-            self._client.confirm_event(auth.event_id, confirmed_amount=amount)
-            logger.debug(
-                "figuard: CONFIRMED tool=%s event_id=%s", self._tool.name, auth.event_id
-            )
-            return result
         except Exception as exc:
             self._client.fail_event(
                 event_id=auth.event_id,
@@ -160,3 +155,16 @@ class FiGuardCrewGuard:
                 error_message=str(exc)[:500],
             )
             raise
+
+        try:
+            self._client.confirm_event(auth.event_id, confirmed_amount=amount)
+            logger.debug(
+                "figuard: CONFIRMED tool=%s event_id=%s", self._tool.name, auth.event_id
+            )
+        except Exception as exc:
+            logger.warning(
+                "figuard: confirm failed tool=%s event_id=%s: %s",
+                self._tool.name, auth.event_id, exc,
+            )
+
+        return result
