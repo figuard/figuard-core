@@ -294,7 +294,7 @@ def _wait_for_service(base_url: str, max_wait: int = 30) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="FiGuard demo script")
     parser.add_argument("--base-url", default="http://localhost:8080")
-    parser.add_argument("--api-key",  default="ab_live_integrationtest")
+    parser.add_argument("--api-key",  default="ab_live_demo")
     parser.add_argument("--no-wait",  action="store_true",
                         help="Skip health check (service already running)")
     args = parser.parse_args()
