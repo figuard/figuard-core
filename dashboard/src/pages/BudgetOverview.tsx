@@ -15,17 +15,18 @@ import { ExpiryBadge } from "../components/ExpiryBadge";
 import { BUDGET_STATUS_BADGE } from "../lib/colors";
 import { formatDateTime, formatAmount, shortId } from "../lib/format";
 
-// Build 24-hour hourly spend buckets from ledger events.
+// Build 7-day daily spend buckets from ledger events.
 function buildSparkline(
   events: { createdAt: string; requestedQuantity: number; decision: string }[],
 ) {
   const now = Date.now();
-  const buckets: { hour: string; spend: number }[] = Array.from(
-    { length: 24 },
+  const DAY_MS = 86_400_000;
+  const buckets: { day: string; spend: number }[] = Array.from(
+    { length: 7 },
     (_, i) => {
-      const h = new Date(now - (23 - i) * 3_600_000);
+      const d = new Date(now - (6 - i) * DAY_MS);
       return {
-        hour: h.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
+        day: d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }),
         spend: 0,
       };
     },
@@ -34,9 +35,9 @@ function buildSparkline(
   for (const ev of events) {
     if (ev.decision !== "CONFIRMED" && ev.decision !== "AUTHORIZED") continue;
     const age = now - new Date(ev.createdAt).getTime();
-    if (age > 24 * 3_600_000) continue;
-    const bucketIdx = 23 - Math.floor(age / 3_600_000);
-    if (bucketIdx >= 0 && bucketIdx < 24) {
+    if (age > 7 * DAY_MS) continue;
+    const bucketIdx = 6 - Math.floor(age / DAY_MS);
+    if (bucketIdx >= 0 && bucketIdx < 7) {
       buckets[bucketIdx].spend += ev.requestedQuantity;
     }
   }
@@ -46,8 +47,8 @@ function buildSparkline(
 export function BudgetOverview() {
   const { id } = useParams<{ id: string }>();
   const { data: budget, isLoading, isError, error } = useBudget(id);
-  // Fetch up to 200 recent events for the sparkline (no filter)
-  const { data: ledgerPage } = useLedger(id, { page: 0, size: 200 });
+  // Fetch up to 500 recent events for the sparkline (covers 7 days of typical traffic)
+  const { data: ledgerPage } = useLedger(id, { page: 0, size: 500 });
 
   if (isLoading) {
     return (
@@ -67,6 +68,7 @@ export function BudgetOverview() {
   }
 
   const sparkData = buildSparkline(ledgerPage?.content ?? []);
+  const hasSpend = sparkData.some((b) => b.spend > 0);
   const fmt = (n: number) => formatAmount(n, budget.currency, budget.unit);
 
   return (
@@ -118,53 +120,59 @@ export function BudgetOverview() {
         </div>
       )}
 
-      {/* 24h sparkline */}
+      {/* 7-day sparkline — hidden when empty */}
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <h2 className="mb-4 text-sm font-semibold text-gray-700">
-          Spend — last 24 hours
+          Spend — last 7 days
         </h2>
-        <ResponsiveContainer width="100%" height={140}>
-          <AreaChart data={sparkData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id="spendGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
-                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <XAxis
-              dataKey="hour"
-              tick={{ fontSize: 10, fill: "#9ca3af" }}
-              tickLine={false}
-              axisLine={false}
-              interval={3}
-            />
-            <YAxis
-              tick={{ fontSize: 10, fill: "#9ca3af" }}
-              tickLine={false}
-              axisLine={false}
-              width={40}
-              tickFormatter={(v: number) =>
-                budget.unit ? `${v}` : `$${v}`
-              }
-            />
-            <Tooltip
-              formatter={(v: number) => [fmt(v), "Spend"]}
-              contentStyle={{
-                fontSize: 12,
-                borderRadius: 6,
-                border: "1px solid #e5e7eb",
-              }}
-            />
-            <Area
-              type="monotone"
-              dataKey="spend"
-              stroke="#3b82f6"
-              strokeWidth={2}
-              fill="url(#spendGrad)"
-              dot={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+        {hasSpend ? (
+          <ResponsiveContainer width="100%" height={140}>
+            <AreaChart data={sparkData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="spendGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis
+                dataKey="day"
+                tick={{ fontSize: 10, fill: "#9ca3af" }}
+                tickLine={false}
+                axisLine={false}
+                interval={0}
+              />
+              <YAxis
+                tick={{ fontSize: 10, fill: "#9ca3af" }}
+                tickLine={false}
+                axisLine={false}
+                width={40}
+                tickFormatter={(v: number) =>
+                  budget.unit ? `${v}` : `$${v}`
+                }
+              />
+              <Tooltip
+                formatter={(v: number) => [fmt(v), "Spend"]}
+                contentStyle={{
+                  fontSize: 12,
+                  borderRadius: 6,
+                  border: "1px solid #e5e7eb",
+                }}
+              />
+              <Area
+                type="monotone"
+                dataKey="spend"
+                stroke="#3b82f6"
+                strokeWidth={2}
+                fill="url(#spendGrad)"
+                dot={false}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex items-center justify-center h-[140px] text-sm text-gray-400">
+            No spend activity in the last 7 days
+          </div>
+        )}
       </div>
 
       {/* Intent tags / metadata */}

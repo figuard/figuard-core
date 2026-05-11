@@ -1,8 +1,10 @@
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { useBudget } from "../hooks/useBudget";
 import { useSpendTree } from "../hooks/useSpendTree";
 import { SpendTreeNode } from "../components/SpendTreeNode";
 import { formatAmount } from "../lib/format";
+
+const TREE_EVENT_LIMIT = 25;
 
 export function SpendTree() {
   const { id } = useParams<{ id: string }>();
@@ -61,6 +63,23 @@ export function SpendTree() {
           {tree.roots.length === 0 ? (
             <div className="text-sm text-gray-400 italic py-8 text-center">
               No events in this budget yet.
+            </div>
+          ) : tree.totalEvents > TREE_EVENT_LIMIT ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800 space-y-2">
+              <p className="font-medium">
+                Tree view is available for sessions under {TREE_EVENT_LIMIT} events.
+              </p>
+              <p>
+                This budget has <span className="font-semibold">{tree.totalEvents} events</span> — rendering
+                them as a tree would produce an unreadable layout. Use the Ledger for full
+                event details with filtering and sorting.
+              </p>
+              <Link
+                to={`/budgets/${id}/ledger`}
+                className="inline-flex items-center gap-1 font-medium underline hover:text-amber-900"
+              >
+                View in Ledger →
+              </Link>
             </div>
           ) : (
             <>
