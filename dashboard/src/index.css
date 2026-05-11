@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply text-gray-900 bg-gray-50;
+  }
+}
+
+@layer utilities {
+  /* Ensure tabular number rendering for amounts and IDs */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
