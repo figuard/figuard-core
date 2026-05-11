@@ -70,7 +70,7 @@ class SessionTokenIT extends IntegrationTestBase {
             "agentId", "agent_session_test",
             "actionType", "PURCHASE",
             "description", "test purchase",
-            "requestedAmount", 50.00,
+            "requestedQuantity", 50.00,
             "currency", "USD",
             "idempotencyKey", UUID.randomUUID().toString()
         ));

@@ -69,7 +69,7 @@ class OrphanedBudgetSweepIT extends IntegrationTestBase {
                     "agentId", "agent_sweep_test",
                     "actionType", "PURCHASE",
                     "description", "Sweep guard test",
-                    "requestedAmount", "10.00",
+                    "requestedQuantity", "10.00",
                     "currency", "USD",
                     "idempotencyKey", UUID.randomUUID().toString()
                 ))))

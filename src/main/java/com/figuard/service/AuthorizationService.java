@@ -56,6 +56,11 @@ public class AuthorizationService {
     @Transactional
     public AuthorizationResponse authorize(String rawSessionToken, AuthorizeSpendRequest request, Tenant requestTenant) {
 
+        // Normalize claimedCategory to lowercase so "Flight" and "flight" match the same allocation.
+        if (request.getClaimedCategory() != null) {
+            request.setClaimedCategory(request.getClaimedCategory().toLowerCase());
+        }
+
         // Step 1 — Hash token and find budget with pessimistic lock.
         // Checks both the current hash and the previous hash (within rotation grace window),
         // so in-flight agents using the old token are not dropped mid-task.
@@ -65,23 +70,25 @@ public class AuthorizationService {
             .orElseThrow(() -> new ResponseStatusException(
                 HttpStatus.UNAUTHORIZED, DenialCode.INVALID_SESSION_TOKEN.name()));
 
-        // Step 2 — Idempotency check
+        // Step 2 — Idempotency check (skipped for dry-run — nothing was ever written)
         // Must happen before any writes. If a duplicate key is found, return the original
         // decision without creating a new SpendEvent. This handles agent retries safely.
-        var existingEvent = spendEventRepository
-            .findByBudgetIdAndIdempotencyKey(budget.getId(), request.getIdempotencyKey());
-        if (existingEvent.isPresent()) {
-            SpendEvent cached = existingEvent.get();
-            log.info("Idempotent hit: budgetId={} key={} decision={}",
-                budget.getId(), request.getIdempotencyKey(), cached.getDecision());
-            return buildResponse(cached, budget, null);
+        if (!request.isDryRun()) {
+            var existingEvent = spendEventRepository
+                .findByBudgetIdAndIdempotencyKey(budget.getId(), request.getIdempotencyKey());
+            if (existingEvent.isPresent()) {
+                SpendEvent cached = existingEvent.get();
+                log.info("Idempotent hit: budgetId={} key={} decision={}",
+                    budget.getId(), request.getIdempotencyKey(), cached.getDecision());
+                return buildResponse(cached, budget, null);
+            }
         }
 
-        // Step 2b — Entity deduplication check
+        // Step 2b — Entity deduplication check (skipped for dry-run)
         // Only active when entityDedupEnabled=true on the budget AND the request carries an entityId.
         // Prevents two concurrent or sequential authorizations for the same real-world entity
         // (e.g. same flight booking) from both going AUTHORIZED on this budget.
-        if (budget.isEntityDedupEnabled() && request.getEntityId() != null) {
+        if (!request.isDryRun() && budget.isEntityDedupEnabled() && request.getEntityId() != null) {
             List<SpendEvent> duplicates = spendEventRepository
                 .findByBudgetIdAndEntityIdAndDecisionIn(
                     budget.getId(),
@@ -126,30 +133,33 @@ public class AuthorizationService {
             return deny(budget, null, request, null, DenialCode.BUDGET_EXPIRED, "Budget has expired");
         }
 
-        // Step 6 — Currency check
-        String requestCurrency = request.getCurrency() != null ? request.getCurrency() : "USD";
-        String budgetCurrency  = budget.getCurrency() != null ? budget.getCurrency().trim() : "USD";
-        if (!requestCurrency.equalsIgnoreCase(budgetCurrency)) {
-            return deny(budget, null, request, null, DenialCode.CURRENCY_MISMATCH,
-                "Currency mismatch: requested " + requestCurrency + " but budget is " + budgetCurrency);
+        // Step 6 — Currency check (monetary budgets only)
+        // Resource budgets (unit set, currency null) skip this check entirely.
+        if (budget.isMonetary()) {
+            String requestCurrency = request.getCurrency() != null ? request.getCurrency() : "USD";
+            String budgetCurrency  = budget.getCurrency().trim();
+            if (!requestCurrency.equalsIgnoreCase(budgetCurrency)) {
+                return deny(budget, null, request, null, DenialCode.CURRENCY_MISMATCH,
+                    "Currency mismatch: requested " + requestCurrency + " but budget is " + budgetCurrency);
+            }
         }
 
         // Step 7 — Per-transaction ceiling check
-        // Only enforced when maxTransactionAmount is set on the budget.
+        // Only enforced when maxTransactionQuantity is set on the budget.
         // Checked before funds availability — a request that exceeds the ceiling is denied
         // even if the budget has plenty of remaining funds.
-        if (budget.getMaxTransactionAmount() != null
-                && request.getRequestedAmount().compareTo(budget.getMaxTransactionAmount()) > 0) {
-            return deny(budget, null, request, null, DenialCode.EXCEEDS_TRANSACTION_LIMIT,
-                "requestedAmount " + request.getRequestedAmount() +
-                " exceeds per-transaction limit of " + budget.getMaxTransactionAmount());
+        if (budget.getMaxTransactionQuantity() != null
+                && request.getRequestedQuantity().compareTo(budget.getMaxTransactionQuantity()) > 0) {
+            return deny(budget, null, request, null, DenialCode.EXCEEDS_QUANTITY_LIMIT,
+                "requestedQuantity " + request.getRequestedQuantity() +
+                " exceeds per-transaction limit of " + budget.getMaxTransactionQuantity());
         }
 
         // Step 7a — Anomaly detection
         // Only runs when anomalyDetectionEnabled=true and the baseline has enough samples
         // (anomalyMinSampleSize guard prevents false positives on brand-new budgets).
         if (budget.isAnomalyDetectionEnabled()) {
-            var anomalyResult = checkAnomaly(budget, request.getRequestedAmount(), request);
+            var anomalyResult = checkAnomaly(budget, request.getRequestedQuantity(), request);
             if (anomalyResult != null) return anomalyResult;
         }
 
@@ -159,16 +169,37 @@ public class AuthorizationService {
             parentEvent = validateParentEvent(request.getParentEventId(), budget.getId());
         }
 
-        // Step 9 — Load allocations
+        // Step 9 — Resolve effective reserved quantity
+        // When authorizationExpirySeconds is set, exclude stale AUTHORIZED events
+        // from the capacity calculation. This implements lazy auto-expiry: orphaned
+        // reservations become invisible to the capacity check without a sweep job.
+        // The stale events remain in the ledger for audit; they simply stop holding capacity.
+        BigDecimal effectiveReserved = resolveEffectiveReserved(budget);
+
+        // Step 10 — Load allocations
         List<BudgetAllocation> allocations =
             allocationRepository.findByParentBudgetIdOrderByCreatedAtAsc(budget.getId());
 
-        // Step 10 — Category matching and funds check
+        // Step 11 — Category matching and funds check
         if (!allocations.isEmpty()) {
-            return authorizeWithAllocations(budget, allocations, request, parentEvent);
+            return authorizeWithAllocations(budget, allocations, request, parentEvent, effectiveReserved);
         } else {
-            return authorizeFlat(budget, request, parentEvent);
+            return authorizeFlat(budget, request, parentEvent, effectiveReserved);
         }
+    }
+
+    /**
+     * Returns the effective reserved quantity for capacity checks.
+     * When authorizationExpirySeconds is set, DB-computes the sum of AUTHORIZED events
+     * within the expiry window. Otherwise returns the denormalized budget field.
+     */
+    private BigDecimal resolveEffectiveReserved(AgentBudget budget) {
+        if (budget.getAuthorizationExpirySeconds() == null) {
+            return budget.getQuantityReserved();
+        }
+        OffsetDateTime cutoff = OffsetDateTime.now()
+            .minusSeconds(budget.getAuthorizationExpirySeconds());
+        return spendEventRepository.sumAuthorizedQuantityAfter(budget.getId(), cutoff);
     }
 
     // -------------------------------------------------------------------------
@@ -178,7 +209,8 @@ public class AuthorizationService {
     private AuthorizationResponse authorizeWithAllocations(AgentBudget budget,
                                                             List<BudgetAllocation> allocations,
                                                             AuthorizeSpendRequest request,
-                                                            SpendEvent parentEvent) {
+                                                            SpendEvent parentEvent,
+                                                            BigDecimal effectiveReserved) {
         MatchResult matchResult = categoryMatchingService.findMatch(
             allocations, request.getClaimedCategory(), request.getClaimedItemType());
 
@@ -209,15 +241,15 @@ public class AuthorizationService {
                     .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.INTERNAL_SERVER_ERROR, "Allocation disappeared under lock"));
 
-                if (!lockedAllocation.canAccommodate(request.getRequestedAmount())) {
+                if (!lockedAllocation.canAccommodate(request.getRequestedQuantity())) {
                     yield deny(budget, lockedAllocation, request, parentEvent, DenialCode.ALLOCATION_EXHAUSTED,
                         "Allocation '" + lockedAllocation.getCategory() + "' has " +
-                        lockedAllocation.availableAmount() + " available, requested " + request.getRequestedAmount());
+                        lockedAllocation.availableQuantity() + " available, requested " + request.getRequestedQuantity());
                 }
 
-                if (!budget.canAccommodate(request.getRequestedAmount())) {
+                if (!budget.canAccommodateWith(request.getRequestedQuantity(), effectiveReserved)) {
                     yield deny(budget, lockedAllocation, request, parentEvent, DenialCode.INSUFFICIENT_FUNDS,
-                        "Budget has " + budget.availableAmount() + " available, requested " + request.getRequestedAmount());
+                        "Budget has " + budget.availableQuantityWith(effectiveReserved) + " available, requested " + request.getRequestedQuantity());
                 }
 
                 yield approve(budget, lockedAllocation, request, parentEvent);
@@ -230,7 +262,7 @@ public class AuthorizationService {
     // -------------------------------------------------------------------------
 
     private AuthorizationResponse authorizeFlat(AgentBudget budget, AuthorizeSpendRequest request,
-                                                 SpendEvent parentEvent) {
+                                                 SpendEvent parentEvent, BigDecimal effectiveReserved) {
         // Intent scope check — only on flat budgets. Allocated budgets enforce intent via
         // claimedCategory; this check would be redundant and is intentionally skipped there.
         if (!intentScopeValidator.isInScope(budget.getIntentTags(), request.getIntentContext())) {
@@ -243,9 +275,9 @@ public class AuthorizationService {
             return deny(budget, null, request, parentEvent, DenialCode.INTENT_SCOPE_VIOLATION, message);
         }
 
-        if (!budget.canAccommodate(request.getRequestedAmount())) {
+        if (!budget.canAccommodateWith(request.getRequestedQuantity(), effectiveReserved)) {
             return deny(budget, null, request, parentEvent, DenialCode.INSUFFICIENT_FUNDS,
-                "Budget has " + budget.availableAmount() + " available, requested " + request.getRequestedAmount());
+                "Budget has " + budget.availableQuantityWith(effectiveReserved) + " available, requested " + request.getRequestedQuantity());
         }
         return approve(budget, null, request, parentEvent);
     }
@@ -258,30 +290,41 @@ public class AuthorizationService {
                                           BudgetAllocation allocation,
                                           AuthorizeSpendRequest request,
                                           SpendEvent parentEvent) {
-        // Capture available amount before reservation to detect threshold crossings
-        BigDecimal prevAvailable = budget.availableAmount();
-
-        // Reserve at allocation level first, then budget level
-        if (allocation != null) {
-            allocation.setAmountReserved(
-                allocation.getAmountReserved().add(request.getRequestedAmount()));
-            allocationRepository.save(allocation);
-        }
-
-        budget.setAmountReserved(
-            budget.getAmountReserved().add(request.getRequestedAmount()));
-        budgetRepository.save(budget);
-
         OffsetDateTime now = OffsetDateTime.now();
         SpendEvent event = buildEvent(budget, allocation, request, parentEvent, SpendDecision.AUTHORIZED, null, null, null);
         event.setCreatedAt(now);
         event.setConfirmationTimeoutAt(now.plusSeconds(confirmationTimeoutSeconds));
+
+        // Dry-run: return the authorization decision without writing, reserving funds,
+        // or firing webhooks. All enforcement checks above have already run.
+        if (request.isDryRun()) {
+            log.info("DRY_RUN AUTHORIZED: budgetId={} alloc={} quantity={}",
+                budget.getId(),
+                allocation != null ? allocation.getCategory() : "flat",
+                request.getRequestedQuantity());
+            return buildResponse(event, budget, allocation);
+        }
+
+        // Capture available quantity before reservation to detect threshold crossings
+        BigDecimal prevAvailable = budget.availableQuantity();
+
+        // Reserve at allocation level first, then budget level
+        if (allocation != null) {
+            allocation.setQuantityReserved(
+                allocation.getQuantityReserved().add(request.getRequestedQuantity()));
+            allocationRepository.save(allocation);
+        }
+
+        budget.setQuantityReserved(
+            budget.getQuantityReserved().add(request.getRequestedQuantity()));
+        budgetRepository.save(budget);
+
         SpendEvent saved = spendEventRepository.save(event);
 
-        log.info("AUTHORIZED: budgetId={} alloc={} amount={} key={}",
+        log.info("AUTHORIZED: budgetId={} alloc={} quantity={} key={}",
             budget.getId(),
             allocation != null ? allocation.getCategory() : "flat",
-            request.getRequestedAmount(),
+            request.getRequestedQuantity(),
             request.getIdempotencyKey());
 
         // Dispatch threshold webhooks asynchronously — must not block the authorize response
@@ -302,6 +345,13 @@ public class AuthorizationService {
                                        String message) {
         SpendEvent event = buildEvent(budget, allocation, request, parentEvent,
             SpendDecision.DENIED, code.name(), message, null);
+
+        // Dry-run: return the denial decision without writing or firing webhooks.
+        if (request.isDryRun()) {
+            log.info("DRY_RUN DENIED: budgetId={} code={}", budget.getId(), code);
+            return buildResponse(event, budget, allocation);
+        }
+
         SpendEvent saved = spendEventRepository.save(event);
 
         log.info("DENIED: budgetId={} code={} key={}",
@@ -358,7 +408,7 @@ public class AuthorizationService {
                                                BigDecimal threshold) {
         SpendEvent event = buildEvent(budget, null, request, null,
             SpendDecision.DENIED, DenialCode.ANOMALY_DETECTED.name(),
-            "requestedAmount " + request.getRequestedAmount()
+            "requestedQuantity " + request.getRequestedQuantity()
                 + " exceeds anomaly threshold of " + threshold
                 + " (mean=" + baselineMean + ")", null);
         SpendEvent saved = spendEventRepository.save(event);
@@ -369,7 +419,7 @@ public class AuthorizationService {
         budgetRepository.save(budget);
 
         log.warn("ANOMALY_DETECTED: budgetId={} requested={} threshold={} — budget paused",
-            budget.getId(), request.getRequestedAmount(), threshold);
+            budget.getId(), request.getRequestedQuantity(), threshold);
 
         // Fire ANOMALY_DETECTED webhook (not SPEND_DENIED) asynchronously
         String webhookUrl = budget.getAnomalyAlertWebhookUrl();
@@ -422,13 +472,14 @@ public class AuthorizationService {
         event.setAgentType(request.getAgentType());
         event.setActionType(request.getActionType());
         event.setDescription(request.getDescription());
-        event.setRequestedAmount(request.getRequestedAmount());
+        event.setRequestedQuantity(request.getRequestedQuantity());
         event.setCurrency(budget.getCurrency());
         event.setEntityId(request.getEntityId());
         event.setClaimedCategory(request.getClaimedCategory());
         event.setClaimedItemType(request.getClaimedItemType());
         event.setIntentContext(request.getIntentContext());
         event.setIdempotencyKey(request.getIdempotencyKey());
+        event.setTraceId(request.getTraceId());
         event.setDecision(decision);
         event.setDenialReason(denialReason);
         event.setDenialMessage(denialMessage);
@@ -453,7 +504,7 @@ public class AuthorizationService {
         BigDecimal totalLimit = budget.getTotalLimit();
         if (totalLimit.compareTo(BigDecimal.ZERO) == 0) return;
 
-        BigDecimal newAvailable = budget.availableAmount();
+        BigDecimal newAvailable = budget.availableQuantity();
 
         BigDecimal tenPct    = totalLimit.multiply(new BigDecimal("0.10"));
         BigDecimal fiftyPct  = totalLimit.multiply(new BigDecimal("0.50"));
@@ -492,8 +543,8 @@ public class AuthorizationService {
         return AuthorizationResponse.builder()
             .eventId(event.getId())
             .decision(event.getDecision())
-            .approvedAmount(event.getDecision() == SpendDecision.AUTHORIZED
-                ? event.getRequestedAmount() : null)
+            .approvedQuantity(event.getDecision() == SpendDecision.AUTHORIZED
+                ? event.getRequestedQuantity() : null)
             .authorizedAt(event.getDecision() == SpendDecision.AUTHORIZED
                 ? event.getCreatedAt() : null)
             .denialReason(denialCode)

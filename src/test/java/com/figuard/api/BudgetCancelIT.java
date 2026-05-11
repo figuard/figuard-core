@@ -60,7 +60,7 @@ class BudgetCancelIT extends IntegrationTestBase {
                     "agentId", "agent_cancel_test",
                     "actionType", "PURCHASE",
                     "description", "post-cancel attempt",
-                    "requestedAmount", 10.00,
+                    "requestedQuantity", 10.00,
                     "idempotencyKey", UUID.randomUUID().toString()
                 ))))
             .andExpect(status().isOk())
@@ -107,7 +107,7 @@ class BudgetCancelIT extends IntegrationTestBase {
                     "agentId", "agent_cancel_test",
                     "actionType", "PURCHASE",
                     "description", "pending reservation",
-                    "requestedAmount", 100.00,
+                    "requestedQuantity", 100.00,
                     "idempotencyKey", UUID.randomUUID().toString()
                 ))))
             .andExpect(status().isOk())
@@ -120,7 +120,7 @@ class BudgetCancelIT extends IntegrationTestBase {
 
         // Reservation must still be visible — cancel does not release it
         var budget = budgetRepository.findById(UUID.fromString(budgetId)).orElseThrow();
-        assertThat(budget.getAmountReserved()).isEqualByComparingTo("100.00");
+        assertThat(budget.getQuantityReserved()).isEqualByComparingTo("100.00");
     }
 
     // -------------------------------------------------------------------------

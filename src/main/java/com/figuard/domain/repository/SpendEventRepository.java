@@ -52,11 +52,22 @@ public interface SpendEventRepository extends JpaRepository<SpendEvent, UUID> {
     @Query("SELECT COUNT(e) FROM SpendEvent e WHERE e.decision = 'AUTHORIZED'")
     long countPendingAuthorizations();
 
-    // Ledger integrity — sum of requestedAmount for AUTHORIZED events per budget
-    @Query("SELECT COALESCE(SUM(e.requestedAmount), 0) FROM SpendEvent e WHERE e.budget.id = :budgetId AND e.decision = 'AUTHORIZED'")
+    // Ledger integrity — sum of requestedQuantity for AUTHORIZED events per budget
+    @Query("SELECT COALESCE(SUM(e.requestedQuantity), 0) FROM SpendEvent e WHERE e.budget.id = :budgetId AND e.decision = 'AUTHORIZED'")
     java.math.BigDecimal sumAuthorizedAmountByBudget(@Param("budgetId") UUID budgetId);
 
-    // Ledger integrity — sum of confirmedAmount for CONFIRMED events per budget
-    @Query("SELECT COALESCE(SUM(e.confirmedAmount), 0) FROM SpendEvent e WHERE e.budget.id = :budgetId AND e.decision = 'CONFIRMED'")
+    // Lazy auto-expiry — sum of requestedQuantity for AUTHORIZED events created after cutoff.
+    // Used when authorizationExpirySeconds is set: older events are excluded from capacity calc.
+    @Query("SELECT COALESCE(SUM(e.requestedQuantity), 0) FROM SpendEvent e WHERE e.budget.id = :budgetId AND e.decision = 'AUTHORIZED' AND e.createdAt > :cutoff")
+    java.math.BigDecimal sumAuthorizedQuantityAfter(@Param("budgetId") UUID budgetId, @Param("cutoff") java.time.OffsetDateTime cutoff);
+
+    // Ledger traceId filter — paginated events for a budget filtered by traceId
+    Page<SpendEvent> findByBudgetIdAndTraceIdOrderByCreatedAtDesc(UUID budgetId, String traceId, Pageable pageable);
+
+    // Ledger traceId + decision filter
+    Page<SpendEvent> findByBudgetIdAndTraceIdAndDecisionOrderByCreatedAtDesc(UUID budgetId, String traceId, SpendDecision decision, Pageable pageable);
+
+    // Ledger integrity — sum of confirmedQuantity for CONFIRMED events per budget
+    @Query("SELECT COALESCE(SUM(e.confirmedQuantity), 0) FROM SpendEvent e WHERE e.budget.id = :budgetId AND e.decision = 'CONFIRMED'")
     java.math.BigDecimal sumConfirmedAmountByBudget(@Param("budgetId") UUID budgetId);
 }

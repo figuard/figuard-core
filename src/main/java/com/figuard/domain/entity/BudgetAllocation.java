@@ -50,14 +50,14 @@ public class BudgetAllocation {
     private BigDecimal totalLimit;
 
     @Column(nullable = false, precision = 19, scale = 4)
-    private BigDecimal amountSpent = BigDecimal.ZERO;       // CONFIRMED events only
+    private BigDecimal quantitySpent = BigDecimal.ZERO;     // CONFIRMED events only
 
     @Column(nullable = false, precision = 19, scale = 4)
-    private BigDecimal amountReserved = BigDecimal.ZERO;    // AUTHORIZED events awaiting confirmation
+    private BigDecimal quantityReserved = BigDecimal.ZERO;  // AUTHORIZED events awaiting confirmation
 
     @JdbcTypeCode(SqlTypes.CHAR)
-    @Column(nullable = false, columnDefinition = "CHAR(3)")
-    private String currency = "USD";
+    @Column(columnDefinition = "CHAR(3)")
+    private String currency;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -74,13 +74,13 @@ public class BudgetAllocation {
     @Column(nullable = false)
     private OffsetDateTime updatedAt;
 
-    public BigDecimal availableAmount() {
-        return totalLimit.subtract(amountSpent).subtract(amountReserved);
+    public BigDecimal availableQuantity() {
+        return totalLimit.subtract(quantitySpent).subtract(quantityReserved);
     }
 
-    public boolean canAccommodate(BigDecimal requestedAmount) {
+    public boolean canAccommodate(BigDecimal requestedQuantity) {
         return status == AllocationStatus.ACTIVE
-            && availableAmount().compareTo(requestedAmount) >= 0;
+            && availableQuantity().compareTo(requestedQuantity) >= 0;
     }
 
     /**

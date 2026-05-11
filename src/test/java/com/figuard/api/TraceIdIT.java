@@ -144,6 +144,7 @@ class TraceIdIT extends IntegrationTestBase {
             "userId", "user_trace_test",
             "intentContext", "trace id test",
             "totalLimit", 500.00,
+            "currency", "USD",
             "expiresAt", OffsetDateTime.now().plusHours(2)
                 .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
         ));
@@ -154,7 +155,7 @@ class TraceIdIT extends IntegrationTestBase {
             "agentId", "agent_trace_test",
             "actionType", "PURCHASE",
             "description", "trace test",
-            "requestedAmount", Double.parseDouble(amount),
+            "requestedQuantity", Double.parseDouble(amount),
             "idempotencyKey", UUID.randomUUID().toString()
         ));
     }

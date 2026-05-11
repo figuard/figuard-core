@@ -52,15 +52,22 @@ public class AgentBudget {
     @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal totalLimit;
 
+    // Monetary budgets: 3-letter ISO code (e.g. "USD"). Null for resource budgets.
+    // Exactly one of currency or unit must be set.
     @JdbcTypeCode(SqlTypes.CHAR)
-    @Column(nullable = false, columnDefinition = "CHAR(3)")
-    private String currency = "USD";
+    @Column(columnDefinition = "CHAR(3)")
+    private String currency;
+
+    // Resource budgets: free-form label (e.g. "tokens", "api_calls", "gpu_hours").
+    // Null for monetary budgets.
+    @Column(length = 50)
+    private String unit;
 
     @Column(nullable = false, precision = 19, scale = 4)
-    private BigDecimal amountSpent = BigDecimal.ZERO;       // CONFIRMED events only
+    private BigDecimal quantitySpent = BigDecimal.ZERO;       // CONFIRMED events only
 
     @Column(nullable = false, precision = 19, scale = 4)
-    private BigDecimal amountReserved = BigDecimal.ZERO;    // AUTHORIZED events awaiting confirmation
+    private BigDecimal quantityReserved = BigDecimal.ZERO;    // AUTHORIZED events awaiting confirmation
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -70,10 +77,9 @@ public class AgentBudget {
     private BigDecimal softLimit;
 
     // Optional per-transaction ceiling. When non-null, any single authorize where
-    // requestedAmount > maxTransactionAmount is denied immediately, regardless of
-    // available funds. Aggregate cap (totalLimit) is checked separately.
+    // requestedQuantity > maxTransactionQuantity is denied immediately.
     @Column(precision = 19, scale = 4)
-    private BigDecimal maxTransactionAmount;
+    private BigDecimal maxTransactionQuantity;
 
     @Column(nullable = false)
     private boolean entityDedupEnabled = false;
@@ -89,6 +95,13 @@ public class AgentBudget {
 
     @Column(length = 2000)
     private String anomalyAlertWebhookUrl;
+
+    // Lazy auto-expiry for stale reservations. When set, AUTHORIZED events older
+    // than this window are excluded from the available-quantity calculation.
+    // Orphaned reservations age out without a background sweep job.
+    // Null = no expiry (reservation holds until explicitly voided/failed/confirmed).
+    @Column
+    private Integer authorizationExpirySeconds;
 
     @Column(nullable = false)
     private OffsetDateTime expiresAt;
@@ -121,24 +134,35 @@ public class AgentBudget {
     @Version
     private Long version;
 
-    // Both confirmed spend and in-flight reservations reduce available funds.
-    // A $100 authorize + $50 confirm still leaves only $350 of a $500 budget.
-    public BigDecimal availableAmount() {
-        return totalLimit.subtract(amountSpent).subtract(amountReserved);
+    public BigDecimal availableQuantity() {
+        return totalLimit.subtract(quantitySpent).subtract(quantityReserved);
     }
 
-    // Expiry is checked separately in AuthorizationService (with a grace window).
-    // This method only checks status and available funds.
-    public boolean canAccommodate(BigDecimal requestedAmount) {
+    /** Variant used when authorization_expiry_seconds is set — passes in the
+     *  DB-computed effective reserved (excluding expired authorizations). */
+    public BigDecimal availableQuantityWith(BigDecimal effectiveReserved) {
+        return totalLimit.subtract(quantitySpent).subtract(effectiveReserved);
+    }
+
+    public boolean canAccommodate(BigDecimal requestedQuantity) {
         return status == BudgetStatus.ACTIVE
-            && availableAmount().compareTo(requestedAmount) >= 0;
+            && availableQuantity().compareTo(requestedQuantity) >= 0;
     }
 
-    // Caller passes SHA-256(presentedToken); constant-time compare prevents timing attacks.
+    public boolean canAccommodateWith(BigDecimal requestedQuantity, BigDecimal effectiveReserved) {
+        return status == BudgetStatus.ACTIVE
+            && availableQuantityWith(effectiveReserved).compareTo(requestedQuantity) >= 0;
+    }
+
     public boolean isValidSessionToken(String presentedTokenHash) {
         return MessageDigest.isEqual(
             sessionTokenHash.getBytes(StandardCharsets.UTF_8),
             presentedTokenHash.getBytes(StandardCharsets.UTF_8)
         );
+    }
+
+    /** True when budget is monetary (currency is set). */
+    public boolean isMonetary() {
+        return currency != null && !currency.isBlank();
     }
 }

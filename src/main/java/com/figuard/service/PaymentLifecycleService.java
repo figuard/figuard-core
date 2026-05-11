@@ -57,25 +57,25 @@ public class PaymentLifecycleService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "AUTHORIZATION_EXPIRED");
         }
 
-        BigDecimal reserved   = event.getRequestedAmount();
-        BigDecimal confirmed  = request.getConfirmedAmount();
+        BigDecimal reserved   = event.getRequestedQuantity();
+        BigDecimal confirmed  = request.getConfirmedQuantity();
 
         // Update budget: reserved → spent
         AgentBudget budget = loadBudgetWithLock(event);
-        budget.setAmountReserved(budget.getAmountReserved().subtract(reserved));
-        budget.setAmountSpent(budget.getAmountSpent().add(confirmed));
+        budget.setQuantityReserved(budget.getQuantityReserved().subtract(reserved));
+        budget.setQuantitySpent(budget.getQuantitySpent().add(confirmed));
         budgetRepository.save(budget);
 
         // Update allocation (if any): reserved → spent
         if (event.getAllocation() != null) {
             BudgetAllocation alloc = loadAllocationWithLock(event.getAllocation().getId());
-            alloc.setAmountReserved(alloc.getAmountReserved().subtract(reserved));
-            alloc.setAmountSpent(alloc.getAmountSpent().add(confirmed));
+            alloc.setQuantityReserved(alloc.getQuantityReserved().subtract(reserved));
+            alloc.setQuantitySpent(alloc.getQuantitySpent().add(confirmed));
             allocationRepository.save(alloc);
         }
 
         event.setDecision(SpendDecision.CONFIRMED);
-        event.setConfirmedAmount(confirmed);
+        event.setConfirmedQuantity(confirmed);
         event.setExternalTransactionId(request.getExternalTransactionId());
         eventRepository.save(event);
 
@@ -107,17 +107,17 @@ public class PaymentLifecycleService {
                 "Event is not in AUTHORIZED state (current: " + event.getDecision() + ")");
         }
 
-        BigDecimal reserved = event.getRequestedAmount();
+        BigDecimal reserved = event.getRequestedQuantity();
 
         // Release reservation on budget
         AgentBudget budget = loadBudgetWithLock(event);
-        budget.setAmountReserved(budget.getAmountReserved().subtract(reserved));
+        budget.setQuantityReserved(budget.getQuantityReserved().subtract(reserved));
         budgetRepository.save(budget);
 
         // Release reservation on allocation (if any)
         if (event.getAllocation() != null) {
             BudgetAllocation alloc = loadAllocationWithLock(event.getAllocation().getId());
-            alloc.setAmountReserved(alloc.getAmountReserved().subtract(reserved));
+            alloc.setQuantityReserved(alloc.getQuantityReserved().subtract(reserved));
             allocationRepository.save(alloc);
         }
 
@@ -171,15 +171,15 @@ public class PaymentLifecycleService {
             }
         }
 
-        BigDecimal reserved = event.getRequestedAmount();
+        BigDecimal reserved = event.getRequestedQuantity();
 
         AgentBudget budget = loadBudgetWithLock(event);
-        budget.setAmountReserved(budget.getAmountReserved().subtract(reserved));
+        budget.setQuantityReserved(budget.getQuantityReserved().subtract(reserved));
         budgetRepository.save(budget);
 
         if (event.getAllocation() != null) {
             BudgetAllocation alloc = loadAllocationWithLock(event.getAllocation().getId());
-            alloc.setAmountReserved(alloc.getAmountReserved().subtract(reserved));
+            alloc.setQuantityReserved(alloc.getQuantityReserved().subtract(reserved));
             allocationRepository.save(alloc);
         }
 
@@ -207,15 +207,15 @@ public class PaymentLifecycleService {
         eventRepository.findByIdWithLock(stale.getId()).ifPresent(event -> {
             if (!event.canBeVoided()) return;  // already transitioned by another thread
 
-            BigDecimal reserved = event.getRequestedAmount();
+            BigDecimal reserved = event.getRequestedQuantity();
 
             AgentBudget budget = loadBudgetWithLock(event);
-            budget.setAmountReserved(budget.getAmountReserved().subtract(reserved));
+            budget.setQuantityReserved(budget.getQuantityReserved().subtract(reserved));
             budgetRepository.save(budget);
 
             if (event.getAllocation() != null) {
                 BudgetAllocation alloc = loadAllocationWithLock(event.getAllocation().getId());
-                alloc.setAmountReserved(alloc.getAmountReserved().subtract(reserved));
+                alloc.setQuantityReserved(alloc.getQuantityReserved().subtract(reserved));
                 allocationRepository.save(alloc);
             }
 

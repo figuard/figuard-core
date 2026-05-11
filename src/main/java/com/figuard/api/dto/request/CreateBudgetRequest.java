@@ -27,19 +27,38 @@ public class CreateBudgetRequest {
     @Digits(integer = 15, fraction = 4)
     private BigDecimal totalLimit;
 
+    // Monetary budgets: 3-letter ISO code (e.g. "USD"). Exactly one of currency or unit must be set.
     @Size(min = 3, max = 3, message = "currency must be a 3-letter ISO code")
-    private String currency = "USD";
+    private String currency;
+
+    // Resource budgets: free-form label (e.g. "tokens", "api_calls", "gpu_hours").
+    // Exactly one of currency or unit must be set.
+    @Size(max = 50, message = "unit must be 50 characters or fewer")
+    private String unit;
+
+    @AssertTrue(message = "exactly one of currency or unit must be set")
+    private boolean isCurrencyOrUnitValid() {
+        boolean hasCurrency = currency != null && !currency.isBlank();
+        boolean hasUnit = unit != null && !unit.isBlank();
+        return hasCurrency ^ hasUnit;
+    }
 
     @Positive
     @Digits(integer = 15, fraction = 4)
     private BigDecimal softLimit;
 
     // Optional per-transaction ceiling. When set, any single authorize request
-    // with requestedAmount > maxTransactionAmount is denied (EXCEEDS_TRANSACTION_LIMIT).
+    // with requestedQuantity > maxTransactionQuantity is denied (EXCEEDS_QUANTITY_LIMIT).
     // Must be <= totalLimit if both are set — validated at the service layer.
     @Positive
     @Digits(integer = 15, fraction = 4)
-    private BigDecimal maxTransactionAmount;
+    private BigDecimal maxTransactionQuantity;
+
+    // Optional. When set, AUTHORIZED events older than this many seconds are
+    // excluded from the available-quantity calculation (lazy auto-expiry).
+    // Eliminates orphaned reservations without a background sweep job.
+    @Positive(message = "authorizationExpirySeconds must be positive")
+    private Integer authorizationExpirySeconds;
 
     @NotNull(message = "expiresAt is required")
     @Future(message = "expiresAt must be in the future")

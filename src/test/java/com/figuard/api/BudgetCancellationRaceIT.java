@@ -32,7 +32,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * 10 authorize threads + 1 cancel thread fire simultaneously.
  * After all complete:
  *   1. Budget must be CANCELLED
- *   2. amountReserved must exactly equal (authorized event count × $5)
+ *   2. quantityReserved must exactly equal (authorized event count × $5)
  *      A phantom reservation — authorize writing after cancel — would break this.
  *
  * Repeated 20 times. A single failure means the lock is broken.
@@ -104,12 +104,12 @@ class BudgetCancellationRaceIT extends IntegrationTestBase {
             .filter(e -> e.getDecision() == SpendDecision.AUTHORIZED)
             .count();
 
-        // amountReserved must equal exactly (authorizedCount × $5.00)
+        // quantityReserved must equal exactly (authorizedCount × $5.00)
         // If a phantom reservation occurred (authorize wrote after cancel),
-        // amountReserved would be higher than the authorized event count implies.
+        // quantityReserved would be higher than the authorized event count implies.
         BigDecimal expectedReserved = new BigDecimal("5.00")
             .multiply(BigDecimal.valueOf(authorizedCount));
-        assertThat(budget.getAmountReserved())
+        assertThat(budget.getQuantityReserved())
             .isEqualByComparingTo(expectedReserved);
     }
 
@@ -139,7 +139,7 @@ class BudgetCancellationRaceIT extends IntegrationTestBase {
             "agentId", "agent_" + idx,
             "actionType", "PURCHASE",
             "description", "Cancellation race test",
-            "requestedAmount", new BigDecimal("5.00"),
+            "requestedQuantity", new BigDecimal("5.00"),
             "currency", "USD",
             "idempotencyKey", UUID.randomUUID().toString()
         ));

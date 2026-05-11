@@ -14,8 +14,8 @@ public class AllocationSnapshot {
 
     private String category;
     private BigDecimal limit;
-    private BigDecimal amountSpent;
-    private BigDecimal amountReserved;
-    private BigDecimal availableAmount;
+    private BigDecimal quantitySpent;
+    private BigDecimal quantityReserved;
+    private BigDecimal availableQuantity;
     private AllocationStatus status;
 }

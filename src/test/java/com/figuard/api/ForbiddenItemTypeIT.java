@@ -30,7 +30,7 @@ class ForbiddenItemTypeIT extends IntegrationTestBase {
             "agentId", "agent_001",
             "actionType", "PURCHASE",
             "description", "forbidden item test",
-            "requestedAmount", 50.00,
+            "requestedQuantity", 50.00,
             "currency", "USD",
             "claimedCategory", "entertainment",
             "claimedItemType", "gift_card",    // explicitly blocked
@@ -55,7 +55,7 @@ class ForbiddenItemTypeIT extends IntegrationTestBase {
             "agentId", "agent_001",
             "actionType", "PURCHASE",
             "description", "allowed item test",
-            "requestedAmount", 50.00,
+            "requestedQuantity", 50.00,
             "currency", "USD",
             "claimedCategory", "entertainment",
             "claimedItemType", "concert_ticket",   // not in forbidden list

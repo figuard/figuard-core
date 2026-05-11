@@ -48,7 +48,7 @@ class LedgerIntegrityIT extends IntegrationTestBase {
     }
 
     // -------------------------------------------------------------------------
-    // OVERSPEND — amountSpent + amountReserved > totalLimit
+    // OVERSPEND — quantitySpent + quantityReserved > totalLimit
     // -------------------------------------------------------------------------
 
     @Test
@@ -56,9 +56,9 @@ class LedgerIntegrityIT extends IntegrationTestBase {
         String[] info = createBudgetAndAuthorize(100.00);
         UUID budgetId = UUID.fromString(info[1]);
 
-        // Corrupt the budget: force amountSpent to exceed totalLimit
+        // Corrupt the budget: force quantitySpent to exceed totalLimit
         AgentBudget budget = budgetRepository.findById(budgetId).orElseThrow();
-        budget.setAmountSpent(new BigDecimal("600.00")); // totalLimit is 500
+        budget.setQuantitySpent(new BigDecimal("600.00")); // totalLimit is 500
         budgetRepository.save(budget);
 
         // checkIntegrity must detect the violation — it should NOT throw
@@ -70,7 +70,7 @@ class LedgerIntegrityIT extends IntegrationTestBase {
     }
 
     // -------------------------------------------------------------------------
-    // RESERVATION_MISMATCH — budget.amountReserved != SUM(AUTHORIZED events)
+    // RESERVATION_MISMATCH — budget.quantityReserved != SUM(AUTHORIZED events)
     // -------------------------------------------------------------------------
 
     @Test
@@ -78,9 +78,9 @@ class LedgerIntegrityIT extends IntegrationTestBase {
         String[] info = createBudgetAndAuthorize(100.00);
         UUID budgetId = UUID.fromString(info[1]);
 
-        // Corrupt: set amountReserved to something different from the actual event sum
+        // Corrupt: set quantityReserved to something different from the actual event sum
         AgentBudget budget = budgetRepository.findById(budgetId).orElseThrow();
-        budget.setAmountReserved(new BigDecimal("999.00")); // AUTHORIZED events sum to 100
+        budget.setQuantityReserved(new BigDecimal("999.00")); // AUTHORIZED events sum to 100
         budgetRepository.save(budget);
 
         integrityService.checkIntegrity(); // detects RESERVATION_MISMATCH
@@ -89,7 +89,7 @@ class LedgerIntegrityIT extends IntegrationTestBase {
     }
 
     // -------------------------------------------------------------------------
-    // SPEND_MISMATCH — budget.amountSpent != SUM(CONFIRMED events)
+    // SPEND_MISMATCH — budget.quantitySpent != SUM(CONFIRMED events)
     // -------------------------------------------------------------------------
 
     @Test
@@ -103,12 +103,12 @@ class LedgerIntegrityIT extends IntegrationTestBase {
         mockMvc.perform(post("/api/v1/events/{id}/confirm", eventId)
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("confirmedAmount", 100.00))))
+                .content(objectMapper.writeValueAsString(Map.of("confirmedQuantity", 100.00))))
             .andExpect(status().isOk());
 
-        // Corrupt: set amountSpent to something that doesn't match CONFIRMED event sum
+        // Corrupt: set quantitySpent to something that doesn't match CONFIRMED event sum
         AgentBudget budget = budgetRepository.findById(budgetId).orElseThrow();
-        budget.setAmountSpent(new BigDecimal("50.00")); // CONFIRMED sum is 100
+        budget.setQuantitySpent(new BigDecimal("50.00")); // CONFIRMED sum is 100
         budgetRepository.save(budget);
 
         integrityService.checkIntegrity(); // detects SPEND_MISMATCH
@@ -128,7 +128,7 @@ class LedgerIntegrityIT extends IntegrationTestBase {
         // Cancel and corrupt — cancelled budgets must not be checked
         AgentBudget budget = budgetRepository.findById(budgetId).orElseThrow();
         budget.setStatus(com.figuard.domain.enums.BudgetStatus.CANCELLED);
-        budget.setAmountSpent(new BigDecimal("9999.00")); // obviously corrupt
+        budget.setQuantitySpent(new BigDecimal("9999.00")); // obviously corrupt
         budgetRepository.save(budget);
 
         // Should not detect or report a violation for CANCELLED budgets
@@ -167,7 +167,7 @@ class LedgerIntegrityIT extends IntegrationTestBase {
                     "agentId", "agent_integrity_test",
                     "actionType", "PURCHASE",
                     "description", "integrity test",
-                    "requestedAmount", amount,
+                    "requestedQuantity", amount,
                     "idempotencyKey", UUID.randomUUID().toString()
                 ))))
             .andExpect(status().isOk())

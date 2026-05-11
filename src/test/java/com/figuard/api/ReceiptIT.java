@@ -143,7 +143,7 @@ class ReceiptIT extends IntegrationTestBase {
                         "agentId", "agent_receipt_test",
                         "actionType", "PURCHASE",
                         "description", "Receipt test purchase",
-                        "requestedAmount", Double.parseDouble(amount),
+                        "requestedQuantity", Double.parseDouble(amount),
                         "currency", "USD",
                         "idempotencyKey", UUID.randomUUID().toString()))))
             .andExpect(status().isOk())
@@ -157,7 +157,7 @@ class ReceiptIT extends IntegrationTestBase {
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of(
-                        "confirmedAmount", Double.parseDouble(confirmedAmount)))))
+                        "confirmedQuantity", Double.parseDouble(confirmedAmount)))))
             .andExpect(status().isOk());
     }
 

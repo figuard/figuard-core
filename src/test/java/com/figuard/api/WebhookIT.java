@@ -128,7 +128,7 @@ class WebhookIT extends IntegrationTestBase {
         assertThat(json.get("eventType").asText()).isEqualTo("BUDGET_90_PCT");
         assertThat(json.get("budgetId").asText()).isEqualTo(budget.id());
         assertThat(json.has("totalLimit")).isTrue();
-        assertThat(json.has("availableAmount")).isTrue();
+        assertThat(json.has("availableQuantity")).isTrue();
         assertThat(json.has("percentUsed")).isTrue();
         assertThat(json.has("timestamp")).isTrue();
     }
@@ -147,7 +147,7 @@ class WebhookIT extends IntegrationTestBase {
                     "agentId", "agent_001",
                     "actionType", "PURCHASE",
                     "description", "over limit",
-                    "requestedAmount", 999.00,
+                    "requestedQuantity", 999.00,
                     "currency", "USD",
                     "idempotencyKey", UUID.randomUUID().toString()))))
             .andExpect(status().isOk())
@@ -214,7 +214,7 @@ class WebhookIT extends IntegrationTestBase {
                     "agentId", "agent_001",
                     "actionType", "PURCHASE",
                     "description", "test",
-                    "requestedAmount", 5.00,   // small amount, no threshold crossed
+                    "requestedQuantity", 5.00,   // small amount, no threshold crossed
                     "currency", "USD",
                     "idempotencyKey", UUID.randomUUID().toString()))))
             .andExpect(status().isOk())
@@ -268,7 +268,7 @@ class WebhookIT extends IntegrationTestBase {
                     "agentId", "agent_webhook_test",
                     "actionType", "PURCHASE",
                     "description", "webhook test",
-                    "requestedAmount", Double.parseDouble(amount),
+                    "requestedQuantity", Double.parseDouble(amount),
                     "currency", "USD",
                     "idempotencyKey", UUID.randomUUID().toString()))))
             .andExpect(status().isOk());

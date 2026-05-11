@@ -1,8 +1,10 @@
 package com.figuard.domain.repository;
 
 import com.figuard.domain.entity.AgentBudget;
+import com.figuard.domain.entity.Tenant;
 import com.figuard.domain.enums.BudgetStatus;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -49,4 +51,9 @@ public interface AgentBudgetRepository extends JpaRepository<AgentBudget, UUID> 
     // Integrity sweep: page through all non-terminal budgets without loading millions at once.
     // Spring Data derives the query from the method name — no @Query needed.
     List<AgentBudget> findByStatusIn(Collection<BudgetStatus> statuses, Pageable pageable);
+
+    // Dashboard list: all budgets for a tenant, optionally filtered by status, newest first.
+    Page<AgentBudget> findByTenant(Tenant tenant, Pageable pageable);
+
+    Page<AgentBudget> findByTenantAndStatus(Tenant tenant, BudgetStatus status, Pageable pageable);
 }

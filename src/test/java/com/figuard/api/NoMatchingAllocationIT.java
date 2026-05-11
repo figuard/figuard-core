@@ -30,7 +30,7 @@ class NoMatchingAllocationIT extends IntegrationTestBase {
             "agentId", "agent_001",
             "actionType", "PURCHASE",
             "description", "no match test",
-            "requestedAmount", 50.00,
+            "requestedQuantity", 50.00,
             "currency", "USD",
             "claimedCategory", "car_rental",   // no allocation covers this
             "idempotencyKey", UUID.randomUUID().toString()
@@ -54,7 +54,7 @@ class NoMatchingAllocationIT extends IntegrationTestBase {
             "agentId", "agent_001",
             "actionType", "PURCHASE",
             "description", "match test",
-            "requestedAmount", 50.00,
+            "requestedQuantity", 50.00,
             "currency", "USD",
             "claimedCategory", "hotel",
             "idempotencyKey", UUID.randomUUID().toString()

@@ -87,7 +87,7 @@ class ClockSkewExpiryIT extends IntegrationTestBase {
             "agentId", "agent_001",
             "actionType", "PURCHASE",
             "description", "clock skew test",
-            "requestedAmount", Double.parseDouble(amount),
+            "requestedQuantity", Double.parseDouble(amount),
             "currency", "USD",
             "idempotencyKey", UUID.randomUUID().toString()
         ));

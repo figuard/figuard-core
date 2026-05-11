@@ -63,7 +63,7 @@ class ConfirmationTimeoutSweepIT extends IntegrationTestBase {
 
         // Verify reservation is held before sweep
         var budgetBefore = budgetRepository.findById(budgetId).orElseThrow();
-        assertThat(budgetBefore.getAmountReserved()).isEqualByComparingTo("150.00");
+        assertThat(budgetBefore.getQuantityReserved()).isEqualByComparingTo("150.00");
 
         SpendEvent event = eventRepository.findById(eventId).orElseThrow();
         event.setConfirmationTimeoutAt(OffsetDateTime.now().minusSeconds(1));
@@ -72,8 +72,8 @@ class ConfirmationTimeoutSweepIT extends IntegrationTestBase {
         sweepService.doSweep();
 
         var budgetAfter = budgetRepository.findById(budgetId).orElseThrow();
-        assertThat(budgetAfter.getAmountReserved()).isEqualByComparingTo("0.00");
-        assertThat(budgetAfter.getAmountSpent()).isEqualByComparingTo("0.00");
+        assertThat(budgetAfter.getQuantityReserved()).isEqualByComparingTo("0.00");
+        assertThat(budgetAfter.getQuantitySpent()).isEqualByComparingTo("0.00");
     }
 
     @Test
@@ -97,7 +97,7 @@ class ConfirmationTimeoutSweepIT extends IntegrationTestBase {
         mockMvc.perform(post("/api/v1/events/{id}/confirm", eventId)
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("confirmedAmount", 50.00))))
+                .content(objectMapper.writeValueAsString(Map.of("confirmedQuantity", 50.00))))
             .andExpect(status().isOk());
 
         // Now backdate the timeout — sweep should be a no-op for CONFIRMED events
@@ -161,7 +161,7 @@ class ConfirmationTimeoutSweepIT extends IntegrationTestBase {
                     "agentId", "agent_retry",
                     "actionType", "PURCHASE",
                     "description", "retry after timeout",
-                    "requestedAmount", 200.00,
+                    "requestedQuantity", 200.00,
                     "idempotencyKey", UUID.randomUUID().toString()
                 ))))
             .andExpect(status().isOk())
@@ -199,7 +199,7 @@ class ConfirmationTimeoutSweepIT extends IntegrationTestBase {
             "agentId", "agent_sweep_test",
             "actionType", "PURCHASE",
             "description", "timeout sweep test",
-            "requestedAmount", amount,
+            "requestedQuantity", amount,
             "idempotencyKey", UUID.randomUUID().toString()
         ));
 

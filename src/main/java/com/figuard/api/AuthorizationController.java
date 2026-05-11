@@ -88,7 +88,7 @@ public class AuthorizationController {
                 MDC.put("budgetId", response.getBudgetSnapshot().getId().toString());
             }
             MDC.put("agentId", request.getAgentId());
-            MDC.put("requestedAmount", request.getRequestedAmount().toPlainString());
+            MDC.put("requestedQuantity", request.getRequestedQuantity().toPlainString());
             MDC.put("decision", response.getDecision().name());
             if (response.getAllocationSnapshot() != null) {
                 MDC.put("allocationCategory", response.getAllocationSnapshot().getCategory());
@@ -102,7 +102,7 @@ public class AuthorizationController {
             MDC.remove("event");
             MDC.remove("budgetId");
             MDC.remove("agentId");
-            MDC.remove("requestedAmount");
+            MDC.remove("requestedQuantity");
             MDC.remove("decision");
             MDC.remove("allocationCategory");
             MDC.remove("denialReason");

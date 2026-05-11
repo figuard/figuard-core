@@ -38,14 +38,14 @@ class ConfirmEdgeCasesIT extends IntegrationTestBase {
         mockMvc.perform(post("/api/v1/events/{id}/confirm", eventId)
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("confirmedAmount", 100.00))))
+                .content(objectMapper.writeValueAsString(Map.of("confirmedQuantity", 100.00))))
             .andExpect(status().isOk());
 
         // Second confirm — must fail
         mockMvc.perform(post("/api/v1/events/{id}/confirm", eventId)
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("confirmedAmount", 100.00))))
+                .content(objectMapper.writeValueAsString(Map.of("confirmedQuantity", 100.00))))
             .andExpect(status().isConflict());
     }
 
@@ -65,7 +65,7 @@ class ConfirmEdgeCasesIT extends IntegrationTestBase {
         mockMvc.perform(post("/api/v1/events/{id}/confirm", eventId)
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("confirmedAmount", 80.00))))
+                .content(objectMapper.writeValueAsString(Map.of("confirmedQuantity", 80.00))))
             .andExpect(status().isConflict());
     }
 
@@ -74,7 +74,7 @@ class ConfirmEdgeCasesIT extends IntegrationTestBase {
         mockMvc.perform(post("/api/v1/events/{id}/confirm", UUID.randomUUID())
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("confirmedAmount", 50.00))))
+                .content(objectMapper.writeValueAsString(Map.of("confirmedQuantity", 50.00))))
             .andExpect(status().isNotFound());
     }
 
@@ -92,19 +92,19 @@ class ConfirmEdgeCasesIT extends IntegrationTestBase {
         mockMvc.perform(post("/api/v1/events/{id}/confirm", eventId1)
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("confirmedAmount", 150.00))))
+                .content(objectMapper.writeValueAsString(Map.of("confirmedQuantity", 150.00))))
             .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/v1/events/{id}/confirm", eventId2)
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("confirmedAmount", 200.00))))
+                .content(objectMapper.writeValueAsString(Map.of("confirmedQuantity", 200.00))))
             .andExpect(status().isOk());
 
         AgentBudget b = budgetRepository.findById(UUID.fromString(budgetId)).orElseThrow();
-        assertThat(b.getAmountSpent()).isEqualByComparingTo("350.00");
-        assertThat(b.getAmountReserved()).isEqualByComparingTo("0.00");
-        assertThat(b.availableAmount()).isEqualByComparingTo("150.00");
+        assertThat(b.getQuantitySpent()).isEqualByComparingTo("350.00");
+        assertThat(b.getQuantityReserved()).isEqualByComparingTo("0.00");
+        assertThat(b.availableQuantity()).isEqualByComparingTo("150.00");
     }
 
     @Test
@@ -134,7 +134,7 @@ class ConfirmEdgeCasesIT extends IntegrationTestBase {
         mockMvc.perform(post("/api/v1/events/{id}/confirm", eventId)
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("confirmedAmount", 90.00))))
+                .content(objectMapper.writeValueAsString(Map.of("confirmedQuantity", 90.00))))
             .andExpect(status().isOk());
 
         // Fail after confirm — must be rejected
@@ -155,8 +155,8 @@ class ConfirmEdgeCasesIT extends IntegrationTestBase {
 
         // Verify reservation is held
         AgentBudget before = budgetRepository.findById(UUID.fromString(budgetId)).orElseThrow();
-        assertThat(before.getAmountReserved()).isEqualByComparingTo("300.00");
-        assertThat(before.availableAmount()).isEqualByComparingTo("200.00");
+        assertThat(before.getQuantityReserved()).isEqualByComparingTo("300.00");
+        assertThat(before.availableQuantity()).isEqualByComparingTo("200.00");
 
         // Fail the event
         mockMvc.perform(post("/api/v1/events/{id}/fail", eventId)
@@ -166,9 +166,9 @@ class ConfirmEdgeCasesIT extends IntegrationTestBase {
             .andExpect(status().isOk());
 
         AgentBudget after = budgetRepository.findById(UUID.fromString(budgetId)).orElseThrow();
-        assertThat(after.getAmountReserved()).isEqualByComparingTo("0.00");
-        assertThat(after.getAmountSpent()).isEqualByComparingTo("0.00");
-        assertThat(after.availableAmount()).isEqualByComparingTo("500.00");
+        assertThat(after.getQuantityReserved()).isEqualByComparingTo("0.00");
+        assertThat(after.getQuantitySpent()).isEqualByComparingTo("0.00");
+        assertThat(after.availableQuantity()).isEqualByComparingTo("500.00");
     }
 
     // -------------------------------------------------------------------------
@@ -210,7 +210,7 @@ class ConfirmEdgeCasesIT extends IntegrationTestBase {
                     "agentId", "agent_edge_test",
                     "actionType", "PURCHASE",
                     "description", "confirm edge test",
-                    "requestedAmount", amount,
+                    "requestedQuantity", amount,
                     "idempotencyKey", UUID.randomUUID().toString()
                 ))))
             .andExpect(status().isOk())

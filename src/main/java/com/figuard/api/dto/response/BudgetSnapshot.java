@@ -16,8 +16,8 @@ public class BudgetSnapshot {
     private UUID id;
 
     private BigDecimal totalLimit;
-    private BigDecimal amountSpent;
-    private BigDecimal amountReserved;
-    private BigDecimal availableAmount;
+    private BigDecimal quantitySpent;
+    private BigDecimal quantityReserved;
+    private BigDecimal availableQuantity;
     private BudgetStatus status;
 }

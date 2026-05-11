@@ -49,14 +49,14 @@ public class SpendEvent {
     private String description;
 
     @Column(nullable = false, precision = 19, scale = 4)
-    private BigDecimal requestedAmount;
+    private BigDecimal requestedQuantity;
 
     @Column(precision = 19, scale = 4)
-    private BigDecimal confirmedAmount;         // actual amount charged; set by /confirm
+    private BigDecimal confirmedQuantity;       // actual quantity charged; set by /confirm
 
     @JdbcTypeCode(SqlTypes.CHAR)
-    @Column(nullable = false, columnDefinition = "CHAR(3)")
-    private String currency = "USD";
+    @Column(columnDefinition = "CHAR(3)")
+    private String currency;
 
     // Structured intent — enforcement fields (NOT intentContext)
     private String claimedCategory;             // agent's declared category e.g. "flight"
@@ -95,6 +95,12 @@ public class SpendEvent {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 12)
     private SpendDecision decision;
+
+    // Links all events from one agent run (e.g. one LangChain invocation).
+    // Set by the caller on authorize — propagated to every event in the run.
+    // Indexed; filterable on the ledger endpoint via ?traceId=...
+    @Column(length = 255)
+    private String traceId;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")

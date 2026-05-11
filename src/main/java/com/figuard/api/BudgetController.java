@@ -6,6 +6,7 @@ import com.figuard.api.dto.request.UpdateBudgetRequest;
 import com.figuard.api.dto.response.BudgetResponse;
 import com.figuard.api.dto.response.SpendEventResponse;
 import com.figuard.api.dto.response.SpendTreeResponse;
+import com.figuard.domain.enums.BudgetStatus;
 import com.figuard.domain.enums.SpendDecision;
 import com.figuard.security.TenantContext;
 import com.figuard.service.BudgetService;
@@ -27,6 +28,15 @@ public class BudgetController {
 
     private final BudgetService budgetService;
     private final LedgerService ledgerService;
+
+    @GetMapping
+    public ResponseEntity<Page<BudgetResponse>> listBudgets(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) BudgetStatus status) {
+        Page<BudgetResponse> budgets = budgetService.listBudgets(TenantContext.get(), page, size, status);
+        return ResponseEntity.ok(budgets);
+    }
 
     @PostMapping
     public ResponseEntity<BudgetResponse> createBudget(@Valid @RequestBody CreateBudgetRequest request) {
@@ -76,8 +86,9 @@ public class BudgetController {
             @PathVariable UUID id,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false) SpendDecision decision) {
-        Page<SpendEventResponse> ledger = ledgerService.getLedger(id, TenantContext.get(), page, size, decision);
+            @RequestParam(required = false) SpendDecision decision,
+            @RequestParam(required = false) String traceId) {
+        Page<SpendEventResponse> ledger = ledgerService.getLedger(id, TenantContext.get(), page, size, decision, traceId);
         return ResponseEntity.ok(ledger);
     }
 

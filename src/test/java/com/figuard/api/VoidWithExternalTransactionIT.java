@@ -33,7 +33,7 @@ class VoidWithExternalTransactionIT extends IntegrationTestBase {
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of(
-                    "confirmedAmount", 100.00,
+                    "confirmedQuantity", 100.00,
                     "externalTransactionId", "stripe_pi_test_abc123"
                 ))))
             .andExpect(status().isOk())
@@ -63,7 +63,7 @@ class VoidWithExternalTransactionIT extends IntegrationTestBase {
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of(
-                    "confirmedAmount", 80.00,
+                    "confirmedQuantity", 80.00,
                     "externalTransactionId", "ch_3test_stripe"
                 ))))
             .andExpect(status().isOk());
@@ -122,7 +122,7 @@ class VoidWithExternalTransactionIT extends IntegrationTestBase {
                     "agentId", "agent_001",
                     "actionType", "PURCHASE",
                     "description", "void test",
-                    "requestedAmount", Double.parseDouble(amount),
+                    "requestedQuantity", Double.parseDouble(amount),
                     "currency", "USD",
                     "idempotencyKey", UUID.randomUUID().toString()
                 ))))

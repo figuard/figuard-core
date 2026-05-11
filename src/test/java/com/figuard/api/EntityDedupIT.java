@@ -163,7 +163,7 @@ class EntityDedupIT extends IntegrationTestBase {
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"confirmedAmount": 200.00}
+                    {"confirmedQuantity": 200.00}
                     """))
             .andExpect(status().isOk());
 
@@ -205,7 +205,7 @@ class EntityDedupIT extends IntegrationTestBase {
                 "agentId", "agent_dedup_test",
                 "actionType", "PURCHASE",
                 "description", "dedup test",
-                "requestedAmount", Double.parseDouble(amount),
+                "requestedQuantity", Double.parseDouble(amount),
                 "entityId", entityId,
                 "idempotencyKey", idempotencyKey
             ))));
@@ -221,7 +221,7 @@ class EntityDedupIT extends IntegrationTestBase {
                 "agentId", "agent_dedup_test",
                 "actionType", "PURCHASE",
                 "description", "dedup no-entity test",
-                "requestedAmount", Double.parseDouble(amount),
+                "requestedQuantity", Double.parseDouble(amount),
                 "idempotencyKey", idempotencyKey
             ))));
     }

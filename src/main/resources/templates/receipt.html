@@ -58,7 +58,7 @@
         </div>
         <div class="summary-row">
             <span class="label">Total Spent</span>
-            <span class="value green" th:text="${budget.currency + ' ' + #numbers.formatDecimal(budget.amountSpent, 1, 2)}">—</span>
+            <span class="value green" th:text="${(budget.currency ?: budget.unit) + ' ' + #numbers.formatDecimal(budget.quantitySpent, 1, 2)}">—</span>
         </div>
         <div class="summary-row">
             <span class="label">Transactions</span>
@@ -78,7 +78,7 @@
             </div>
             <div class="event-right">
                 <div class="amount"
-                     th:text="${event.currency + ' ' + #numbers.formatDecimal(event.confirmedAmount, 1, 2)}">
+                     th:text="${(event.currency ?: budget.unit) + ' ' + #numbers.formatDecimal(event.confirmedQuantity, 1, 2)}">
                     USD 0.00
                 </div>
                 <div class="agent" th:text="${event.agentId}">agent-id</div>

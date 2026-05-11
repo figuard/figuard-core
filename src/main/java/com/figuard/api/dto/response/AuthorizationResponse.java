@@ -17,7 +17,7 @@ public class AuthorizationResponse {
     private SpendDecision decision;
 
     // Set when decision = AUTHORIZED
-    private BigDecimal approvedAmount;
+    private BigDecimal approvedQuantity;
     private OffsetDateTime authorizedAt;
 
     // Set when decision = DENIED

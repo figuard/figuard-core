@@ -20,8 +20,8 @@ public class SpendEventResponse {
     private String agentType;
     private String actionType;
     private String description;
-    private BigDecimal requestedAmount;
-    private BigDecimal confirmedAmount;     // null until /confirm is called
+    private BigDecimal requestedQuantity;
+    private BigDecimal confirmedQuantity;   // null until /confirm is called
     private String currency;
 
     // The real-world entity this spend relates to
@@ -38,6 +38,7 @@ public class SpendEventResponse {
     private DenialCode denialReason;
     private String failureReason;
     private UUID parentEventId;
+    private String traceId;
     private OffsetDateTime createdAt;
     private Map<String, Object> metadata;
 }

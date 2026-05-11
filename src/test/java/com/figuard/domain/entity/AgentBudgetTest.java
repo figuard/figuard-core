@@ -14,15 +14,15 @@ class AgentBudgetTest {
                                BudgetStatus status, OffsetDateTime expiresAt) {
         AgentBudget b = new AgentBudget();
         b.setTotalLimit(total);
-        b.setAmountSpent(spent);
-        b.setAmountReserved(reserved);
+        b.setQuantitySpent(spent);
+        b.setQuantityReserved(reserved);
         b.setStatus(status);
         b.setExpiresAt(expiresAt);
         return b;
     }
 
     @Test
-    void availableAmount_correctlySubtractsSpentAndReserved() {
+    void availableQuantity_correctlySubtractsSpentAndReserved() {
         AgentBudget b = budget(
             new BigDecimal("500.00"),
             new BigDecimal("100.00"),
@@ -30,7 +30,7 @@ class AgentBudgetTest {
             BudgetStatus.ACTIVE,
             OffsetDateTime.now().plusHours(1)
         );
-        assertThat(b.availableAmount()).isEqualByComparingTo("350.00");
+        assertThat(b.availableQuantity()).isEqualByComparingTo("350.00");
     }
 
     @Test

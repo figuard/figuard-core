@@ -15,7 +15,7 @@ import java.util.Map;
  * Builds the JSON payload delivered to webhook endpoints.
  *
  * All payloads include: eventType, budgetId, tenantId, timestamp.
- * Threshold events include usage percentages. Spend events include event ID and amounts.
+ * Threshold events include usage percentages. Spend events include event ID and quantities.
  */
 @Component
 public class WebhookPayloadBuilder {
@@ -23,41 +23,41 @@ public class WebhookPayloadBuilder {
     public Map<String, Object> buildThresholdPayload(WebhookEventType eventType,
                                                       AgentBudget budget) {
         Map<String, Object> payload = basePayload(eventType, budget);
-        payload.put("totalLimit",      budget.getTotalLimit());
-        payload.put("amountSpent",     budget.getAmountSpent());
-        payload.put("amountReserved",  budget.getAmountReserved());
-        payload.put("availableAmount", budget.availableAmount());
-        payload.put("percentUsed",     percentUsed(budget));
+        payload.put("totalLimit",        budget.getTotalLimit());
+        payload.put("quantitySpent",     budget.getQuantitySpent());
+        payload.put("quantityReserved",  budget.getQuantityReserved());
+        payload.put("availableQuantity", budget.availableQuantity());
+        payload.put("percentUsed",       percentUsed(budget));
         return payload;
     }
 
     public Map<String, Object> buildSpendDeniedPayload(AgentBudget budget,
                                                         SpendEvent event) {
         Map<String, Object> payload = basePayload(WebhookEventType.SPEND_DENIED, budget);
-        payload.put("spendEventId",    event.getId());
-        payload.put("requestedAmount", event.getRequestedAmount());
-        payload.put("denialReason",    event.getDenialReason());
-        payload.put("denialMessage",   event.getDenialMessage());
-        payload.put("agentId",         event.getAgentId());
-        payload.put("currency",        event.getCurrency());
+        payload.put("spendEventId",      event.getId());
+        payload.put("requestedQuantity", event.getRequestedQuantity());
+        payload.put("denialReason",      event.getDenialReason());
+        payload.put("denialMessage",     event.getDenialMessage());
+        payload.put("agentId",           event.getAgentId());
+        payload.put("currency",          event.getCurrency());
         return payload;
     }
 
     public Map<String, Object> buildSpendVoidedPayload(AgentBudget budget,
                                                         SpendEvent event) {
         Map<String, Object> payload = basePayload(WebhookEventType.SPEND_VOIDED, budget);
-        payload.put("spendEventId",    event.getId());
-        payload.put("requestedAmount", event.getRequestedAmount());
-        payload.put("voidReason",      event.getFailureReason());
-        payload.put("agentId",         event.getAgentId());
-        payload.put("currency",        event.getCurrency());
+        payload.put("spendEventId",      event.getId());
+        payload.put("requestedQuantity", event.getRequestedQuantity());
+        payload.put("voidReason",        event.getFailureReason());
+        payload.put("agentId",           event.getAgentId());
+        payload.put("currency",          event.getCurrency());
         return payload;
     }
 
     public Map<String, Object> buildBudgetExpiredUnusedPayload(AgentBudget budget) {
         Map<String, Object> payload = basePayload(WebhookEventType.BUDGET_EXPIRED_UNUSED, budget);
-        payload.put("expiresAt",       budget.getExpiresAt());
-        payload.put("totalLimit",      budget.getTotalLimit());
+        payload.put("expiresAt",         budget.getExpiresAt());
+        payload.put("totalLimit",        budget.getTotalLimit());
         return payload;
     }
 
@@ -66,37 +66,37 @@ public class WebhookPayloadBuilder {
                                                             BigDecimal baselineMean,
                                                             BigDecimal threshold) {
         Map<String, Object> payload = basePayload(WebhookEventType.ANOMALY_DETECTED, budget);
-        payload.put("spendEventId",    event.getId());
-        payload.put("requestedAmount", event.getRequestedAmount());
-        payload.put("baselineMean",    baselineMean);
-        payload.put("threshold",       threshold);
-        payload.put("agentId",         event.getAgentId());
+        payload.put("spendEventId",      event.getId());
+        payload.put("requestedQuantity", event.getRequestedQuantity());
+        payload.put("baselineMean",      baselineMean);
+        payload.put("threshold",         threshold);
+        payload.put("agentId",           event.getAgentId());
         return payload;
     }
 
     public Map<String, Object> buildSpendConfirmedPayload(AgentBudget budget,
                                                             SpendEvent event) {
         Map<String, Object> payload = basePayload(WebhookEventType.SPEND_CONFIRMED, budget);
-        payload.put("spendEventId",     event.getId());
-        payload.put("requestedAmount",  event.getRequestedAmount());
-        payload.put("confirmedAmount",  event.getConfirmedAmount());
-        payload.put("agentId",          event.getAgentId());
-        payload.put("currency",         event.getCurrency());
-        payload.put("totalLimit",       budget.getTotalLimit());
-        payload.put("amountSpent",      budget.getAmountSpent());
-        payload.put("availableAmount",  budget.availableAmount());
+        payload.put("spendEventId",      event.getId());
+        payload.put("requestedQuantity", event.getRequestedQuantity());
+        payload.put("confirmedQuantity", event.getConfirmedQuantity());
+        payload.put("agentId",           event.getAgentId());
+        payload.put("currency",          event.getCurrency());
+        payload.put("totalLimit",        budget.getTotalLimit());
+        payload.put("quantitySpent",     budget.getQuantitySpent());
+        payload.put("availableQuantity", budget.availableQuantity());
         return payload;
     }
 
     public Map<String, Object> buildSpendPaymentFailedPayload(AgentBudget budget,
                                                                SpendEvent event) {
         Map<String, Object> payload = basePayload(WebhookEventType.SPEND_PAYMENT_FAILED, budget);
-        payload.put("spendEventId",     event.getId());
-        payload.put("requestedAmount",  event.getRequestedAmount());
-        payload.put("failureReason",    event.getFailureReason());
-        payload.put("agentId",          event.getAgentId());
-        payload.put("currency",         event.getCurrency());
-        payload.put("availableAmount",  budget.availableAmount());
+        payload.put("spendEventId",      event.getId());
+        payload.put("requestedQuantity", event.getRequestedQuantity());
+        payload.put("failureReason",     event.getFailureReason());
+        payload.put("agentId",           event.getAgentId());
+        payload.put("currency",          event.getCurrency());
+        payload.put("availableQuantity", budget.availableQuantity());
         return payload;
     }
 
@@ -104,12 +104,12 @@ public class WebhookPayloadBuilder {
                                                                       String violationType,
                                                                       String detail) {
         Map<String, Object> payload = basePayload(WebhookEventType.LEDGER_INTEGRITY_VIOLATION, budget);
-        payload.put("violationType",    violationType);
-        payload.put("detail",           detail);
-        payload.put("totalLimit",       budget.getTotalLimit());
-        payload.put("amountSpent",      budget.getAmountSpent());
-        payload.put("amountReserved",   budget.getAmountReserved());
-        payload.put("availableAmount",  budget.availableAmount());
+        payload.put("violationType",     violationType);
+        payload.put("detail",            detail);
+        payload.put("totalLimit",        budget.getTotalLimit());
+        payload.put("quantitySpent",     budget.getQuantitySpent());
+        payload.put("quantityReserved",  budget.getQuantityReserved());
+        payload.put("availableQuantity", budget.availableQuantity());
         return payload;
     }
 
@@ -132,14 +132,15 @@ public class WebhookPayloadBuilder {
         payload.put("budgetId",   budget.getId());
         payload.put("tenantId",   budget.getTenant().getId());
         payload.put("userId",     budget.getUserId());
-        payload.put("currency",   budget.getCurrency() != null ? budget.getCurrency().trim() : "USD");
+        payload.put("currency",   budget.getCurrency() != null ? budget.getCurrency().trim() : null);
+        payload.put("unit",       budget.getUnit());
         payload.put("timestamp",  OffsetDateTime.now().toString());
         return payload;
     }
 
     private double percentUsed(AgentBudget budget) {
         if (budget.getTotalLimit().compareTo(BigDecimal.ZERO) == 0) return 0.0;
-        BigDecimal used = budget.getAmountSpent().add(budget.getAmountReserved());
+        BigDecimal used = budget.getQuantitySpent().add(budget.getQuantityReserved());
         return used.multiply(new BigDecimal("100"))
             .divide(budget.getTotalLimit(), 2, RoundingMode.HALF_UP)
             .doubleValue();

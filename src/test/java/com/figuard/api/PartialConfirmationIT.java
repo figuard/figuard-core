@@ -52,11 +52,11 @@ class PartialConfirmationIT extends IntegrationTestBase {
                     "agentId", "agent_partial_test",
                     "actionType", "PURCHASE",
                     "description", "hotel stay",
-                    "requestedAmount", 89.00,
+                    "requestedQuantity", 89.00,
                     "idempotencyKey", UUID.randomUUID().toString()))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.decision").value("AUTHORIZED"))
-            .andExpect(jsonPath("$.budgetSnapshot.availableAmount", closeTo(111.00, 0.001)))
+            .andExpect(jsonPath("$.budgetSnapshot.availableQuantity", closeTo(111.00, 0.001)))
             .andReturn().getResponse().getContentAsString();
 
         String eventId = objectMapper.readTree(authResp).get("eventId").asText();
@@ -64,23 +64,23 @@ class PartialConfirmationIT extends IntegrationTestBase {
         // Confirm $87.50 (partial — $1.50 less than requested)
         // Full reservation ($89.00) is released; only $87.50 is debited.
         // Expected post-confirm state:
-        //   amountReserved = 0.00
-        //   amountSpent    = 87.50
+        //   quantityReserved = 0.00
+        //   quantitySpent    = 87.50
         //   availableAmount = 200.00 - 87.50 = 112.50
         mockMvc.perform(post("/api/v1/events/{id}/confirm", eventId)
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of(
-                    "confirmedAmount", 87.50))))
+                    "confirmedQuantity", 87.50))))
             .andExpect(status().isOk());
 
         // Assert budget state after partial confirmation
         mockMvc.perform(get("/api/v1/budgets/{id}", budgetId)
                 .header("X-Agent-Budget-Key", TEST_API_KEY))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.amountSpent",    closeTo(87.50,  0.001)))
-            .andExpect(jsonPath("$.amountReserved", closeTo(0.00,   0.001)))
-            .andExpect(jsonPath("$.availableAmount", closeTo(112.50, 0.001)));
+            .andExpect(jsonPath("$.quantitySpent",    closeTo(87.50,  0.001)))
+            .andExpect(jsonPath("$.quantityReserved", closeTo(0.00,   0.001)))
+            .andExpect(jsonPath("$.availableQuantity", closeTo(112.50, 0.001)));
     }
 
     private static String expiresAt() {

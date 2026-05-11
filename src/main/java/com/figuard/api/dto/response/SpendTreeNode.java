@@ -28,8 +28,8 @@ public class SpendTreeNode {
     private String agentType;
     private String actionType;
     private String description;
-    private BigDecimal requestedAmount;
-    private BigDecimal confirmedAmount;
+    private BigDecimal requestedQuantity;
+    private BigDecimal confirmedQuantity;
     private String currency;
     private String entityId;
     private String claimedCategory;
