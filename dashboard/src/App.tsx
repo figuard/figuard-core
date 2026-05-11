@@ -65,7 +65,7 @@ export function App() {
             to="/settings"
             className={({ isActive }) => navItem(isActive)}
           >
-            <span>⚙</span> Settings
+            <span>⚙</span> Connection
           </NavLink>
         </div>
       </aside>
@@ -80,7 +80,7 @@ export function App() {
                 onClick={() => navigate("/settings")}
                 className="font-medium underline hover:text-yellow-900"
               >
-                Open Settings
+                Open Connection settings
               </button>{" "}
               to connect to your FiGuard server.
             </div>
