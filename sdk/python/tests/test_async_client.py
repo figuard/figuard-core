@@ -41,9 +41,9 @@ def _budget_payload(session_token: bool = False) -> Dict[str, Any]:
         "userId": "user_test",
         "totalLimit": 500.0,
         "currency": "USD",
-        "amountSpent": 0.0,
-        "amountReserved": 0.0,
-        "availableAmount": 500.0,
+        "quantitySpent": 0.0,
+        "quantityReserved": 0.0,
+        "availableQuantity": 500.0,
         "status": "ACTIVE",
         "expiresAt": "2025-12-31T23:59:59Z",
         "createdAt": "2025-01-01T00:00:00Z",
@@ -59,13 +59,13 @@ def _authorized_payload() -> Dict[str, Any]:
     return {
         "eventId": EVENT_ID,
         "decision": "AUTHORIZED",
-        "approvedAmount": 100.0,
+        "approvedQuantity": 100.0,
         "authorizedAt": "2025-01-01T10:00:00Z",
         "budgetSnapshot": {
             "totalLimit": 500.0,
-            "amountSpent": 0.0,
-            "amountReserved": 100.0,
-            "availableAmount": 400.0,
+            "quantitySpent": 0.0,
+            "quantityReserved": 100.0,
+            "availableQuantity": 400.0,
             "status": "ACTIVE",
         },
     }
@@ -84,7 +84,7 @@ def _event_payload(decision: str = "CONFIRMED") -> Dict[str, Any]:
     return {
         "id": EVENT_ID,
         "decision": decision,
-        "requestedAmount": 100.0,
+        "requestedQuantity": 100.0,
         "currency": "USD",
         "createdAt": "2025-01-01T10:00:00Z",
     }
@@ -132,7 +132,7 @@ class TestCreateBudget:
         assert budget.id == BUDGET_ID
         assert budget.session_token == SESSION_TOKEN
         assert budget.status == "ACTIVE"
-        assert budget.available_amount == 500.0
+        assert budget.available_quantity == 500.0
         assert budget.is_active is True
 
     @pytest.mark.asyncio
@@ -176,7 +176,7 @@ class TestAuthorize:
                     agent_id="agent_001",
                     action_type="PURCHASE",
                     description="test",
-                    requested_amount=50.0,
+                    requested_quantity=50.0,
                 )
 
     @pytest.mark.asyncio
@@ -188,7 +188,7 @@ class TestAuthorize:
                     agent_id="agent_001",
                     action_type="PURCHASE",
                     description="test",
-                    requested_amount=50.0,
+                    requested_quantity=50.0,
                     idempotency_key="   ",
                 )
 
@@ -203,16 +203,16 @@ class TestAuthorize:
                     agent_id="agent_001",
                     action_type="PURCHASE",
                     description="NYC flight",
-                    requested_amount=100.0,
+                    requested_quantity=100.0,
                     idempotency_key=str(uuid.uuid4()),
                 )
 
         assert isinstance(result, AuthorizationResult)
         assert result.is_authorized is True
         assert result.event_id == EVENT_ID
-        assert result.approved_amount == 100.0
+        assert result.approved_quantity == 100.0
         assert result.budget_snapshot is not None
-        assert result.budget_snapshot.available_amount == 400.0
+        assert result.budget_snapshot.available_quantity == 400.0
 
     @pytest.mark.asyncio
     async def test_denied_is_authorized_false(self) -> None:
@@ -225,7 +225,7 @@ class TestAuthorize:
                     agent_id="agent_001",
                     action_type="PURCHASE",
                     description="too expensive",
-                    requested_amount=9999.0,
+                    requested_quantity=9999.0,
                     idempotency_key=str(uuid.uuid4()),
                 )
 
@@ -244,7 +244,7 @@ class TestAuthorize:
                         agent_id="agent_001",
                         action_type="PURCHASE",
                         description="paused budget",
-                        requested_amount=10.0,
+                        requested_quantity=10.0,
                         idempotency_key=str(uuid.uuid4()),
                     )).raise_if_denied()
 
@@ -269,7 +269,7 @@ class TestAuthorize:
                     agent_id="agent_001",
                     action_type="PURCHASE",
                     description="duplicate",
-                    requested_amount=50.0,
+                    requested_quantity=50.0,
                     idempotency_key=str(uuid.uuid4()),
                 )
 
@@ -293,7 +293,7 @@ class TestPaymentLifecycle:
             with aioresponses_ctx() as m:
                 m.post(f"{BASE}/api/v1/events/{EVENT_ID}/confirm",
                        payload=_event_payload("CONFIRMED"), status=200)
-                event = await client.confirm_event(EVENT_ID, confirmed_amount=95.0)
+                event = await client.confirm_event(EVENT_ID, confirmed_quantity=95.0)
 
         assert event.id == EVENT_ID
         assert event.decision == "CONFIRMED"
@@ -437,7 +437,7 @@ class TestConcurrentAuthorize:
                         agent_id=aid,
                         action_type="PURCHASE",
                         description=f"{aid} purchase",
-                        requested_amount=50.0,
+                        requested_quantity=50.0,
                         idempotency_key=ikey,
                     )
                     for aid, ikey in zip(agent_ids, idempotency_keys)
@@ -466,7 +466,7 @@ class TestConcurrentAuthorize:
                         agent_id=f"agent_{i}",
                         action_type="PURCHASE",
                         description="test",
-                        requested_amount=50.0,
+                        requested_quantity=50.0,
                         idempotency_key=str(uuid.uuid4()),
                     )
                     for i in range(3)
@@ -573,7 +573,7 @@ class TestSpendTree:
         parent_event = {
             "id": str(uuid.uuid4()),
             "decision": "CONFIRMED",
-            "requestedAmount": 100.0,
+            "requestedQuantity": 100.0,
             "currency": "USD",
             "createdAt": "2025-01-01T10:00:00Z",
             "agentId": "parent_agent",
@@ -688,9 +688,9 @@ class TestBudgetOptionalFields:
                     "category": "flight",
                     "allowedCategories": ["flight"],
                     "limit": 300.0,
-                    "amountSpent": 0.0,
-                    "amountReserved": 0.0,
-                    "availableAmount": 300.0,
+                    "quantitySpent": 0.0,
+                    "quantityReserved": 0.0,
+                    "availableQuantity": 300.0,
                     "status": "ACTIVE",
                     "enforcementMode": "CATEGORY_CONSTRAINED",
                 }
@@ -747,9 +747,9 @@ class TestPaymentLifecycleExtended:
             "allocationSnapshot": {
                 "category": "hotel",
                 "limit": 200.0,
-                "amountSpent": 0.0,
-                "amountReserved": 100.0,
-                "availableAmount": 100.0,
+                "quantitySpent": 0.0,
+                "quantityReserved": 100.0,
+                "availableQuantity": 100.0,
                 "status": "ACTIVE",
             },
         }
@@ -761,11 +761,11 @@ class TestPaymentLifecycleExtended:
                     agent_id="a",
                     action_type="PURCHASE",
                     description="hotel",
-                    requested_amount=100.0,
+                    requested_quantity=100.0,
                     idempotency_key=str(uuid.uuid4()),
                     claimed_category="hotel",
                 )
 
         assert result.allocation_snapshot is not None
         assert result.allocation_snapshot.category == "hotel"
-        assert result.allocation_snapshot.available_amount == 100.0
+        assert result.allocation_snapshot.available_quantity == 100.0

@@ -19,22 +19,24 @@ Quick start::
             agent_id="agent_001",
             action_type="PURCHASE",
             description="NYC flight",
-            requested_amount=299.00,
+            requested_quantity=299.00,
             idempotency_key="txn-abc-001",
         ).raise_if_denied()
         # proceed with transaction...
-        client.confirm_event(result.event_id, confirmed_amount=299.00)
+        client.confirm_event(result.event_id, confirmed_quantity=299.00)
     except FiGuardDeniedException as e:
         print(f"Spend denied: {e.denial_reason}")
 """
 
-__version__ = "0.1.3"
+__version__ = "0.3.0"
 
 from .client import FiGuardClient
 from .exceptions import FiGuardApiError, FiGuardConnectionError, FiGuardDeniedException, FiGuardError
+from .composite import CompositeGuard, GuardedResource, CompositeAuthorizationResult
 
 try:
     from .async_client import AsyncFiGuardClient  # available when aiohttp is installed
+    from .async_composite import AsyncCompositeGuard, AsyncGuardedResource
     _has_async = True
 except ImportError:
     _has_async = False  # type: ignore[assignment]
@@ -71,7 +73,11 @@ __all__ = [
     "BudgetSnapshot",
     "AllocationSnapshot",
     "AllocationResponse",
+    # Multi-resource
+    "CompositeGuard",
+    "GuardedResource",
+    "CompositeAuthorizationResult",
 ]
 
 if _has_async:
-    __all__ += ["AsyncFiGuardClient"]
+    __all__ += ["AsyncFiGuardClient", "AsyncCompositeGuard", "AsyncGuardedResource"]

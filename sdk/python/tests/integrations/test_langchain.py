@@ -36,7 +36,7 @@ def _authorized(event_id: str = "evt_001", amount: float = 100.0) -> Authorizati
     return AuthorizationResult(
         event_id=event_id,
         decision="AUTHORIZED",
-        approved_amount=amount,
+        approved_quantity=amount,
     )
 
 
@@ -116,7 +116,7 @@ class TestFiGuardCallbackHandler:
         call_kwargs = client.authorize.call_args.kwargs
         assert call_kwargs["session_token"] == SESSION_TOKEN
         assert call_kwargs["agent_id"] == AGENT_ID
-        assert call_kwargs["requested_amount"] == 100.0
+        assert call_kwargs["requested_quantity"] == 100.0
         assert call_kwargs["idempotency_key"] == str(run_id)
         assert str(run_id) in handler._pending
 
@@ -149,7 +149,7 @@ class TestFiGuardCallbackHandler:
         )
         handler.on_tool_end("Flight booked successfully", run_id=run_id)
 
-        client.confirm_event.assert_called_once_with("evt_001", confirmed_amount=267.0)
+        client.confirm_event.assert_called_once_with("evt_001", confirmed_quantity=267.0)
         assert str(run_id) not in handler._pending
 
     def test_on_tool_error_fails_and_clears_pending(self):
@@ -267,8 +267,8 @@ class TestFiGuardToolGuard:
         assert result == "Item purchased successfully"
         client.authorize.assert_called_once()
         assert client.authorize.call_args.kwargs["claimed_category"] == "purchase"
-        assert client.authorize.call_args.kwargs["requested_amount"] == 50.0
-        client.confirm_event.assert_called_once_with("evt_001", confirmed_amount=50.0)
+        assert client.authorize.call_args.kwargs["requested_quantity"] == 50.0
+        client.confirm_event.assert_called_once_with("evt_001", confirmed_quantity=50.0)
 
     def test_denied_call_returns_denial_string(self):
         client = _mock_client(_denied("INSUFFICIENT_FUNDS"))
@@ -316,7 +316,7 @@ class TestFiGuardToolGuard:
         FiGuardToolGuard(tool=tool, client=client, session_token=SESSION_TOKEN)
         tool._run(amount=75.0)
 
-        assert client.authorize.call_args.kwargs["requested_amount"] == 75.0
+        assert client.authorize.call_args.kwargs["requested_quantity"] == 75.0
 
     def test_zero_amount_when_key_missing(self):
         client = _mock_client(_authorized())
@@ -325,7 +325,7 @@ class TestFiGuardToolGuard:
         FiGuardToolGuard(tool=tool, client=client, session_token=SESSION_TOKEN)
         tool._run(vendor="acme")  # no amount kwarg
 
-        assert client.authorize.call_args.kwargs["requested_amount"] == 0.0
+        assert client.authorize.call_args.kwargs["requested_quantity"] == 0.0
 
     def test_confirm_event_exception_does_not_propagate(self):
         """confirm_event failure (network error, 5xx) must not crash the tool call."""
@@ -469,4 +469,4 @@ class TestFiGuardCallbackHandlerExtended:
             run_id=run_id,
         )
 
-        assert client.authorize.call_args.kwargs["requested_amount"] == 189.0
+        assert client.authorize.call_args.kwargs["requested_quantity"] == 189.0

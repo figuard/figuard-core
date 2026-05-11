@@ -46,7 +46,7 @@ parameter name (e.g. ``"price"``), set ``amount_key`` accordingly.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any, Callable, Dict, Optional
 from uuid import uuid4
 
 try:
@@ -100,16 +100,20 @@ class FiGuardCrewGuard:
         category: Optional[str] = None,
         amount_key: str = "amount",
         agent_id: str = "crewai_agent",
+        amount_extractor: Optional[Callable[..., float]] = None,
+        debug: bool = False,
     ) -> None:
         """
-        :param tool:           CrewAI BaseTool to wrap. Modified in-place.
-        :param client:         FiGuardClient instance.
-        :param session_token:  Budget session token for this agent run.
-        :param category:       FiGuard claimed category for this tool's spend.
-                               Required for allocation budgets.
-        :param amount_key:     Keyword argument name that contains the spend amount.
-                               Defaults to ``"amount"``.
-        :param agent_id:       Agent identifier written to the FiGuard audit ledger.
+        :param tool:             CrewAI BaseTool to wrap. Modified in-place.
+        :param client:           FiGuardClient instance.
+        :param session_token:    Budget session token for this agent run.
+        :param category:         FiGuard claimed category for this tool's spend.
+                                 Required for allocation budgets.
+        :param amount_key:       Keyword argument name that contains the spend amount.
+                                 Defaults to ``"amount"``. Ignored if ``amount_extractor`` is set.
+        :param agent_id:         Agent identifier written to the FiGuard audit ledger.
+        :param amount_extractor: Optional callable ``(**kwargs) -> float`` for custom amount extraction.
+        :param debug:            When ``True``, logs category and amount sent to FiGuard.
         """
         self._tool = tool
         self._client = client
@@ -117,13 +121,17 @@ class FiGuardCrewGuard:
         self._category = category
         self._amount_key = amount_key
         self._agent_id = agent_id
+        self._amount_extractor = amount_extractor
+        self._debug = debug
 
         # Wrap _run in-place — the tool itself is unchanged from the agent's perspective
         self._original_run = tool._run
         object.__setattr__(tool, "_run", self._guarded_run)
 
     def _guarded_run(self, **kwargs: Any) -> Any:
-        amount = float(kwargs.get(self._amount_key, 0.0))
+        amount = _resolve_amount(kwargs, self._amount_key, self._amount_extractor)
+        if self._debug:
+            logger.info("figuard debug: tool=%s category=%s amount=%s", self._tool.name, self._category, amount)
         description = f"{self._tool.name}: {str(kwargs)[:200]}"
 
         auth = self._client.authorize(
@@ -131,7 +139,7 @@ class FiGuardCrewGuard:
             agent_id=self._agent_id,
             action_type="TOOL_CALL",
             description=description,
-            requested_amount=amount,
+            requested_quantity=amount,
             claimed_category=self._category,
             idempotency_key=str(uuid4()),
         )
@@ -157,7 +165,7 @@ class FiGuardCrewGuard:
             raise
 
         try:
-            self._client.confirm_event(auth.event_id, confirmed_amount=amount)
+            self._client.confirm_event(auth.event_id, confirmed_quantity=amount)
             logger.debug(
                 "figuard: CONFIRMED tool=%s event_id=%s", self._tool.name, auth.event_id
             )
@@ -168,3 +176,20 @@ class FiGuardCrewGuard:
             )
 
         return result
+
+
+def _resolve_amount(
+    kwargs: Dict[str, Any],
+    amount_key: str,
+    amount_extractor: Optional[Callable[..., float]],
+) -> float:
+    if amount_extractor is not None:
+        try:
+            return float(amount_extractor(**kwargs))
+        except Exception:
+            return 0.0
+    val = kwargs.get(amount_key, 0.0)
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return 0.0

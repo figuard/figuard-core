@@ -43,7 +43,7 @@ import ast
 import json
 import logging
 import threading
-from typing import Any, Dict, Optional, Set
+from typing import Any, Callable, Dict, Optional, Set, Union
 from uuid import UUID, uuid4
 
 try:
@@ -107,18 +107,26 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
         amount_param: str = "amount",
         tool_category_map: Optional[Dict[str, str]] = None,
         ignore_tools: Optional[Set[str]] = None,
+        amount_extractor: Optional[Callable[[Dict[str, Any]], float]] = None,
+        debug: bool = False,
     ) -> None:
         """
         :param client:            FiGuardClient instance.
         :param session_token:     Budget session token for this agent run.
         :param agent_id:          Agent identifier written to the FiGuard audit ledger.
         :param amount_param:      Tool input key that contains the spend amount.
-                                  Defaults to ``"amount"``.
+                                  Defaults to ``"amount"``. Ignored if ``amount_extractor`` is set.
         :param tool_category_map: Maps tool name to FiGuard claimed category.
                                   Required for allocation budgets.
                                   Example: ``{"book_flight": "flight"}``
         :param ignore_tools:      Tool names to skip authorization entirely
                                   (search tools, read-only lookups, etc.).
+        :param amount_extractor:  Optional callable ``(parsed_input: dict) -> float``.
+                                  Use when the spend amount lives under a non-standard
+                                  key or must be computed from multiple fields.
+                                  Example: ``amount_extractor=lambda d: d.get("price") or d.get("cost", 0)``
+        :param debug:             When ``True``, logs the category and amount being sent
+                                  to FiGuard for each tool call. Useful during integration.
         """
         super().__init__()
         self._client = client
@@ -127,6 +135,8 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
         self._amount_param = amount_param
         self._tool_category_map: Dict[str, str] = tool_category_map or {}
         self._ignore_tools: Set[str] = ignore_tools or set()
+        self._amount_extractor = amount_extractor
+        self._debug = debug
         # run_id → (event_id, amount) — populated on authorize, consumed on confirm/fail
         self._pending: Dict[str, tuple[str, float]] = {}
         self._lock = threading.Lock()
@@ -150,15 +160,18 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
             logger.debug("figuard: skipping %s (in ignore_tools)", tool_name)
             return
 
-        amount = _extract_amount(input_str, self._amount_param)
+        parsed = _parse_input(input_str)
+        amount = _resolve_amount(parsed, self._amount_param, self._amount_extractor)
         category = self._tool_category_map.get(tool_name)
+        if self._debug:
+            logger.info("figuard debug: tool=%s category=%s amount=%s", tool_name, category, amount)
 
         auth = self._client.authorize(
             session_token=self._session_token,
             agent_id=self._agent_id,
             action_type="TOOL_CALL",
             description=f"{tool_name}: {input_str[:200]}",
-            requested_amount=amount,
+            requested_quantity=amount,
             claimed_category=category,
             idempotency_key=str(run_id),
         )
@@ -195,7 +208,7 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
 
         event_id, amount = pending
         try:
-            self._client.confirm_event(event_id, confirmed_amount=amount)
+            self._client.confirm_event(event_id, confirmed_quantity=amount)
             logger.debug("figuard: CONFIRMED event_id=%s", event_id)
         except Exception as exc:
             logger.warning("figuard: confirm failed event_id=%s: %s", event_id, exc)
@@ -266,16 +279,23 @@ class FiGuardToolGuard:
         category: Optional[str] = None,
         amount_key: str = "amount",
         agent_id: str = "langchain_agent",
+        amount_extractor: Optional[Callable[..., float]] = None,
+        debug: bool = False,
     ) -> None:
         """
-        :param tool:           LangChain BaseTool to wrap. Modified in-place.
-        :param client:         FiGuardClient instance.
-        :param session_token:  Budget session token for this agent run.
-        :param category:       FiGuard claimed category for this tool's spend.
-                               Required for allocation budgets.
-        :param amount_key:     Keyword argument name that contains the spend amount.
-                               Defaults to ``"amount"``.
-        :param agent_id:       Agent identifier written to the FiGuard audit ledger.
+        :param tool:             LangChain BaseTool to wrap. Modified in-place.
+        :param client:           FiGuardClient instance.
+        :param session_token:    Budget session token for this agent run.
+        :param category:         FiGuard claimed category for this tool's spend.
+                                 Required for allocation budgets.
+        :param amount_key:       Keyword argument name that contains the spend amount.
+                                 Defaults to ``"amount"``. Ignored if ``amount_extractor`` is set.
+        :param agent_id:         Agent identifier written to the FiGuard audit ledger.
+        :param amount_extractor: Optional callable ``(**kwargs) -> float``.
+                                 Use when the amount must be computed from multiple kwargs
+                                 or lives under a non-standard name.
+                                 Example: ``amount_extractor=lambda **kw: kw.get("price", 0)``
+        :param debug:            When ``True``, logs the category and amount being sent to FiGuard.
         """
         self._tool = tool
         self._client = client
@@ -283,13 +303,17 @@ class FiGuardToolGuard:
         self._category = category
         self._amount_key = amount_key
         self._agent_id = agent_id
+        self._amount_extractor = amount_extractor
+        self._debug = debug
 
         # Wrap _run in-place — the tool itself is unchanged from the agent's perspective
         self._original_run = tool._run
         object.__setattr__(tool, "_run", self._guarded_run)
 
     def _guarded_run(self, *args: Any, **kwargs: Any) -> Any:
-        amount = float(kwargs.get(self._amount_key, 0.0))
+        amount = _resolve_amount(kwargs, self._amount_key, self._amount_extractor)
+        if self._debug:
+            logger.info("figuard debug: tool=%s category=%s amount=%s", self._tool.name, self._category, amount)
         description = f"{self._tool.name}: {str(kwargs)[:200]}"
 
         auth = self._client.authorize(
@@ -297,7 +321,7 @@ class FiGuardToolGuard:
             agent_id=self._agent_id,
             action_type="TOOL_CALL",
             description=description,
-            requested_amount=amount,
+            requested_quantity=amount,
             claimed_category=self._category,
             idempotency_key=str(uuid4()),
         )
@@ -323,7 +347,7 @@ class FiGuardToolGuard:
             raise
 
         try:
-            self._client.confirm_event(auth.event_id, confirmed_amount=amount)
+            self._client.confirm_event(auth.event_id, confirmed_quantity=amount)
             logger.debug(
                 "figuard: CONFIRMED tool=%s event_id=%s", self._tool.name, auth.event_id
             )
@@ -340,38 +364,47 @@ class FiGuardToolGuard:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _extract_amount(input_str: str, amount_param: str) -> float:
+def _parse_input(input_str: str) -> Dict[str, Any]:
     """
-    Extract a numeric spend amount from a tool's input string.
+    Parse a tool's input string to a dict.
 
-    Tries JSON parse first. Falls back to ``ast.literal_eval`` to handle
-    Python dict repr (single-quoted keys/values) which LangGraph sometimes
-    produces when it serializes tool arguments via ``str()``. Returns 0.0
-    if the key is absent or the input cannot be parsed by either method.
-
-    A 0.0 amount is a valid authorized amount — it means no funds are
-    reserved and the call is audit-only. Use ``FiGuardToolGuard`` with an
-    explicit ``amount_key`` when your tool uses a non-standard parameter name.
+    Tries JSON first, then ast.literal_eval for the Python repr format
+    (single-quoted keys) that LangGraph sometimes produces. Returns {} on failure.
     """
-    # Fast path: proper JSON
     try:
         data = json.loads(input_str)
         if isinstance(data, dict):
-            val = data.get(amount_param)
-            if val is not None:
-                return float(val)
-        return 0.0
+            return data
     except (json.JSONDecodeError, TypeError, ValueError):
         pass
-
-    # Fallback: Python dict repr — e.g. {'amount': 100.0, 'destination': 'NYC'}
     try:
         data = ast.literal_eval(input_str)
         if isinstance(data, dict):
-            val = data.get(amount_param)
-            if val is not None:
-                return float(val)
+            return data
     except (ValueError, SyntaxError):
         pass
+    return {}
 
-    return 0.0
+
+def _resolve_amount(
+    kwargs: Dict[str, Any],
+    amount_key: str,
+    amount_extractor: Optional[Callable[..., float]],
+) -> float:
+    """
+    Extract spend amount from tool kwargs.
+
+    If ``amount_extractor`` is provided, calls it with the kwargs dict and
+    returns the result. Otherwise looks up ``amount_key`` in kwargs.
+    Returns 0.0 if nothing matches — a 0.0 authorization is audit-only.
+    """
+    if amount_extractor is not None:
+        try:
+            return float(amount_extractor(kwargs))
+        except Exception:
+            return 0.0
+    val = kwargs.get(amount_key, 0.0)
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return 0.0

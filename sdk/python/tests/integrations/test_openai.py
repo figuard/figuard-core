@@ -29,7 +29,7 @@ def _authorized(event_id: str = "evt_001", amount: float = 100.0) -> Authorizati
     return AuthorizationResult(
         event_id=event_id,
         decision="AUTHORIZED",
-        approved_amount=amount,
+        approved_quantity=amount,
     )
 
 
@@ -75,9 +75,9 @@ class TestGuardedOpenAIFunction:
         call_kwargs = client.authorize.call_args.kwargs
         assert call_kwargs["session_token"] == SESSION_TOKEN
         assert call_kwargs["claimed_category"] == "flight"
-        assert call_kwargs["requested_amount"] == 299.0
+        assert call_kwargs["requested_quantity"] == 299.0
         assert call_kwargs["agent_id"] == "openai_agent"
-        client.confirm_event.assert_called_once_with("evt_001", confirmed_amount=299.0)
+        client.confirm_event.assert_called_once_with("evt_001", confirmed_quantity=299.0)
 
     def test_denied_call_returns_denial_string(self):
         client = _mock_client(_denied("INSUFFICIENT_FUNDS", "flight budget exhausted"))
@@ -132,7 +132,7 @@ class TestGuardedOpenAIFunction:
 
         buy_item(name="book", amount=12.99)
 
-        assert client.authorize.call_args.kwargs["requested_amount"] == 12.99
+        assert client.authorize.call_args.kwargs["requested_quantity"] == 12.99
 
     def test_zero_amount_when_key_missing(self):
         client = _mock_client(_authorized())
@@ -143,7 +143,7 @@ class TestGuardedOpenAIFunction:
 
         send_email(to="alice@example.com", subject="hello")
 
-        assert client.authorize.call_args.kwargs["requested_amount"] == 0.0
+        assert client.authorize.call_args.kwargs["requested_quantity"] == 0.0
 
     def test_wraps_preserves_function_name_and_docstring(self):
         client = _mock_client(_authorized())

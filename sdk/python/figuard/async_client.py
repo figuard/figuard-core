@@ -9,6 +9,7 @@ Usage::
         budget = await client.create_budget(
             user_id="user_123",
             total_limit=500.00,
+            currency="USD",
             expires_at="2024-12-31T23:59:59Z",
         )
 
@@ -17,12 +18,13 @@ Usage::
             agent_id="agent_flight_booker",
             action_type="PURCHASE",
             description="Book NYC flight",
-            requested_amount=299.00,
+            requested_quantity=299.00,
+            currency="USD",
             idempotency_key="txn-abc-001",
         )
 
         if result.is_authorized:
-            await client.confirm_event(result.event_id, confirmed_amount=299.00)
+            await client.confirm_event(result.event_id, confirmed_quantity=299.00)
 
 Designed for frameworks that run on asyncio: LangChain, CrewAI, OpenAI Agents SDK,
 FastAPI background tasks, etc.
@@ -37,6 +39,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Union
+from datetime import timedelta
 
 try:
     import aiohttp
@@ -46,6 +49,7 @@ except ImportError as exc:  # pragma: no cover
         "Install it with: pip install figuard[async]"
     ) from exc
 
+from .client import _resolve_expires_at
 from .exceptions import FiGuardApiError, FiGuardConnectionError
 from .models import (
     AllocationResponse,
@@ -147,19 +151,34 @@ class AsyncFiGuardClient:
         self,
         user_id: str,
         total_limit: float,
-        expires_at: str,
-        currency: str = "USD",
+        expires_at: Optional[str] = None,
+        expires_in: Optional[Union[str, int, timedelta]] = None,
+        currency: Optional[str] = None,
+        unit: Optional[str] = None,
         intent_context: Optional[str] = None,
         intent_tags: Optional[List[str]] = None,
         external_reference: Optional[str] = None,
         soft_limit: Optional[float] = None,
-        max_transaction_amount: Optional[float] = None,
+        max_transaction_quantity: Optional[float] = None,
+        authorization_expiry_seconds: Optional[int] = None,
         anomaly_detection_enabled: bool = False,
+        entity_dedup_enabled: bool = False,
         allocations: Optional[List[Dict[str, Any]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Budget:
         """
         Create a new agent budget.
+
+        Exactly one of ``currency`` or ``unit`` must be provided:
+        - Monetary budgets: pass ``currency="USD"`` (3-letter ISO code).
+        - Resource budgets: pass ``unit="tokens"`` (free-form label).
+
+        :param authorization_expiry_seconds: If set, AUTHORIZED events older than
+            this many seconds are excluded from the reserved quantity calculation,
+            effectively recycling stale reservations back into the available pool.
+        :param entity_dedup_enabled: If True, a second authorize with the same
+            ``entity_id`` is denied with ENTITY_ALREADY_AUTHORIZED instead of
+            creating a new event. Use to prevent double-refund on the same order.
 
         :returns: ``Budget`` with ``session_token`` populated — store this
                   securely; it is never returned again.
@@ -167,9 +186,12 @@ class AsyncFiGuardClient:
         body: Dict[str, Any] = {
             "userId": user_id,
             "totalLimit": total_limit,
-            "expiresAt": expires_at,
-            "currency": currency,
+            "expiresAt": _resolve_expires_at(expires_at, expires_in),
         }
+        if currency is not None:
+            body["currency"] = currency
+        if unit is not None:
+            body["unit"] = unit
         if intent_context is not None:
             body["intentContext"] = intent_context
         if intent_tags is not None:
@@ -178,10 +200,14 @@ class AsyncFiGuardClient:
             body["externalReference"] = external_reference
         if soft_limit is not None:
             body["softLimit"] = soft_limit
-        if max_transaction_amount is not None:
-            body["maxTransactionAmount"] = max_transaction_amount
+        if max_transaction_quantity is not None:
+            body["maxTransactionQuantity"] = max_transaction_quantity
+        if authorization_expiry_seconds is not None:
+            body["authorizationExpirySeconds"] = authorization_expiry_seconds
         if anomaly_detection_enabled:
             body["anomalyDetectionEnabled"] = True
+        if entity_dedup_enabled:
+            body["entityDedupEnabled"] = True
         if allocations is not None:
             body["allocations"] = allocations
         if metadata is not None:
@@ -241,24 +267,33 @@ class AsyncFiGuardClient:
         agent_id: str,
         action_type: str,
         description: str,
-        requested_amount: float,
+        requested_quantity: float,
         idempotency_key: Optional[str] = None,
-        currency: str = "USD",
+        currency: Optional[str] = None,
         intent_context: Optional[str] = None,
         entity_id: Optional[str] = None,
         claimed_category: Optional[str] = None,
         claimed_item_type: Optional[str] = None,
         parent_event_id: Optional[str] = None,
         agent_type: Optional[str] = None,
+        trace_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        dry_run: bool = False,
         **kwargs: Any,
     ) -> AuthorizationResult:
         """
         Pre-flight spend authorization.
 
+        :param requested_quantity: The quantity to reserve. For monetary budgets this
+            is the dollar amount; for resource budgets it's the token/call count.
+        :param currency: Required for monetary budgets — must match the budget's currency.
+            Omit or pass ``None`` for resource budgets (tokens, api_calls, etc.).
         :param idempotency_key: **Required.** A unique key for this request so
             retries are safe and never double-spend. Raises ``ValueError`` if
             omitted or blank.
+        :param dry_run: When ``True``, all enforcement checks run and a full
+            ``AUTHORIZED`` or ``DENIED`` result is returned, but nothing is written
+            to the ledger and no webhooks fire. Use during integration testing.
 
         :returns: ``AuthorizationResult`` — check ``.is_authorized`` or call
             ``.raise_if_denied()`` for exception-driven flow.
@@ -273,10 +308,11 @@ class AsyncFiGuardClient:
             "agentId": agent_id,
             "actionType": action_type,
             "description": description,
-            "requestedAmount": requested_amount,
-            "currency": currency,
+            "requestedQuantity": requested_quantity,
             "idempotencyKey": idempotency_key,
         }
+        if currency is not None:
+            body["currency"] = currency
         if agent_type is not None:
             body["agentType"] = agent_type
         if intent_context is not None:
@@ -289,13 +325,17 @@ class AsyncFiGuardClient:
             body["claimedItemType"] = claimed_item_type
         if parent_event_id is not None:
             body["parentEventId"] = parent_event_id
+        if trace_id is not None:
+            body["traceId"] = trace_id
         if metadata is not None:
             body["metadata"] = metadata
+        if dry_run:
+            body["dryRun"] = True
 
         token_prefix = session_token[:8] if len(session_token) >= 8 else "???"
         logger.debug(
-            "authorize: agentId=%s amount=%s key=%s token_prefix=%s",
-            agent_id, requested_amount, idempotency_key, token_prefix,
+            "authorize: agentId=%s quantity=%s key=%s token_prefix=%s",
+            agent_id, requested_quantity, idempotency_key, token_prefix,
         )
 
         extra_headers = {"X-Session-Token": session_token}
@@ -312,16 +352,17 @@ class AsyncFiGuardClient:
     async def confirm_event(
         self,
         event_id: str,
-        confirmed_amount: float,
+        confirmed_quantity: float,
         external_transaction_id: Optional[str] = None,
     ) -> SpendEventResponse:
         """
         Confirm a previously authorized event.
 
-        :param confirmed_amount:        Actual amount spent (may differ from requested).
+        :param confirmed_quantity:      Actual quantity consumed (may differ from requested).
+            Pass 0.0 if the action was a no-op.
         :param external_transaction_id: Reference from your payment processor for audit.
         """
-        body: Dict[str, Any] = {"confirmedAmount": confirmed_amount}
+        body: Dict[str, Any] = {"confirmedQuantity": confirmed_quantity}
         if external_transaction_id is not None:
             body["externalTransactionId"] = external_transaction_id
 
@@ -382,16 +423,20 @@ class AsyncFiGuardClient:
         page: int = 0,
         size: int = 20,
         decision: Optional[str] = None,
+        trace_id: Optional[str] = None,
     ) -> LedgerPage:
         """
         Paginated spend event ledger for a budget, newest first.
 
         :param decision: Optional filter — one of ``AUTHORIZED``, ``CONFIRMED``,
             ``DENIED``, ``VOIDED``, ``FAILED``.
+        :param trace_id: Optional filter — return only events from a specific agent run.
         """
         params: Dict[str, Any] = {"page": page, "size": size}
         if decision is not None:
             params["decision"] = decision
+        if trace_id is not None:
+            params["traceId"] = trace_id
 
         data = await self._request(
             "GET", f"/api/v1/budgets/{budget_id}/ledger", params=params, retryable=True

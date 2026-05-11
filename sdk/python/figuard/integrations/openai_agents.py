@@ -53,7 +53,7 @@ from __future__ import annotations
 
 import logging
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Dict, Optional
 from uuid import uuid4
 
 try:
@@ -76,6 +76,8 @@ def guarded_function_tool(
     category: Optional[str] = None,
     amount_key: str = "amount",
     agent_id: str = "openai_agents_agent",
+    amount_extractor: Optional[Callable[..., float]] = None,
+    debug: bool = False,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator that wraps a tool function with FiGuard pre-flight authorization.
@@ -95,14 +97,18 @@ def guarded_function_tool(
     :param client:         FiGuardClient instance.
     :param session_token:  Budget session token for this agent run.
     :param category:       FiGuard claimed category. Required for allocation budgets.
-    :param amount_key:     Name of the kwarg that holds the spend amount.
-                           Defaults to ``"amount"``.
-    :param agent_id:       Agent identifier written to the FiGuard audit ledger.
+    :param amount_key:       Name of the kwarg that holds the spend amount.
+                             Defaults to ``"amount"``. Ignored if ``amount_extractor`` is set.
+    :param agent_id:         Agent identifier written to the FiGuard audit ledger.
+    :param amount_extractor: Optional callable ``(**kwargs) -> float`` for custom amount extraction.
+    :param debug:            When ``True``, logs category and amount sent to FiGuard.
     """
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(fn)
         def wrapper(**kwargs: Any) -> Any:
-            amount = float(kwargs.get(amount_key, 0.0))
+            amount = _resolve_amount(kwargs, amount_key, amount_extractor)
+            if debug:
+                logger.info("figuard debug: fn=%s category=%s amount=%s", fn.__name__, category, amount)
             description = f"{fn.__name__}: {str(kwargs)[:200]}"
 
             auth = client.authorize(
@@ -110,7 +116,7 @@ def guarded_function_tool(
                 agent_id=agent_id,
                 action_type="TOOL_CALL",
                 description=description,
-                requested_amount=amount,
+                requested_quantity=amount,
                 claimed_category=category,
                 idempotency_key=str(uuid4()),
             )
@@ -136,7 +142,7 @@ def guarded_function_tool(
                 raise
 
             try:
-                client.confirm_event(auth.event_id, confirmed_amount=amount)
+                client.confirm_event(auth.event_id, confirmed_quantity=amount)
                 logger.debug(
                     "figuard: CONFIRMED tool=%s event_id=%s", fn.__name__, auth.event_id
                 )
@@ -150,3 +156,20 @@ def guarded_function_tool(
 
         return wrapper
     return decorator
+
+
+def _resolve_amount(
+    kwargs: Dict[str, Any],
+    amount_key: str,
+    amount_extractor: Optional[Callable[..., float]],
+) -> float:
+    if amount_extractor is not None:
+        try:
+            return float(amount_extractor(**kwargs))
+        except Exception:
+            return 0.0
+    val = kwargs.get(amount_key, 0.0)
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return 0.0
