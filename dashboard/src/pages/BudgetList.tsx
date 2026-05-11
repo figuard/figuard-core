@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useBudgets } from "../hooks/useBudgets";
 import { BudgetStatusBar } from "../components/BudgetStatusBar";
 import { ExpiryBadge } from "../components/ExpiryBadge";
 import { BUDGET_STATUS_BADGE } from "../lib/colors";
 import { formatAmount, formatDateTime, shortId } from "../lib/format";
-import type { BudgetStatus } from "../lib/types";
+import type { BudgetStatus, BudgetResponse } from "../lib/types";
 import type { ListBudgetsParams } from "../api/budgets";
 
 const STATUS_OPTIONS: Array<BudgetStatus | ""> = [
@@ -17,6 +17,29 @@ const STATUS_OPTIONS: Array<BudgetStatus | ""> = [
   "CANCELLED",
 ];
 
+type SortKey = "newest" | "oldest" | "amount_desc" | "amount_asc";
+
+const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "amount_desc", label: "Amount: high → low" },
+  { value: "amount_asc", label: "Amount: low → high" },
+];
+
+function sortBudgets(budgets: BudgetResponse[], sort: SortKey): BudgetResponse[] {
+  const copy = [...budgets];
+  switch (sort) {
+    case "newest":
+      return copy.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    case "oldest":
+      return copy.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    case "amount_desc":
+      return copy.sort((a, b) => b.totalLimit - a.totalLimit);
+    case "amount_asc":
+      return copy.sort((a, b) => a.totalLimit - b.totalLimit);
+  }
+}
+
 export function BudgetList() {
   const navigate = useNavigate();
   const [params, setParams] = useState<ListBudgetsParams>({
@@ -24,7 +47,19 @@ export function BudgetList() {
     size: 20,
     status: "",
   });
+  const [userIdSearch, setUserIdSearch] = useState("");
+  const [sort, setSort] = useState<SortKey>("newest");
   const { data, isLoading, isFetching, isError, error } = useBudgets(params);
+
+  const filteredBudgets = useMemo(() => {
+    const budgets = data?.content ?? [];
+    const filtered = userIdSearch.trim()
+      ? budgets.filter((b) =>
+          b.userId.toLowerCase().includes(userIdSearch.trim().toLowerCase())
+        )
+      : budgets;
+    return sortBudgets(filtered, sort);
+  }, [data?.content, userIdSearch, sort]);
 
   const totalPages = data?.totalPages ?? 1;
   const currentPage = data?.number ?? 0;
@@ -36,17 +71,28 @@ export function BudgetList() {
           <h1 className="text-xl font-semibold text-gray-900">Budgets</h1>
           {data && (
             <p className="text-sm text-gray-500 mt-0.5">
-              {data.totalElements.toLocaleString()} total
+              {userIdSearch
+                ? `${filteredBudgets.length} of ${data.totalElements.toLocaleString()}`
+                : data.totalElements.toLocaleString()}{" "}
+              total
             </p>
           )}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
           {isFetching && (
             <span className="text-xs text-gray-400 animate-pulse">
               Refreshing…
             </span>
           )}
+          {/* User ID search */}
+          <input
+            type="text"
+            placeholder="Search user ID…"
+            value={userIdSearch}
+            onChange={(e) => setUserIdSearch(e.target.value)}
+            className="rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-700 w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
           {/* Status filter */}
           <select
             value={params.status ?? ""}
@@ -62,6 +108,18 @@ export function BudgetList() {
             {STATUS_OPTIONS.map((s) => (
               <option key={s} value={s}>
                 {s === "" ? "All statuses" : s}
+              </option>
+            ))}
+          </select>
+          {/* Sort */}
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortKey)}
+            className="rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
               </option>
             ))}
           </select>
@@ -83,16 +141,18 @@ export function BudgetList() {
 
       {!isLoading && data && (
         <>
-          {data.content.length === 0 ? (
+          {filteredBudgets.length === 0 ? (
             <div className="rounded-xl border border-gray-200 bg-white p-12 text-center text-gray-400 shadow-sm">
               No budgets found.{" "}
-              {params.status
+              {userIdSearch
+                ? `No results for user "${userIdSearch}".`
+                : params.status
                 ? `Try removing the "${params.status}" filter.`
                 : "Create your first budget using the FiGuard SDK."}
             </div>
           ) : (
             <div className="space-y-3">
-              {data.content.map((budget) => (
+              {filteredBudgets.map((budget) => (
                 <div
                   key={budget.id}
                   onClick={() => navigate(`/budgets/${budget.id}`)}
