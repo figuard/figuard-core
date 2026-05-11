@@ -7,6 +7,8 @@ Stop runaway agent purchases before they happen.
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/figuard)](https://pypi.org/project/figuard/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
+[![npm](https://img.shields.io/npm/v/figuard?label=npm%20(ts-sdk)&color=cb3837)](https://www.npmjs.com/package/figuard)
+[![npm](https://img.shields.io/npm/v/figuard-mcp?label=figuard-mcp&color=cb3837)](https://www.npmjs.com/package/figuard-mcp)
 
 ---
 
