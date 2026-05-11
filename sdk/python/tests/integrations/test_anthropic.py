@@ -33,7 +33,7 @@ def _authorized(event_id: str = "evt_001", amount: float = 100.0) -> Authorizati
     return AuthorizationResult(
         event_id=event_id,
         decision="AUTHORIZED",
-        approved_amount=amount,
+        approved_quantity=amount,
     )
 
 
@@ -79,9 +79,9 @@ class TestGuardedAnthropicTool:
         call_kwargs = client.authorize.call_args.kwargs
         assert call_kwargs["session_token"] == SESSION_TOKEN
         assert call_kwargs["claimed_category"] == "hotel"
-        assert call_kwargs["requested_amount"] == 350.0
+        assert call_kwargs["requested_quantity"] == 350.0
         assert call_kwargs["agent_id"] == "anthropic_agent"
-        client.confirm_event.assert_called_once_with("evt_001", confirmed_amount=350.0)
+        client.confirm_event.assert_called_once_with("evt_001", confirmed_quantity=350.0)
 
     def test_denied_call_returns_denial_string(self):
         client = _mock_client(_denied("BUDGET_EXHAUSTED", "hotel allocation is empty"))
@@ -136,7 +136,7 @@ class TestGuardedAnthropicTool:
 
         place_order(item="laptop", amount=999.0)
 
-        assert client.authorize.call_args.kwargs["requested_amount"] == 999.0
+        assert client.authorize.call_args.kwargs["requested_quantity"] == 999.0
 
     def test_zero_amount_when_key_missing(self):
         client = _mock_client(_authorized())
@@ -147,7 +147,7 @@ class TestGuardedAnthropicTool:
 
         search_web(query="cheap flights NYC")
 
-        assert client.authorize.call_args.kwargs["requested_amount"] == 0.0
+        assert client.authorize.call_args.kwargs["requested_quantity"] == 0.0
 
     def test_wraps_preserves_function_name_and_docstring(self):
         client = _mock_client(_authorized())

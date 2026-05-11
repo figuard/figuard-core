@@ -29,7 +29,7 @@ def _authorized(event_id: str = "evt_001", amount: float = 100.0) -> Authorizati
     return AuthorizationResult(
         event_id=event_id,
         decision="AUTHORIZED",
-        approved_amount=amount,
+        approved_quantity=amount,
     )
 
 
@@ -73,8 +73,8 @@ class TestGuardedFunctionTool:
         call_kwargs = client.authorize.call_args.kwargs
         assert call_kwargs["session_token"] == SESSION_TOKEN
         assert call_kwargs["claimed_category"] == "travel"
-        assert call_kwargs["requested_amount"] == 99.0
-        client.confirm_event.assert_called_once_with("evt_001", confirmed_amount=99.0)
+        assert call_kwargs["requested_quantity"] == 99.0
+        client.confirm_event.assert_called_once_with("evt_001", confirmed_quantity=99.0)
 
     def test_denied_call_returns_denial_string(self):
         client = _mock_client(_denied("INSUFFICIENT_FUNDS", "over hotel budget"))
@@ -129,7 +129,7 @@ class TestGuardedFunctionTool:
 
         buy_item(name="pen", amount=3.50)
 
-        assert client.authorize.call_args.kwargs["requested_amount"] == 3.50
+        assert client.authorize.call_args.kwargs["requested_quantity"] == 3.50
 
     def test_zero_amount_when_key_missing(self):
         client = _mock_client(_authorized())
@@ -140,7 +140,7 @@ class TestGuardedFunctionTool:
 
         send_message(recipient="alice", body="hello")
 
-        assert client.authorize.call_args.kwargs["requested_amount"] == 0.0
+        assert client.authorize.call_args.kwargs["requested_quantity"] == 0.0
 
     def test_wraps_preserves_function_name_and_docstring(self):
         client = _mock_client(_authorized())

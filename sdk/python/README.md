@@ -45,13 +45,13 @@ try:
         agent_id="agent_flight_booker",
         action_type="PURCHASE",
         description="NYC to LAX flight",
-        requested_amount=299.00,
+        requested_quantity=299.00,
         idempotency_key="txn-abc-001",  # required — use a stable unique key
     ).raise_if_denied()
 
     # 3. Execute the real transaction, then confirm
     external_tx_id = payment_processor.charge(299.00)
-    client.confirm_event(result.event_id, confirmed_amount=299.00,
+    client.confirm_event(result.event_id, confirmed_quantity=299.00,
                          external_transaction_id=external_tx_id)
 
 except FiGuardDeniedException as e:
@@ -78,12 +78,12 @@ async def run_agent():
             agent_id="langchain_agent",
             action_type="PURCHASE",
             description="Hotel booking",
-            requested_amount=189.00,
+            requested_quantity=189.00,
             idempotency_key="hotel-booking-001",
         )
 
         if result.is_authorized:
-            await client.confirm_event(result.event_id, confirmed_amount=189.00)
+            await client.confirm_event(result.event_id, confirmed_quantity=189.00)
 ```
 
 ## Allocation-based budgets
@@ -118,7 +118,7 @@ result = client.authorize(
     agent_id="travel_agent",
     action_type="PURCHASE",
     description="Flight to NYC",
-    requested_amount=250.00,
+    requested_quantity=250.00,
     idempotency_key="flight-nyc-001",
     claimed_category="flight",
     claimed_item_type="economy_ticket",
@@ -132,7 +132,7 @@ result = client.authorize(
 result = client.authorize(...).raise_if_denied()
 
 # Confirm when payment succeeds — finalizes the spend
-client.confirm_event(result.event_id, confirmed_amount=249.00)
+client.confirm_event(result.event_id, confirmed_quantity=249.00)
 
 # Fail when the payment processor declines — releases the reservation
 client.fail_event(result.event_id, reason="PAYMENT_DECLINED")
@@ -196,7 +196,7 @@ The SDK automatically retries 5xx responses up to 3 times with exponential backo
 # Paginated spend history
 page = client.get_ledger(budget_id, page=0, size=20, decision="CONFIRMED")
 for event in page.events:
-    print(event.id, event.decision, event.confirmed_amount)
+    print(event.id, event.decision, event.confirmed_quantity)
 
 # Causal spend tree (which agent triggered which spend)
 tree = client.get_spend_tree(budget_id)

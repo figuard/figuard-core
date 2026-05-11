@@ -23,9 +23,9 @@ class AllocationResponse:
     category: str
     allowed_categories: List[str]
     limit: float
-    amount_spent: float
-    amount_reserved: float
-    available_amount: float
+    quantity_spent: float
+    quantity_reserved: float
+    available_quantity: float
     status: str
     enforcement_mode: str
     forbidden_item_types: Optional[List[str]] = None
@@ -36,19 +36,22 @@ class Budget:
     id: str
     user_id: str
     total_limit: float
-    currency: str
-    amount_spent: float
-    amount_reserved: float
-    available_amount: float
+    quantity_spent: float
+    quantity_reserved: float
+    available_quantity: float
     status: str
     expires_at: str
     session_token_prefix: str
+    # Exactly one of currency or unit is set
+    currency: Optional[str] = None
+    unit: Optional[str] = None
     created_at: Optional[str] = None
     intent_context: Optional[str] = None
     intent_tags: Optional[List[str]] = None
     external_reference: Optional[str] = None
     soft_limit: Optional[float] = None
-    max_transaction_amount: Optional[float] = None
+    max_transaction_quantity: Optional[float] = None
+    authorization_expiry_seconds: Optional[int] = None
     allocations: List[AllocationResponse] = field(default_factory=list)
     cancelled_at: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
@@ -63,6 +66,11 @@ class Budget:
     def is_paused(self) -> bool:
         return self.status == "PAUSED"
 
+    @property
+    def is_monetary(self) -> bool:
+        """True for currency-based budgets; False for resource budgets (unit set)."""
+        return self.currency is not None and self.currency.strip() != ""
+
 
 # ---------------------------------------------------------------------------
 # Authorization
@@ -71,9 +79,9 @@ class Budget:
 @dataclass(frozen=True)
 class BudgetSnapshot:
     total_limit: float
-    amount_spent: float
-    amount_reserved: float
-    available_amount: float
+    quantity_spent: float
+    quantity_reserved: float
+    available_quantity: float
     status: str
 
 
@@ -81,9 +89,9 @@ class BudgetSnapshot:
 class AllocationSnapshot:
     category: str
     limit: float
-    amount_spent: float
-    amount_reserved: float
-    available_amount: float
+    quantity_spent: float
+    quantity_reserved: float
+    available_quantity: float
     status: str
 
 
@@ -100,7 +108,7 @@ class AuthorizationResult:
     decision: str
     budget_snapshot: Optional[BudgetSnapshot] = None
     allocation_snapshot: Optional[AllocationSnapshot] = None
-    approved_amount: Optional[float] = None
+    approved_quantity: Optional[float] = None
     authorized_at: Optional[str] = None
     denial_reason: Optional[str] = None
     denial_message: Optional[str] = None
@@ -137,14 +145,15 @@ class AuthorizationResult:
 class SpendEventResponse:
     id: str
     decision: str
-    requested_amount: float
-    currency: str
+    requested_quantity: float
     created_at: str
     agent_id: Optional[str] = None
     agent_type: Optional[str] = None
     action_type: Optional[str] = None
     description: Optional[str] = None
-    confirmed_amount: Optional[float] = None
+    confirmed_quantity: Optional[float] = None
+    # currency is None for resource budgets (unit-based)
+    currency: Optional[str] = None
     entity_id: Optional[str] = None
     claimed_category: Optional[str] = None
     claimed_item_type: Optional[str] = None
@@ -153,6 +162,7 @@ class SpendEventResponse:
     denial_reason: Optional[str] = None
     failure_reason: Optional[str] = None
     parent_event_id: Optional[str] = None
+    trace_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
 

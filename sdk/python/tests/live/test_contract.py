@@ -44,8 +44,8 @@ class TestBudgetContract:
     def test_create_budget_flat_response_shape(self, client: FiGuardClient):
         """
         create_budget returns a Budget with all expected fields populated.
-        Verifies: id, user_id, total_limit, currency, amount_spent,
-        amount_reserved, available_amount, status, expires_at,
+        Verifies: id, user_id, total_limit, currency, quantity_spent,
+        quantity_reserved, available_quantity, status, expires_at,
         session_token_prefix, session_token (first call only), allocations.
         """
         budget = client.create_budget(
@@ -59,9 +59,9 @@ class TestBudgetContract:
         assert budget.user_id == "contract_test_user"
         assert budget.total_limit == 100.00
         assert budget.currency == "USD"
-        assert budget.amount_spent == 0.0
-        assert budget.amount_reserved == 0.0
-        assert budget.available_amount == 100.00
+        assert budget.quantity_spent == 0.0
+        assert budget.quantity_reserved == 0.0
+        assert budget.available_quantity == 100.00
         assert budget.status == "ACTIVE"
         assert budget.expires_at                            # non-empty ISO string
         assert budget.session_token_prefix                  # e.g. "st_abc123"
@@ -121,9 +121,9 @@ class TestBudgetContract:
         assert flight.category == "flight"
         assert flight.allowed_categories == ["flight"]
         assert flight.limit == 150.00
-        assert flight.amount_spent == 0.0
-        assert flight.amount_reserved == 0.0
-        assert flight.available_amount == 150.00
+        assert flight.quantity_spent == 0.0
+        assert flight.quantity_reserved == 0.0
+        assert flight.available_quantity == 150.00
         assert flight.status == "ACTIVE"
         assert flight.enforcement_mode == "CATEGORY_CONSTRAINED"
 
@@ -138,14 +138,14 @@ class TestAuthorizationContract:
     def test_authorized_response_shape(self, client: FiGuardClient, flat_budget):
         """
         An authorized call must return all fields the parser expects:
-        event_id, decision, approved_amount, budget_snapshot with all sub-fields.
+        event_id, decision, approved_quantity, budget_snapshot with all sub-fields.
         """
         result = client.authorize(
             session_token=flat_budget.session_token,
             agent_id="contract_agent",
             action_type="TOOL_CALL",
             description="contract test authorization",
-            requested_amount=25.00,
+            requested_quantity=25.00,
             idempotency_key=str(uuid4()),
         )
 
@@ -153,7 +153,7 @@ class TestAuthorizationContract:
         assert result.event_id and len(result.event_id) == 36
         assert result.decision == "AUTHORIZED"
         assert result.is_authorized is True
-        assert result.approved_amount == 25.00
+        assert result.approved_quantity == 25.00
         assert result.denial_reason is None
         assert result.denial_message is None
 
@@ -161,9 +161,9 @@ class TestAuthorizationContract:
         snap = result.budget_snapshot
         assert snap is not None
         assert snap.total_limit == 500.00
-        assert snap.amount_reserved == 25.00
-        assert snap.amount_spent == 0.0
-        assert snap.available_amount == 475.00
+        assert snap.quantity_reserved == 25.00
+        assert snap.quantity_spent == 0.0
+        assert snap.available_quantity == 475.00
         assert snap.status == "ACTIVE"
 
     def test_denied_response_shape(self, client: FiGuardClient, tiny_budget):
@@ -176,7 +176,7 @@ class TestAuthorizationContract:
             agent_id="contract_agent",
             action_type="TOOL_CALL",
             description="contract test denial",
-            requested_amount=999.00,    # way over the $10 limit
+            requested_quantity=999.00,    # way over the $10 limit
             idempotency_key=str(uuid4()),
         )
 
@@ -198,7 +198,7 @@ class TestAuthorizationContract:
             agent_id="contract_agent",
             action_type="TOOL_CALL",
             description="flight booking",
-            requested_amount=50.00,
+            requested_quantity=50.00,
             claimed_category="flight",
             idempotency_key=str(uuid4()),
         )
@@ -208,9 +208,9 @@ class TestAuthorizationContract:
         assert alloc is not None
         assert alloc.category == "flight"
         assert alloc.limit == 300.00
-        assert alloc.amount_reserved == 50.00
-        assert alloc.amount_spent == 0.0
-        assert alloc.available_amount == 250.00
+        assert alloc.quantity_reserved == 50.00
+        assert alloc.quantity_spent == 0.0
+        assert alloc.available_quantity == 250.00
         assert alloc.status == "ACTIVE"
 
     def test_idempotency_returns_same_event_id(
@@ -227,7 +227,7 @@ class TestAuthorizationContract:
             agent_id="contract_agent",
             action_type="TOOL_CALL",
             description="first call",
-            requested_amount=30.00,
+            requested_quantity=30.00,
             idempotency_key=key,
         )
 
@@ -236,7 +236,7 @@ class TestAuthorizationContract:
             agent_id="contract_agent",
             action_type="TOOL_CALL",
             description="duplicate call",
-            requested_amount=30.00,
+            requested_quantity=30.00,
             idempotency_key=key,
         )
 
@@ -263,17 +263,17 @@ class TestPaymentLifecycleContract:
             agent_id="contract_agent",
             action_type="TOOL_CALL",
             description="confirm contract test",
-            requested_amount=40.00,
+            requested_quantity=40.00,
             idempotency_key=str(uuid4()),
         )
 
-        event = client.confirm_event(auth.event_id, confirmed_amount=40.00)
+        event = client.confirm_event(auth.event_id, confirmed_quantity=40.00)
 
         assert isinstance(event, SpendEventResponse)
         assert event.id == auth.event_id
         assert event.decision == "CONFIRMED"
-        assert event.confirmed_amount == 40.00
-        assert event.requested_amount == 40.00
+        assert event.confirmed_quantity == 40.00
+        assert event.requested_quantity == 40.00
         assert event.currency == "USD"
         assert event.created_at   # non-empty
 
@@ -282,19 +282,19 @@ class TestPaymentLifecycleContract:
     ):
         """
         fail_event must return a SpendEventResponse with decision FAILED.
-        Reserved funds must be released (budget available_amount restored).
+        Reserved funds must be released (budget available_quantity restored).
         """
         auth = client.authorize(
             session_token=flat_budget.session_token,
             agent_id="contract_agent",
             action_type="TOOL_CALL",
             description="fail contract test",
-            requested_amount=60.00,
+            requested_quantity=60.00,
             idempotency_key=str(uuid4()),
         )
 
         budget_after_auth = client.get_budget(flat_budget.id)
-        assert budget_after_auth.amount_reserved >= 60.00
+        assert budget_after_auth.quantity_reserved >= 60.00
 
         event = client.fail_event(auth.event_id, reason="PAYMENT_DECLINED")
 
@@ -304,7 +304,7 @@ class TestPaymentLifecycleContract:
 
         # Reserved funds must be released
         budget_after_fail = client.get_budget(flat_budget.id)
-        assert budget_after_fail.amount_reserved < budget_after_auth.amount_reserved
+        assert budget_after_fail.quantity_reserved < budget_after_auth.quantity_reserved
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +325,7 @@ class TestLedgerContract:
             agent_id="contract_agent",
             action_type="TOOL_CALL",
             description="ledger contract test",
-            requested_amount=10.00,
+            requested_quantity=10.00,
             idempotency_key=str(uuid4()),
         )
 
@@ -341,7 +341,7 @@ class TestLedgerContract:
         event = next(e for e in page.events if e.id == auth.event_id)
         assert event.id == auth.event_id
         assert event.decision == "AUTHORIZED"
-        assert event.requested_amount == 10.00
+        assert event.requested_quantity == 10.00
         assert event.currency == "USD"
         assert event.created_at   # non-empty ISO string
         assert event.agent_id == "contract_agent"
@@ -357,10 +357,10 @@ class TestLedgerContract:
             agent_id="contract_agent",
             action_type="TOOL_CALL",
             description="filter test",
-            requested_amount=5.00,
+            requested_quantity=5.00,
             idempotency_key=key,
         )
-        client.confirm_event(auth.event_id, confirmed_amount=5.00)
+        client.confirm_event(auth.event_id, confirmed_quantity=5.00)
 
         confirmed_page = client.get_ledger(
             flat_budget.id, decision="CONFIRMED", size=50
@@ -389,10 +389,10 @@ class TestSpendTreeContract:
             agent_id="contract_agent",
             action_type="TOOL_CALL",
             description="tree contract test",
-            requested_amount=15.00,
+            requested_quantity=15.00,
             idempotency_key=str(uuid4()),
         )
-        client.confirm_event(auth.event_id, confirmed_amount=15.00)
+        client.confirm_event(auth.event_id, confirmed_quantity=15.00)
 
         tree = client.get_spend_tree(flat_budget.id)
 
@@ -467,7 +467,7 @@ class TestRotateSessionTokenContract:
             agent_id="contract_agent",
             action_type="TOOL_CALL",
             description="post-rotation authorization",
-            requested_amount=10.00,
+            requested_quantity=10.00,
             idempotency_key=str(uuid4()),
         )
 
@@ -484,7 +484,7 @@ class TestVoidEventContract:
     def test_void_event_response_shape(self, client: FiGuardClient, flat_budget):
         """
         void_event must return a VoidResult with decision VOIDED.
-        The reservation must be released (available_amount restored).
+        The reservation must be released (available_quantity restored).
         """
         from figuard.models import VoidResult
 
@@ -493,12 +493,12 @@ class TestVoidEventContract:
             agent_id="contract_agent",
             action_type="TOOL_CALL",
             description="void contract test",
-            requested_amount=50.00,
+            requested_quantity=50.00,
             idempotency_key=str(uuid4()),
         )
 
         budget_after_auth = client.get_budget(flat_budget.id)
-        assert budget_after_auth.amount_reserved >= 50.00
+        assert budget_after_auth.quantity_reserved >= 50.00
 
         result = client.void_event(auth.event_id, reason="USER_CANCELLED")
 
@@ -509,7 +509,7 @@ class TestVoidEventContract:
 
         # Reserved funds must be released
         budget_after_void = client.get_budget(flat_budget.id)
-        assert budget_after_void.amount_reserved < budget_after_auth.amount_reserved
+        assert budget_after_void.quantity_reserved < budget_after_auth.quantity_reserved
 
 
 # ---------------------------------------------------------------------------
@@ -559,7 +559,7 @@ class TestBudgetOptionalFieldsContract:
             agent_id="contract_agent",
             action_type="TOOL_CALL",
             description="anomaly detection test",
-            requested_amount=50.00,
+            requested_quantity=50.00,
             idempotency_key=str(uuid4()),
         )
         assert result.is_authorized is True

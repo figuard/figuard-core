@@ -70,7 +70,7 @@ class TestAsyncClientLive:
         assert budget.session_token is not None
         assert budget.session_token.startswith("st_")
         assert budget.status == "ACTIVE"
-        assert budget.available_amount == 200.00
+        assert budget.available_quantity == 200.00
 
     @pytest.mark.asyncio
     async def test_get_budget_has_no_session_token(
@@ -110,17 +110,17 @@ class TestAsyncClientLive:
                 agent_id="async_live_agent",
                 action_type="TOOL_CALL",
                 description="async confirm test",
-                requested_amount=75.00,
+                requested_quantity=75.00,
                 idempotency_key=str(uuid4()),
             )
 
             assert result.is_authorized is True
             assert result.event_id
 
-            event = await client.confirm_event(result.event_id, confirmed_amount=75.00)
+            event = await client.confirm_event(result.event_id, confirmed_quantity=75.00)
 
         assert event.decision == "CONFIRMED"
-        assert event.confirmed_amount == 75.00
+        assert event.confirmed_quantity == 75.00
 
     @pytest.mark.asyncio
     async def test_authorize_denied_insufficient_funds(
@@ -141,7 +141,7 @@ class TestAsyncClientLive:
                 agent_id="async_live_agent",
                 action_type="TOOL_CALL",
                 description="over-limit test",
-                requested_amount=999.00,
+                requested_quantity=999.00,
                 idempotency_key=str(uuid4()),
             )
 
@@ -167,19 +167,19 @@ class TestAsyncClientLive:
                 agent_id="async_live_agent",
                 action_type="TOOL_CALL",
                 description="fail release test",
-                requested_amount=100.00,
+                requested_quantity=100.00,
                 idempotency_key=str(uuid4()),
             )
             assert result.is_authorized is True
 
             budget_after_auth = await client.get_budget(budget.id)
-            assert budget_after_auth.amount_reserved >= 100.00
+            assert budget_after_auth.quantity_reserved >= 100.00
 
             event = await client.fail_event(result.event_id, reason="PAYMENT_DECLINED")
             assert event.decision == "FAILED"
 
             budget_after_fail = await client.get_budget(budget.id)
-            assert budget_after_fail.amount_reserved < budget_after_auth.amount_reserved
+            assert budget_after_fail.quantity_reserved < budget_after_auth.quantity_reserved
 
     @pytest.mark.asyncio
     async def test_void_event_releases_reservation(
@@ -200,7 +200,7 @@ class TestAsyncClientLive:
                 agent_id="async_live_agent",
                 action_type="TOOL_CALL",
                 description="void test",
-                requested_amount=80.00,
+                requested_quantity=80.00,
                 idempotency_key=str(uuid4()),
             )
             assert result.is_authorized is True
@@ -209,7 +209,7 @@ class TestAsyncClientLive:
             assert void_result.is_voided is True
 
             budget_after_void = await client.get_budget(budget.id)
-            assert budget_after_void.amount_reserved == 0.0
+            assert budget_after_void.quantity_reserved == 0.0
 
     @pytest.mark.asyncio
     async def test_get_ledger(
@@ -230,10 +230,10 @@ class TestAsyncClientLive:
                 agent_id="async_live_agent",
                 action_type="TOOL_CALL",
                 description="ledger test",
-                requested_amount=25.00,
+                requested_quantity=25.00,
                 idempotency_key=str(uuid4()),
             )
-            await client.confirm_event(auth.event_id, confirmed_amount=25.00)
+            await client.confirm_event(auth.event_id, confirmed_quantity=25.00)
 
             page = await client.get_ledger(budget.id, size=20)
 
@@ -260,10 +260,10 @@ class TestAsyncClientLive:
                 agent_id="async_live_agent",
                 action_type="TOOL_CALL",
                 description="tree test",
-                requested_amount=30.00,
+                requested_quantity=30.00,
                 idempotency_key=str(uuid4()),
             )
-            await client.confirm_event(auth.event_id, confirmed_amount=30.00)
+            await client.confirm_event(auth.event_id, confirmed_quantity=30.00)
 
             tree = await client.get_spend_tree(budget.id)
 
@@ -295,7 +295,7 @@ class TestAsyncClientLive:
                 agent_id="async_live_agent",
                 action_type="TOOL_CALL",
                 description="post-rotation auth",
-                requested_amount=20.00,
+                requested_quantity=20.00,
                 idempotency_key=str(uuid4()),
             )
 
@@ -330,7 +330,7 @@ class TestAsyncConcurrencyLive:
                     agent_id=f"async_agent_{i}",
                     action_type="TOOL_CALL",
                     description=f"concurrent request {i}",
-                    requested_amount=100.00,
+                    requested_quantity=100.00,
                     idempotency_key=str(uuid4()),
                 )
                 for i in range(3)
@@ -362,7 +362,7 @@ class TestAsyncConcurrencyLive:
                     agent_id=f"async_agent_{i}",
                     action_type="TOOL_CALL",
                     description=f"overrun request {i}",
-                    requested_amount=100.00,
+                    requested_quantity=100.00,
                     idempotency_key=str(uuid4()),
                 )
                 for i in range(5)
@@ -398,19 +398,19 @@ class TestAsyncConcurrencyLive:
                 agent_id="async_live_agent",
                 action_type="TOOL_CALL",
                 description="pre-authorized",
-                requested_amount=50.00,
+                requested_quantity=50.00,
                 idempotency_key=str(uuid4()),
             )
             assert pre_auth.is_authorized
 
             # Confirm the first and authorize a second concurrently
-            confirm_coro = client.confirm_event(pre_auth.event_id, confirmed_amount=50.00)
+            confirm_coro = client.confirm_event(pre_auth.event_id, confirmed_quantity=50.00)
             auth_coro = client.authorize(
                 session_token=budget.session_token,
                 agent_id="async_live_agent",
                 action_type="TOOL_CALL",
                 description="concurrent with confirm",
-                requested_amount=75.00,
+                requested_quantity=75.00,
                 idempotency_key=str(uuid4()),
             )
 

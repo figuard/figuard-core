@@ -18,19 +18,22 @@ Usage::
         agent_id="agent_flight_booker",
         action_type="PURCHASE",
         description="Book NYC flight",
-        requested_amount=299.00,
+        requested_quantity=299.00,
+        currency="USD",
         idempotency_key="txn-abc-001",
     )
 
     if result.is_authorized:
         # ... execute the transaction ...
-        client.confirm_event(result.event_id, confirmed_amount=299.00)
+        client.confirm_event(result.event_id, confirmed_quantity=299.00)
 """
 
 from __future__ import annotations
 
 import logging
+import re
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union
 
 import requests
@@ -95,29 +98,51 @@ class FiGuardClient:
         self,
         user_id: str,
         total_limit: float,
-        expires_at: str,
-        currency: str = "USD",
+        expires_at: Optional[str] = None,
+        expires_in: Optional[Union[str, int, timedelta]] = None,
+        currency: Optional[str] = None,
+        unit: Optional[str] = None,
         intent_context: Optional[str] = None,
         intent_tags: Optional[List[str]] = None,
         external_reference: Optional[str] = None,
         soft_limit: Optional[float] = None,
-        max_transaction_amount: Optional[float] = None,
+        max_transaction_quantity: Optional[float] = None,
+        authorization_expiry_seconds: Optional[int] = None,
         anomaly_detection_enabled: bool = False,
+        entity_dedup_enabled: bool = False,
         allocations: Optional[List[Dict[str, Any]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Budget:
         """
         Create a new agent budget.
 
+        Exactly one of ``currency`` or ``unit`` must be provided:
+        - Monetary budgets: pass ``currency="USD"`` (3-letter ISO code).
+        - Resource budgets: pass ``unit="tokens"`` (free-form label).
+
+        :param authorization_expiry_seconds: If set, AUTHORIZED events older than
+            this many seconds are excluded from the reserved quantity calculation,
+            effectively recycling stale reservations back into the available pool.
+        :param entity_dedup_enabled: If True, a second authorize with the same
+            ``entity_id`` is denied with ENTITY_ALREADY_AUTHORIZED instead of
+            creating a new event. Use to prevent double-refund on the same order.
+
+        :param expires_at: Absolute ISO 8601 expiry timestamp (e.g. ``"2026-12-31T23:59:59Z"``).
+            Mutually exclusive with ``expires_in``.
+        :param expires_in: Relative duration from now. Accepts ``"24h"``, ``"7d"``, ``"30m"``,
+            a ``timedelta``, or an integer number of seconds. Mutually exclusive with ``expires_at``.
         :returns: ``Budget`` with ``session_token`` populated — store this
                   securely; it is never returned again.
         """
         body: Dict[str, Any] = {
             "userId": user_id,
             "totalLimit": total_limit,
-            "expiresAt": expires_at,
-            "currency": currency,
+            "expiresAt": _resolve_expires_at(expires_at, expires_in),
         }
+        if currency is not None:
+            body["currency"] = currency
+        if unit is not None:
+            body["unit"] = unit
         if intent_context is not None:
             body["intentContext"] = intent_context
         if intent_tags is not None:
@@ -126,10 +151,14 @@ class FiGuardClient:
             body["externalReference"] = external_reference
         if soft_limit is not None:
             body["softLimit"] = soft_limit
-        if max_transaction_amount is not None:
-            body["maxTransactionAmount"] = max_transaction_amount
+        if max_transaction_quantity is not None:
+            body["maxTransactionQuantity"] = max_transaction_quantity
+        if authorization_expiry_seconds is not None:
+            body["authorizationExpirySeconds"] = authorization_expiry_seconds
         if anomaly_detection_enabled:
             body["anomalyDetectionEnabled"] = True
+        if entity_dedup_enabled:
+            body["entityDedupEnabled"] = True
         if allocations is not None:
             body["allocations"] = allocations
         if metadata is not None:
@@ -188,24 +217,33 @@ class FiGuardClient:
         agent_id: str,
         action_type: str,
         description: str,
-        requested_amount: float,
+        requested_quantity: float,
         idempotency_key: Optional[str] = None,
-        currency: str = "USD",
+        currency: Optional[str] = None,
         intent_context: Optional[str] = None,
         entity_id: Optional[str] = None,
         claimed_category: Optional[str] = None,
         claimed_item_type: Optional[str] = None,
         parent_event_id: Optional[str] = None,
         agent_type: Optional[str] = None,
+        trace_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        dry_run: bool = False,
         **kwargs: Any,
     ) -> AuthorizationResult:
         """
         Pre-flight spend authorization.
 
+        :param requested_quantity: The quantity to reserve. For monetary budgets this
+            is the dollar amount; for resource budgets it's the token/call count.
+        :param currency: Required for monetary budgets — must match the budget's currency.
+            Omit or pass ``None`` for resource budgets (tokens, api_calls, etc.).
         :param idempotency_key: **Required.** A unique key for this request so
             retries are safe and never double-spend. Raises ``ValueError`` if
             omitted or blank.
+        :param dry_run: When ``True``, all enforcement checks run and a full
+            ``AUTHORIZED`` or ``DENIED`` result is returned, but nothing is written
+            to the ledger and no webhooks fire. Use during integration testing.
 
         :returns: ``AuthorizationResult`` — check ``.is_authorized`` or call
             ``.raise_if_denied()`` for exception-driven flow.
@@ -220,10 +258,11 @@ class FiGuardClient:
             "agentId": agent_id,
             "actionType": action_type,
             "description": description,
-            "requestedAmount": requested_amount,
-            "currency": currency,
+            "requestedQuantity": requested_quantity,
             "idempotencyKey": idempotency_key,
         }
+        if currency is not None:
+            body["currency"] = currency
         if agent_type is not None:
             body["agentType"] = agent_type
         if intent_context is not None:
@@ -236,14 +275,18 @@ class FiGuardClient:
             body["claimedItemType"] = claimed_item_type
         if parent_event_id is not None:
             body["parentEventId"] = parent_event_id
+        if trace_id is not None:
+            body["traceId"] = trace_id
         if metadata is not None:
             body["metadata"] = metadata
+        if dry_run:
+            body["dryRun"] = True
 
         # Log only the prefix — the raw token must never appear in logs
         token_prefix = session_token[:8] if len(session_token) >= 8 else "???"
         logger.debug(
-            "authorize: agentId=%s amount=%s key=%s token_prefix=%s",
-            agent_id, requested_amount, idempotency_key, token_prefix,
+            "authorize: agentId=%s quantity=%s key=%s token_prefix=%s",
+            agent_id, requested_quantity, idempotency_key, token_prefix,
         )
 
         headers = {"X-Session-Token": session_token}
@@ -260,16 +303,17 @@ class FiGuardClient:
     def confirm_event(
         self,
         event_id: str,
-        confirmed_amount: float,
+        confirmed_quantity: float,
         external_transaction_id: Optional[str] = None,
     ) -> SpendEventResponse:
         """
         Confirm a previously authorized event.
 
-        :param confirmed_amount:       Actual amount spent (may differ from requested).
+        :param confirmed_quantity:      Actual quantity consumed (may differ from requested).
+            Pass 0.0 if the action was a no-op (e.g. a tool call that returned early).
         :param external_transaction_id: Reference from your payment processor for audit.
         """
-        body: Dict[str, Any] = {"confirmedAmount": confirmed_amount}
+        body: Dict[str, Any] = {"confirmedQuantity": confirmed_quantity}
         if external_transaction_id is not None:
             body["externalTransactionId"] = external_transaction_id
 
@@ -329,16 +373,20 @@ class FiGuardClient:
         page: int = 0,
         size: int = 20,
         decision: Optional[str] = None,
+        trace_id: Optional[str] = None,
     ) -> LedgerPage:
         """
         Paginated spend event ledger for a budget, newest first.
 
         :param decision: Optional filter — one of ``AUTHORIZED``, ``CONFIRMED``,
             ``DENIED``, ``VOIDED``, ``FAILED``.
+        :param trace_id: Optional filter — return only events from a specific agent run.
         """
         params: Dict[str, Any] = {"page": page, "size": size}
         if decision is not None:
             params["decision"] = decision
+        if trace_id is not None:
+            params["traceId"] = trace_id
 
         data = self._request(
             "GET", f"/api/v1/budgets/{budget_id}/ledger", params=params, retryable=True
@@ -442,6 +490,52 @@ class FiGuardClient:
 
 
 # ---------------------------------------------------------------------------
+# expires_in resolver
+# ---------------------------------------------------------------------------
+
+def _resolve_expires_at(
+    expires_at: Optional[str],
+    expires_in: Optional[Union[str, int, timedelta]],
+) -> str:
+    """
+    Resolve ``expires_at`` or ``expires_in`` to an absolute ISO 8601 timestamp.
+
+    Accepted ``expires_in`` formats:
+    - ``"24h"`` / ``"2h"`` / ``"30m"`` — hours or minutes suffix
+    - ``"7d"`` / ``"30d"``             — days suffix
+    - ``int``                           — seconds from now
+    - ``timedelta``                     — added directly to now
+    """
+    if expires_at is not None and expires_in is not None:
+        raise ValueError("Pass either expires_at or expires_in, not both.")
+    if expires_at is not None:
+        return expires_at
+    if expires_in is None:
+        raise ValueError("Either expires_at or expires_in is required.")
+    if isinstance(expires_in, timedelta):
+        dt = datetime.now(timezone.utc) + expires_in
+    elif isinstance(expires_in, int):
+        dt = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+    elif isinstance(expires_in, str):
+        m = re.match(r"^(\d+)([hmd])$", expires_in.strip())
+        if not m:
+            raise ValueError(
+                f"Invalid expires_in: '{expires_in}'. "
+                "Use '24h', '7d', '30m', an int (seconds), or a timedelta."
+            )
+        n, unit = int(m.group(1)), m.group(2)
+        if unit == "h":
+            dt = datetime.now(timezone.utc) + timedelta(hours=n)
+        elif unit == "d":
+            dt = datetime.now(timezone.utc) + timedelta(days=n)
+        else:  # m
+            dt = datetime.now(timezone.utc) + timedelta(minutes=n)
+    else:
+        raise TypeError(f"expires_in must be str, int, or timedelta, got {type(expires_in)}")
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ---------------------------------------------------------------------------
 # Response parsing helpers
 # ---------------------------------------------------------------------------
 
@@ -470,9 +564,9 @@ def _parse_budget(data: Dict[str, Any]) -> Budget:
             category=a["category"],
             allowed_categories=a.get("allowedCategories", []),
             limit=a["limit"],
-            amount_spent=a["amountSpent"],
-            amount_reserved=a["amountReserved"],
-            available_amount=a["availableAmount"],
+            quantity_spent=a["quantitySpent"],
+            quantity_reserved=a["quantityReserved"],
+            available_quantity=a["availableQuantity"],
             status=a["status"],
             enforcement_mode=a.get("enforcementMode", "CATEGORY_CONSTRAINED"),
             forbidden_item_types=a.get("forbiddenItemTypes"),
@@ -483,10 +577,11 @@ def _parse_budget(data: Dict[str, Any]) -> Budget:
         id=data["id"],
         user_id=data["userId"],
         total_limit=data["totalLimit"],
-        currency=data["currency"],
-        amount_spent=data["amountSpent"],
-        amount_reserved=data["amountReserved"],
-        available_amount=data["availableAmount"],
+        currency=data.get("currency"),
+        unit=data.get("unit"),
+        quantity_spent=data["quantitySpent"],
+        quantity_reserved=data["quantityReserved"],
+        available_quantity=data["availableQuantity"],
         status=data["status"],
         expires_at=data["expiresAt"],
         created_at=data.get("createdAt"),
@@ -495,7 +590,8 @@ def _parse_budget(data: Dict[str, Any]) -> Budget:
         intent_tags=data.get("intentTags"),
         external_reference=data.get("externalReference"),
         soft_limit=data.get("softLimit"),
-        max_transaction_amount=data.get("maxTransactionAmount"),
+        max_transaction_quantity=data.get("maxTransactionQuantity"),
+        authorization_expiry_seconds=data.get("authorizationExpirySeconds"),
         allocations=allocations,
         cancelled_at=data.get("cancelledAt"),
         metadata=data.get("metadata"),
@@ -508,9 +604,9 @@ def _parse_authorization_result(data: Dict[str, Any]) -> AuthorizationResult:
     if snap := data.get("budgetSnapshot"):
         budget_snapshot = BudgetSnapshot(
             total_limit=snap["totalLimit"],
-            amount_spent=snap["amountSpent"],
-            amount_reserved=snap["amountReserved"],
-            available_amount=snap["availableAmount"],
+            quantity_spent=snap["quantitySpent"],
+            quantity_reserved=snap["quantityReserved"],
+            available_quantity=snap["availableQuantity"],
             status=snap["status"],
         )
 
@@ -519,9 +615,9 @@ def _parse_authorization_result(data: Dict[str, Any]) -> AuthorizationResult:
         alloc_snapshot = AllocationSnapshot(
             category=snap["category"],
             limit=snap["limit"],
-            amount_spent=snap["amountSpent"],
-            amount_reserved=snap["amountReserved"],
-            available_amount=snap["availableAmount"],
+            quantity_spent=snap["quantitySpent"],
+            quantity_reserved=snap["quantityReserved"],
+            available_quantity=snap["availableQuantity"],
             status=snap["status"],
         )
 
@@ -530,7 +626,7 @@ def _parse_authorization_result(data: Dict[str, Any]) -> AuthorizationResult:
         decision=data["decision"],
         budget_snapshot=budget_snapshot,
         allocation_snapshot=alloc_snapshot,
-        approved_amount=data.get("approvedAmount"),
+        approved_quantity=data.get("approvedQuantity"),
         authorized_at=data.get("authorizedAt"),
         denial_reason=_str(data.get("denialReason")),
         denial_message=data.get("denialMessage"),
@@ -543,14 +639,14 @@ def _parse_spend_event(data: Dict[str, Any]) -> SpendEventResponse:
     return SpendEventResponse(
         id=data["id"],
         decision=data["decision"],
-        requested_amount=data["requestedAmount"],
-        currency=data["currency"],
+        requested_quantity=data["requestedQuantity"],
+        currency=data.get("currency"),
         created_at=data["createdAt"],
         agent_id=data.get("agentId"),
         agent_type=data.get("agentType"),
         action_type=data.get("actionType"),
         description=data.get("description"),
-        confirmed_amount=data.get("confirmedAmount"),
+        confirmed_quantity=data.get("confirmedQuantity"),
         entity_id=data.get("entityId"),
         claimed_category=data.get("claimedCategory"),
         claimed_item_type=data.get("claimedItemType"),
@@ -559,6 +655,7 @@ def _parse_spend_event(data: Dict[str, Any]) -> SpendEventResponse:
         denial_reason=_str(data.get("denialReason")),
         failure_reason=data.get("failureReason"),
         parent_event_id=data.get("parentEventId"),
+        trace_id=data.get("traceId"),
         metadata=data.get("metadata"),
     )
 

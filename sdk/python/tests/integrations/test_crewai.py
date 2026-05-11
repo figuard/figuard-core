@@ -30,7 +30,7 @@ def _authorized(event_id: str = "evt_001", amount: float = 100.0) -> Authorizati
     return AuthorizationResult(
         event_id=event_id,
         decision="AUTHORIZED",
-        approved_amount=amount,
+        approved_quantity=amount,
     )
 
 
@@ -87,8 +87,8 @@ class TestFiGuardCrewGuard:
         call_kwargs = client.authorize.call_args.kwargs
         assert call_kwargs["session_token"] == SESSION_TOKEN
         assert call_kwargs["claimed_category"] == "supplies"
-        assert call_kwargs["requested_amount"] == 75.0
-        client.confirm_event.assert_called_once_with("evt_001", confirmed_amount=75.0)
+        assert call_kwargs["requested_quantity"] == 75.0
+        client.confirm_event.assert_called_once_with("evt_001", confirmed_quantity=75.0)
 
     def test_denied_call_returns_denial_string(self):
         client = _mock_client(_denied("INSUFFICIENT_FUNDS", "no remaining budget"))
@@ -144,7 +144,7 @@ class TestFiGuardCrewGuard:
         FiGuardCrewGuard(tool=tool, client=client, session_token=SESSION_TOKEN)
         tool._run(amount=42.0)
 
-        assert client.authorize.call_args.kwargs["requested_amount"] == 42.0
+        assert client.authorize.call_args.kwargs["requested_quantity"] == 42.0
 
     def test_zero_amount_when_key_missing(self):
         client = _mock_client(_authorized())
@@ -153,7 +153,7 @@ class TestFiGuardCrewGuard:
         FiGuardCrewGuard(tool=tool, client=client, session_token=SESSION_TOKEN)
         tool._run(vendor="acme")  # no amount kwarg
 
-        assert client.authorize.call_args.kwargs["requested_amount"] == 0.0
+        assert client.authorize.call_args.kwargs["requested_quantity"] == 0.0
 
     def test_no_category_by_default(self):
         client = _mock_client(_authorized())

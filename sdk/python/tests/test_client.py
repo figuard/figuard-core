@@ -44,9 +44,9 @@ def _budget_payload(session_token: bool = False) -> Dict[str, Any]:
         "userId": "user_test",
         "totalLimit": 500.0,
         "currency": "USD",
-        "amountSpent": 0.0,
-        "amountReserved": 0.0,
-        "availableAmount": 500.0,
+        "quantitySpent": 0.0,
+        "quantityReserved": 0.0,
+        "availableQuantity": 500.0,
         "status": "ACTIVE",
         "expiresAt": "2025-12-31T23:59:59Z",
         "createdAt": "2025-01-01T00:00:00Z",
@@ -62,13 +62,13 @@ def _authorized_payload() -> Dict[str, Any]:
     return {
         "eventId": EVENT_ID,
         "decision": "AUTHORIZED",
-        "approvedAmount": 100.0,
+        "approvedQuantity": 100.0,
         "authorizedAt": "2025-01-01T10:00:00Z",
         "budgetSnapshot": {
             "totalLimit": 500.0,
-            "amountSpent": 0.0,
-            "amountReserved": 100.0,
-            "availableAmount": 400.0,
+            "quantitySpent": 0.0,
+            "quantityReserved": 100.0,
+            "availableQuantity": 400.0,
             "status": "ACTIVE",
         },
     }
@@ -87,7 +87,7 @@ def _event_payload(decision: str = "CONFIRMED") -> Dict[str, Any]:
     return {
         "id": EVENT_ID,
         "decision": decision,
-        "requestedAmount": 100.0,
+        "requestedQuantity": 100.0,
         "currency": "USD",
         "createdAt": "2025-01-01T10:00:00Z",
     }
@@ -114,7 +114,7 @@ class TestCreateBudget:
         assert budget.id == BUDGET_ID
         assert budget.session_token == SESSION_TOKEN
         assert budget.status == "ACTIVE"
-        assert budget.available_amount == 500.0
+        assert budget.available_quantity == 500.0
         assert budget.is_active is True
 
     @resp_lib.activate
@@ -152,7 +152,7 @@ class TestAuthorize:
                 agent_id="agent_001",
                 action_type="PURCHASE",
                 description="test",
-                requested_amount=50.0,
+                requested_quantity=50.0,
                 # idempotency_key intentionally omitted
             )
 
@@ -163,7 +163,7 @@ class TestAuthorize:
                 agent_id="agent_001",
                 action_type="PURCHASE",
                 description="test",
-                requested_amount=50.0,
+                requested_quantity=50.0,
                 idempotency_key="   ",
             )
 
@@ -177,16 +177,16 @@ class TestAuthorize:
             agent_id="agent_001",
             action_type="PURCHASE",
             description="NYC flight",
-            requested_amount=100.0,
+            requested_quantity=100.0,
             idempotency_key=str(uuid.uuid4()),
         )
 
         assert isinstance(result, AuthorizationResult)
         assert result.is_authorized is True
         assert result.event_id == EVENT_ID
-        assert result.approved_amount == 100.0
+        assert result.approved_quantity == 100.0
         assert result.budget_snapshot is not None
-        assert result.budget_snapshot.available_amount == 400.0
+        assert result.budget_snapshot.available_quantity == 400.0
 
     @resp_lib.activate
     def test_denied_is_authorized_false(self, client: FiGuardClient) -> None:
@@ -198,7 +198,7 @@ class TestAuthorize:
             agent_id="agent_001",
             action_type="PURCHASE",
             description="too expensive",
-            requested_amount=9999.0,
+            requested_quantity=9999.0,
             idempotency_key=str(uuid.uuid4()),
         )
 
@@ -216,7 +216,7 @@ class TestAuthorize:
                 agent_id="agent_001",
                 action_type="PURCHASE",
                 description="paused budget",
-                requested_amount=10.0,
+                requested_quantity=10.0,
                 idempotency_key=str(uuid.uuid4()),
             ).raise_if_denied()
 
@@ -232,7 +232,7 @@ class TestAuthorize:
             agent_id="agent_001",
             action_type="PURCHASE",
             description="test",
-            requested_amount=50.0,
+            requested_quantity=50.0,
             idempotency_key=str(uuid.uuid4()),
         ).raise_if_denied()
 
@@ -256,7 +256,7 @@ class TestAuthorize:
             agent_id="agent_001",
             action_type="PURCHASE",
             description="duplicate",
-            requested_amount=50.0,
+            requested_quantity=50.0,
             idempotency_key=str(uuid.uuid4()),
         )
 
@@ -284,7 +284,7 @@ class TestAuthorize:
             agent_id="agent_001",
             action_type="PURCHASE",
             description="test",
-            requested_amount=50.0,
+            requested_quantity=50.0,
             idempotency_key=str(uuid.uuid4()),
         )
 
@@ -302,7 +302,7 @@ class TestPaymentLifecycle:
         resp_lib.add(resp_lib.POST, f"{BASE}/api/v1/events/{EVENT_ID}/confirm",
                      json=_event_payload("CONFIRMED"), status=200)
 
-        event = client.confirm_event(EVENT_ID, confirmed_amount=95.0)
+        event = client.confirm_event(EVENT_ID, confirmed_quantity=95.0)
 
         assert event.id == EVENT_ID
         assert event.decision == "CONFIRMED"
@@ -490,7 +490,7 @@ def _tree_event_payload(agent_id: str = "agent_001") -> dict:
     return {
         "id": str(uuid.uuid4()),
         "decision": "CONFIRMED",
-        "requestedAmount": 100.0,
+        "requestedQuantity": 100.0,
         "currency": "USD",
         "createdAt": "2025-01-01T10:00:00Z",
         "agentId": agent_id,
@@ -663,7 +663,7 @@ class TestBudgetOptionalFields:
             "intentTags": ["travel", "business"],
             "externalReference": "ext-ref-001",
             "softLimit": 400.0,
-            "maxTransactionAmount": 250.0,
+            "maxTransactionQuantity": 250.0,
             "metadata": {"department": "engineering"},
         }
         resp_lib.add(resp_lib.POST, f"{BASE}/api/v1/budgets", json=payload, status=201)
@@ -676,7 +676,7 @@ class TestBudgetOptionalFields:
             intent_tags=["travel", "business"],
             external_reference="ext-ref-001",
             soft_limit=400.0,
-            max_transaction_amount=250.0,
+            max_transaction_quantity=250.0,
             anomaly_detection_enabled=True,
             metadata={"department": "engineering"},
         )
@@ -685,7 +685,7 @@ class TestBudgetOptionalFields:
         assert budget.intent_tags == ["travel", "business"]
         assert budget.external_reference == "ext-ref-001"
         assert budget.soft_limit == 400.0
-        assert budget.max_transaction_amount == 250.0
+        assert budget.max_transaction_quantity == 250.0
         assert budget.metadata == {"department": "engineering"}
 
         # Verify anomaly_detection_enabled was sent in the request body
@@ -704,9 +704,9 @@ class TestBudgetOptionalFields:
                     "category": "flight",
                     "allowedCategories": ["flight", "airline"],
                     "limit": 300.0,
-                    "amountSpent": 0.0,
-                    "amountReserved": 0.0,
-                    "availableAmount": 300.0,
+                    "quantitySpent": 0.0,
+                    "quantityReserved": 0.0,
+                    "availableQuantity": 300.0,
                     "status": "ACTIVE",
                     "enforcementMode": "CATEGORY_CONSTRAINED",
                     "forbiddenItemTypes": ["gift_card"],
@@ -733,8 +733,8 @@ class TestBudgetOptionalFields:
         assert alloc.category == "flight"
         assert alloc.allowed_categories == ["flight", "airline"]
         assert alloc.limit == 300.0
-        assert alloc.amount_spent == 0.0
-        assert alloc.available_amount == 300.0
+        assert alloc.quantity_spent == 0.0
+        assert alloc.available_quantity == 300.0
         assert alloc.enforcement_mode == "CATEGORY_CONSTRAINED"
         assert alloc.forbidden_item_types == ["gift_card"]
 
@@ -759,12 +759,12 @@ class TestPaymentLifecycleExtended:
     @resp_lib.activate
     def test_confirm_event_with_external_transaction_id(self, client: FiGuardClient) -> None:
         resp_lib.add(resp_lib.POST, f"{BASE}/api/v1/events/{EVENT_ID}/confirm",
-                     json={**_event_payload("CONFIRMED"), "confirmedAmount": 95.0},
+                     json={**_event_payload("CONFIRMED"), "confirmedQuantity": 95.0},
                      status=200)
 
         event = client.confirm_event(
             EVENT_ID,
-            confirmed_amount=95.0,
+            confirmed_quantity=95.0,
             external_transaction_id="ext-txn-9999",
         )
 
@@ -776,14 +776,14 @@ class TestPaymentLifecycleExtended:
     @resp_lib.activate
     def test_confirm_event_partial_amount(self, client: FiGuardClient) -> None:
         """Confirmed amount may be less than the reserved amount (partial spend)."""
-        payload = {**_event_payload("CONFIRMED"), "confirmedAmount": 80.0, "requestedAmount": 100.0}
+        payload = {**_event_payload("CONFIRMED"), "confirmedQuantity": 80.0, "requestedQuantity": 100.0}
         resp_lib.add(resp_lib.POST, f"{BASE}/api/v1/events/{EVENT_ID}/confirm",
                      json=payload, status=200)
 
-        event = client.confirm_event(EVENT_ID, confirmed_amount=80.0)
+        event = client.confirm_event(EVENT_ID, confirmed_quantity=80.0)
 
         assert event.decision == "CONFIRMED"
-        assert event.confirmed_amount == 80.0
+        assert event.confirmed_quantity == 80.0
 
     @resp_lib.activate
     def test_void_event_with_child_events_flag(self, client: FiGuardClient) -> None:
@@ -882,7 +882,7 @@ class TestErrorAttributes:
                 agent_id="a",
                 action_type="PURCHASE",
                 description="test",
-                requested_amount=10.0,
+                requested_quantity=10.0,
                 idempotency_key=str(uuid.uuid4()),
             ).raise_if_denied()
 
@@ -908,7 +908,7 @@ class TestAuthorizeOptionalParams:
             agent_id="agent_001",
             action_type="PURCHASE",
             description="NYC to LAX flight",
-            requested_amount=299.0,
+            requested_quantity=299.0,
             idempotency_key=str(uuid.uuid4()),
             currency="USD",
             intent_context="booking business travel",
@@ -936,9 +936,9 @@ class TestAuthorizeOptionalParams:
             "allocationSnapshot": {
                 "category": "flight",
                 "limit": 300.0,
-                "amountSpent": 0.0,
-                "amountReserved": 100.0,
-                "availableAmount": 200.0,
+                "quantitySpent": 0.0,
+                "quantityReserved": 100.0,
+                "availableQuantity": 200.0,
                 "status": "ACTIVE",
             },
         }
@@ -950,7 +950,7 @@ class TestAuthorizeOptionalParams:
             agent_id="a",
             action_type="PURCHASE",
             description="test",
-            requested_amount=100.0,
+            requested_quantity=100.0,
             idempotency_key=str(uuid.uuid4()),
             claimed_category="flight",
         )
@@ -958,6 +958,6 @@ class TestAuthorizeOptionalParams:
         assert result.allocation_snapshot is not None
         assert result.allocation_snapshot.category == "flight"
         assert result.allocation_snapshot.limit == 300.0
-        assert result.allocation_snapshot.amount_reserved == 100.0
-        assert result.allocation_snapshot.available_amount == 200.0
+        assert result.allocation_snapshot.quantity_reserved == 100.0
+        assert result.allocation_snapshot.available_quantity == 200.0
         assert result.allocation_snapshot.status == "ACTIVE"
