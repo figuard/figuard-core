@@ -19,7 +19,7 @@ from langchain_core.tools import ToolException
 from figuard.integrations.langchain import (
     FiGuardCallbackHandler,
     FiGuardToolGuard,
-    _extract_amount,
+    _resolve_amount,
 )
 from figuard.models import AuthorizationResult
 
@@ -56,34 +56,32 @@ def _mock_client(authorize_result: AuthorizationResult) -> MagicMock:
 
 
 # ---------------------------------------------------------------------------
-# _extract_amount helper
+# _resolve_amount helper
 # ---------------------------------------------------------------------------
 
-class TestExtractAmount:
-    def test_extracts_from_json(self):
-        assert _extract_amount('{"amount": 99.50}', "amount") == 99.50
+class TestResolveAmount:
+    def test_extracts_by_key(self):
+        assert _resolve_amount({"amount": 99.50}, "amount", None) == 99.50
 
     def test_extracts_custom_key(self):
-        assert _extract_amount('{"price": 267.00, "destination": "NYC"}', "price") == 267.0
+        assert _resolve_amount({"price": 267.00, "destination": "NYC"}, "price", None) == 267.0
 
     def test_returns_zero_when_key_missing(self):
-        assert _extract_amount('{"destination": "NYC"}', "amount") == 0.0
+        assert _resolve_amount({"destination": "NYC"}, "amount", None) == 0.0
 
-    def test_returns_zero_for_non_json(self):
-        assert _extract_amount("plain string input", "amount") == 0.0
+    def test_returns_zero_for_non_numeric(self):
+        assert _resolve_amount({"amount": "not_a_number"}, "amount", None) == 0.0
 
-    def test_returns_zero_for_empty_string(self):
-        assert _extract_amount("", "amount") == 0.0
+    def test_uses_extractor_over_key(self):
+        extractor = lambda d: d.get("price", 0)
+        assert _resolve_amount({"price": 42.0, "amount": 99.0}, "amount", extractor) == 42.0
 
-    # Python dict repr fallback (LangGraph serializes args via str() not json.dumps)
-    def test_extracts_from_python_dict_repr(self):
-        assert _extract_amount("{'amount': 100.0, 'destination': 'NYC'}", "amount") == 100.0
+    def test_extractor_exception_returns_zero(self):
+        extractor = lambda d: 1 / 0  # raises ZeroDivisionError
+        assert _resolve_amount({"amount": 99.0}, "amount", extractor) == 0.0
 
-    def test_extracts_custom_key_from_python_dict_repr(self):
-        assert _extract_amount("{'price': 267.0}", "price") == 267.0
-
-    def test_returns_zero_when_key_missing_in_python_dict_repr(self):
-        assert _extract_amount("{'destination': 'NYC'}", "amount") == 0.0
+    def test_empty_dict_returns_zero(self):
+        assert _resolve_amount({}, "amount", None) == 0.0
 
 
 # ---------------------------------------------------------------------------
