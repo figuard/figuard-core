@@ -1,0 +1,49 @@
+{
+  "name": "figuard-mcp",
+  "version": "0.1.1",
+  "description": "FiGuard MCP server — use FiGuard from Claude Code, Cursor, or Claude Desktop without writing SDK code",
+  "main": "./dist/index.js",
+  "bin": {
+    "figuard-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "homepage": "https://figuard.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/figuard/figuard-core.git",
+    "directory": "packages/mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/figuard/figuard-core/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "figuard",
+    "ai",
+    "agents",
+    "spend",
+    "authorization",
+    "claude",
+    "cursor"
+  ],
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "figuard": "^0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
