@@ -72,7 +72,7 @@ class CurrencyMismatchIT extends IntegrationTestBase {
             "agentId", "agent_001",
             "actionType", "PURCHASE",
             "description", "currency test",
-            "requestedAmount", Double.parseDouble(amount),
+            "requestedQuantity", Double.parseDouble(amount),
             "currency", currency,
             "idempotencyKey", UUID.randomUUID().toString()
         ));

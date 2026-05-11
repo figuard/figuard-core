@@ -45,12 +45,14 @@ public class BudgetMapper {
             .sessionToken(rawSessionToken)
             .sessionTokenPrefix(budget.getSessionTokenPrefix())
             .totalLimit(budget.getTotalLimit())
-            .maxTransactionAmount(budget.getMaxTransactionAmount())
+            .maxTransactionQuantity(budget.getMaxTransactionQuantity())
             .currency(budget.getCurrency() != null ? budget.getCurrency().trim() : null)
-            .amountSpent(budget.getAmountSpent())
-            .amountReserved(budget.getAmountReserved())
-            .availableAmount(budget.availableAmount())
+            .unit(budget.getUnit())
+            .quantitySpent(budget.getQuantitySpent())
+            .quantityReserved(budget.getQuantityReserved())
+            .availableQuantity(budget.availableQuantity())
             .softLimit(budget.getSoftLimit())
+            .authorizationExpirySeconds(budget.getAuthorizationExpirySeconds())
             .status(budget.getStatus())
             .allocations(allocations)
             .expiresAt(budget.getExpiresAt())
@@ -69,9 +71,9 @@ public class BudgetMapper {
                 ? Arrays.asList(allocation.getForbiddenItemTypes()) : null)
             .enforcementMode(allocation.getEnforcementMode())
             .limit(allocation.getTotalLimit())
-            .amountSpent(allocation.getAmountSpent())
-            .amountReserved(allocation.getAmountReserved())
-            .availableAmount(allocation.availableAmount())
+            .quantitySpent(allocation.getQuantitySpent())
+            .quantityReserved(allocation.getQuantityReserved())
+            .availableQuantity(allocation.availableQuantity())
             .status(allocation.getStatus())
             .build();
     }
@@ -84,8 +86,8 @@ public class BudgetMapper {
             .agentType(event.getAgentType())
             .actionType(event.getActionType())
             .description(event.getDescription())
-            .requestedAmount(event.getRequestedAmount())
-            .confirmedAmount(event.getConfirmedAmount())
+            .requestedQuantity(event.getRequestedQuantity())
+            .confirmedQuantity(event.getConfirmedQuantity())
             .currency(event.getCurrency() != null ? event.getCurrency().trim() : null)
             .entityId(event.getEntityId())
             .claimedCategory(event.getClaimedCategory())
@@ -97,6 +99,7 @@ public class BudgetMapper {
             .failureReason(event.getFailureReason())
             .parentEventId(event.getParentEvent() != null
                 ? event.getParentEvent().getId() : null)
+            .traceId(event.getTraceId())
             .createdAt(event.getCreatedAt())
             .metadata(event.getMetadata())
             .build();
@@ -106,9 +109,9 @@ public class BudgetMapper {
         return BudgetSnapshot.builder()
             .id(budget.getId())
             .totalLimit(budget.getTotalLimit())
-            .amountSpent(budget.getAmountSpent())
-            .amountReserved(budget.getAmountReserved())
-            .availableAmount(budget.availableAmount())
+            .quantitySpent(budget.getQuantitySpent())
+            .quantityReserved(budget.getQuantityReserved())
+            .availableQuantity(budget.availableQuantity())
             .status(budget.getStatus())
             .build();
     }
@@ -117,9 +120,9 @@ public class BudgetMapper {
         return AllocationSnapshot.builder()
             .category(allocation.getCategory())
             .limit(allocation.getTotalLimit())
-            .amountSpent(allocation.getAmountSpent())
-            .amountReserved(allocation.getAmountReserved())
-            .availableAmount(allocation.availableAmount())
+            .quantitySpent(allocation.getQuantitySpent())
+            .quantityReserved(allocation.getQuantityReserved())
+            .availableQuantity(allocation.availableQuantity())
             .status(allocation.getStatus())
             .build();
     }
@@ -133,8 +136,9 @@ public class BudgetMapper {
         budget.setIntentTags(request.getIntentTags() != null
             ? request.getIntentTags().toArray(new String[0]) : null);
         budget.setTotalLimit(request.getTotalLimit());
-        budget.setMaxTransactionAmount(request.getMaxTransactionAmount());
-        budget.setCurrency(request.getCurrency() != null ? request.getCurrency() : "USD");
+        budget.setMaxTransactionQuantity(request.getMaxTransactionQuantity());
+        budget.setCurrency(request.getCurrency());
+        budget.setUnit(request.getUnit());
         budget.setSoftLimit(request.getSoftLimit());
         budget.setEntityDedupEnabled(request.isEntityDedupEnabled());
         budget.setAnomalyDetectionEnabled(request.isAnomalyDetectionEnabled());
@@ -144,6 +148,7 @@ public class BudgetMapper {
         if (request.getAnomalyMinSampleSize() != null) {
             budget.setAnomalyMinSampleSize(request.getAnomalyMinSampleSize());
         }
+        budget.setAuthorizationExpirySeconds(request.getAuthorizationExpirySeconds());
         budget.setExpiresAt(request.getExpiresAt());
         budget.setMetadata(request.getMetadata());
         return budget;

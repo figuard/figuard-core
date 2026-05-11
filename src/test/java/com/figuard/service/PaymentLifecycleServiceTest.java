@@ -56,15 +56,15 @@ class PaymentLifecycleServiceTest {
         budget = new AgentBudget();
         budget.setId(UUID.randomUUID());
         budget.setTenant(tenant);
-        budget.setAmountReserved(new BigDecimal("50.00"));
-        budget.setAmountSpent(BigDecimal.ZERO);
+        budget.setQuantityReserved(new BigDecimal("50.00"));
+        budget.setQuantitySpent(BigDecimal.ZERO);
 
         event = new SpendEvent();
         event.setId(UUID.randomUUID());
         event.setTenant(tenant);
         event.setBudget(budget);
         event.setDecision(SpendDecision.AUTHORIZED);
-        event.setRequestedAmount(new BigDecimal("50.00"));
+        event.setRequestedQuantity(new BigDecimal("50.00"));
         event.setConfirmationTimeoutAt(OffsetDateTime.now().plusMinutes(5));
     }
 
@@ -80,15 +80,15 @@ class PaymentLifecycleServiceTest {
         when(budgetMapper.toResponse(any(SpendEvent.class))).thenReturn(mock(SpendEventResponse.class));
 
         ConfirmEventRequest req = new ConfirmEventRequest();
-        req.setConfirmedAmount(new BigDecimal("48.00"));
+        req.setConfirmedQuantity(new BigDecimal("48.00"));
         req.setExternalTransactionId("pi_test_123");
 
         service.confirmEvent(event.getId(), req, tenant);
 
-        assertThat(budget.getAmountReserved()).isEqualByComparingTo("0.00");
-        assertThat(budget.getAmountSpent()).isEqualByComparingTo("48.00");
+        assertThat(budget.getQuantityReserved()).isEqualByComparingTo("0.00");
+        assertThat(budget.getQuantitySpent()).isEqualByComparingTo("48.00");
         assertThat(event.getDecision()).isEqualTo(SpendDecision.CONFIRMED);
-        assertThat(event.getConfirmedAmount()).isEqualByComparingTo("48.00");
+        assertThat(event.getConfirmedQuantity()).isEqualByComparingTo("48.00");
         assertThat(event.getExternalTransactionId()).isEqualTo("pi_test_123");
     }
 
@@ -98,7 +98,7 @@ class PaymentLifecycleServiceTest {
         when(eventRepository.findByIdWithLock(event.getId())).thenReturn(Optional.of(event));
 
         ConfirmEventRequest req = new ConfirmEventRequest();
-        req.setConfirmedAmount(new BigDecimal("50.00"));
+        req.setConfirmedQuantity(new BigDecimal("50.00"));
 
         assertThatThrownBy(() -> service.confirmEvent(event.getId(), req, tenant))
             .isInstanceOf(ResponseStatusException.class)
@@ -111,7 +111,7 @@ class PaymentLifecycleServiceTest {
         when(eventRepository.findByIdWithLock(event.getId())).thenReturn(Optional.of(event));
 
         ConfirmEventRequest req = new ConfirmEventRequest();
-        req.setConfirmedAmount(new BigDecimal("50.00"));
+        req.setConfirmedQuantity(new BigDecimal("50.00"));
 
         assertThatThrownBy(() -> service.confirmEvent(event.getId(), req, tenant))
             .isInstanceOf(ResponseStatusException.class)
@@ -134,8 +134,8 @@ class PaymentLifecycleServiceTest {
 
         service.failEvent(event.getId(), req, tenant);
 
-        assertThat(budget.getAmountReserved()).isEqualByComparingTo("0.00");
-        assertThat(budget.getAmountSpent()).isEqualByComparingTo("0.00");
+        assertThat(budget.getQuantityReserved()).isEqualByComparingTo("0.00");
+        assertThat(budget.getQuantitySpent()).isEqualByComparingTo("0.00");
         assertThat(event.getDecision()).isEqualTo(SpendDecision.FAILED);
         assertThat(event.getFailureReason()).isEqualTo("PAYMENT_DECLINED");
     }
@@ -168,7 +168,7 @@ class PaymentLifecycleServiceTest {
 
         service.voidEvent(event.getId(), req, tenant);
 
-        assertThat(budget.getAmountReserved()).isEqualByComparingTo("0.00");
+        assertThat(budget.getQuantityReserved()).isEqualByComparingTo("0.00");
         assertThat(event.getDecision()).isEqualTo(SpendDecision.VOIDED);
     }
 

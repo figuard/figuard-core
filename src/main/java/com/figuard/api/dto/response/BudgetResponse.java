@@ -28,12 +28,14 @@ public class BudgetResponse {
     private String sessionTokenPrefix;
 
     private BigDecimal totalLimit;
-    private BigDecimal maxTransactionAmount;
+    private BigDecimal maxTransactionQuantity;
     private String currency;
-    private BigDecimal amountSpent;
-    private BigDecimal amountReserved;
-    private BigDecimal availableAmount;
+    private String unit;
+    private BigDecimal quantitySpent;
+    private BigDecimal quantityReserved;
+    private BigDecimal availableQuantity;
     private BigDecimal softLimit;
+    private Integer authorizationExpirySeconds;
     private BudgetStatus status;
     private List<AllocationResponse> allocations;
     private OffsetDateTime expiresAt;

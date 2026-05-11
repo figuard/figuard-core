@@ -108,7 +108,7 @@ class BudgetUpdateIT extends IntegrationTestBase {
                     "agentId", "agent_update_test",
                     "actionType", "PURCHASE",
                     "description", "auth while paused",
-                    "requestedAmount", 50.00,
+                    "requestedQuantity", 50.00,
                     "idempotencyKey", UUID.randomUUID().toString()
                 ))))
             .andExpect(status().isOk())

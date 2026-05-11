@@ -74,8 +74,8 @@ class AuthorizationServiceTest {
         budget.setTenant(tenant);
         budget.setStatus(BudgetStatus.ACTIVE);
         budget.setTotalLimit(new BigDecimal("500.00"));
-        budget.setAmountSpent(BigDecimal.ZERO);
-        budget.setAmountReserved(BigDecimal.ZERO);
+        budget.setQuantitySpent(BigDecimal.ZERO);
+        budget.setQuantityReserved(BigDecimal.ZERO);
         budget.setCurrency("USD");
         budget.setExpiresAt(OffsetDateTime.now().plusHours(2));
 
@@ -85,8 +85,8 @@ class AuthorizationServiceTest {
         flightAllocation.setAllowedCategories(new String[]{"flight"});
         flightAllocation.setEnforcementMode(EnforcementMode.CATEGORY_CONSTRAINED);
         flightAllocation.setTotalLimit(new BigDecimal("300.00"));
-        flightAllocation.setAmountSpent(BigDecimal.ZERO);
-        flightAllocation.setAmountReserved(BigDecimal.ZERO);
+        flightAllocation.setQuantitySpent(BigDecimal.ZERO);
+        flightAllocation.setQuantityReserved(BigDecimal.ZERO);
         flightAllocation.setStatus(AllocationStatus.ACTIVE);
 
         // Default mock: sessionTokenService.hashToken() returns a fixed hash
@@ -106,9 +106,9 @@ class AuthorizationServiceTest {
         lenient().when(budgetMapper.toBudgetSnapshot(any())).thenReturn(
             com.figuard.api.dto.response.BudgetSnapshot.builder()
                 .totalLimit(budget.getTotalLimit())
-                .amountSpent(budget.getAmountSpent())
-                .amountReserved(budget.getAmountReserved())
-                .availableAmount(budget.availableAmount())
+                .quantitySpent(budget.getQuantitySpent())
+                .quantityReserved(budget.getQuantityReserved())
+                .availableQuantity(budget.availableQuantity())
                 .status(budget.getStatus())
                 .build());
     }
@@ -203,7 +203,7 @@ class AuthorizationServiceTest {
 
     @Test
     void authorize_denies_whenAllocationExhausted() {
-        flightAllocation.setAmountSpent(new BigDecimal("300.00")); // fully spent
+        flightAllocation.setQuantitySpent(new BigDecimal("300.00")); // fully spent
 
         when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
         when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any()))
@@ -247,18 +247,18 @@ class AuthorizationServiceTest {
         AuthorizationResponse response = service.authorize("st_token", req, tenant);
 
         assertThat(response.getDecision()).isEqualTo(SpendDecision.AUTHORIZED);
-        assertThat(response.getApprovedAmount()).isEqualByComparingTo("100.00");
+        assertThat(response.getApprovedQuantity()).isEqualByComparingTo("100.00");
         assertThat(response.getAuthorizedAt()).isNotNull();
 
         // Verify reservation was written on both allocation and budget
         ArgumentCaptor<BudgetAllocation> allocCaptor = ArgumentCaptor.forClass(BudgetAllocation.class);
         verify(allocationRepository).save(allocCaptor.capture());
-        assertThat(allocCaptor.getValue().getAmountReserved())
+        assertThat(allocCaptor.getValue().getQuantityReserved())
             .isEqualByComparingTo("100.00");
 
         ArgumentCaptor<AgentBudget> budgetCaptor = ArgumentCaptor.forClass(AgentBudget.class);
         verify(budgetRepository).save(budgetCaptor.capture());
-        assertThat(budgetCaptor.getValue().getAmountReserved())
+        assertThat(budgetCaptor.getValue().getQuantityReserved())
             .isEqualByComparingTo("100.00");
     }
 
@@ -267,7 +267,7 @@ class AuthorizationServiceTest {
         SpendEvent existing = new SpendEvent();
         ReflectionTestUtils.setField(existing, "id", UUID.randomUUID());
         existing.setDecision(SpendDecision.AUTHORIZED);
-        existing.setRequestedAmount(new BigDecimal("100.00"));
+        existing.setRequestedQuantity(new BigDecimal("100.00"));
         existing.setBudget(budget);
 
         when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
@@ -283,19 +283,19 @@ class AuthorizationServiceTest {
 
     @Test
     void authorize_denies_whenRequestedAmountExceedsMaxTransactionAmount() {
-        budget.setMaxTransactionAmount(new BigDecimal("50.00")); // cap at $50 per transaction
+        budget.setMaxTransactionQuantity(new BigDecimal("50.00")); // cap at $50 per transaction
 
         when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
         when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any()))
             .thenReturn(Optional.empty());
 
         AuthorizeSpendRequest req = validRequest();
-        req.setRequestedAmount(new BigDecimal("75.00")); // exceeds the $50 cap
+        req.setRequestedQuantity(new BigDecimal("75.00")); // exceeds the $50 cap
 
         AuthorizationResponse response = service.authorize("st_token", req, tenant);
 
         assertThat(response.getDecision()).isEqualTo(SpendDecision.DENIED);
-        assertThat(response.getDenialReason()).isEqualTo(DenialCode.EXCEEDS_TRANSACTION_LIMIT);
+        assertThat(response.getDenialReason()).isEqualTo(DenialCode.EXCEEDS_QUANTITY_LIMIT);
         assertThat(response.getDenialMessage()).contains("75");
         assertThat(response.getDenialMessage()).contains("50");
         // Allocations should not be loaded — check is applied before that step
@@ -304,7 +304,7 @@ class AuthorizationServiceTest {
 
     @Test
     void authorize_approves_whenRequestedAmountEqualsMaxTransactionAmount() {
-        budget.setMaxTransactionAmount(new BigDecimal("100.00")); // cap exactly at request amount
+        budget.setMaxTransactionQuantity(new BigDecimal("100.00")); // cap exactly at request amount
 
         when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
         when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any()))
@@ -314,7 +314,7 @@ class AuthorizationServiceTest {
         when(budgetRepository.save(any())).thenReturn(budget);
 
         AuthorizeSpendRequest req = validRequest();
-        req.setRequestedAmount(new BigDecimal("100.00")); // exactly at cap — should pass
+        req.setRequestedQuantity(new BigDecimal("100.00")); // exactly at cap — should pass
 
         AuthorizationResponse response = service.authorize("st_token", req, tenant);
 
@@ -324,7 +324,7 @@ class AuthorizationServiceTest {
     @Test
     void authorize_ignoresMaxTransactionAmountCheck_whenNotSet() {
         // maxTransactionAmount is null — no cap applied, large amount should pass
-        budget.setMaxTransactionAmount(null);
+        budget.setMaxTransactionQuantity(null);
 
         when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
         when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any()))
@@ -334,7 +334,7 @@ class AuthorizationServiceTest {
         when(budgetRepository.save(any())).thenReturn(budget);
 
         AuthorizeSpendRequest req = validRequest();
-        req.setRequestedAmount(new BigDecimal("400.00")); // large but within totalLimit
+        req.setRequestedQuantity(new BigDecimal("400.00")); // large but within totalLimit
 
         AuthorizationResponse response = service.authorize("st_token", req, tenant);
 
@@ -487,7 +487,7 @@ class AuthorizationServiceTest {
         req.setAgentId("agent_001");
         req.setActionType("PURCHASE");
         req.setDescription("Flight booking to NYC");
-        req.setRequestedAmount(new BigDecimal("100.00"));
+        req.setRequestedQuantity(new BigDecimal("100.00"));
         req.setCurrency("USD");
         req.setIdempotencyKey(UUID.randomUUID().toString());
         return req;

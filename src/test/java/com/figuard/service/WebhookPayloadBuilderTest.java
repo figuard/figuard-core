@@ -37,14 +37,14 @@ class WebhookPayloadBuilderTest {
         budget.setUserId("user_123");
         budget.setCurrency("USD");
         budget.setTotalLimit(new BigDecimal("500.00"));
-        budget.setAmountSpent(new BigDecimal("100.00"));
-        budget.setAmountReserved(new BigDecimal("50.00"));
+        budget.setQuantitySpent(new BigDecimal("100.00"));
+        budget.setQuantityReserved(new BigDecimal("50.00"));
 
         event = new SpendEvent();
         event.setId(UUID.randomUUID());
         event.setDecision(SpendDecision.AUTHORIZED);
-        event.setRequestedAmount(new BigDecimal("80.00"));
-        event.setConfirmedAmount(new BigDecimal("78.00"));
+        event.setRequestedQuantity(new BigDecimal("80.00"));
+        event.setConfirmedQuantity(new BigDecimal("78.00"));
         event.setAgentId("agent_001");
         event.setCurrency("USD");
         event.setFailureReason("PAYMENT_DECLINED");
@@ -81,9 +81,9 @@ class WebhookPayloadBuilderTest {
 
         assertThat(payload.get("eventType")).isEqualTo("BUDGET_90_PCT");
         assertThat(payload).containsKey("totalLimit");
-        assertThat(payload).containsKey("amountSpent");
-        assertThat(payload).containsKey("amountReserved");
-        assertThat(payload).containsKey("availableAmount");
+        assertThat(payload).containsKey("quantitySpent");
+        assertThat(payload).containsKey("quantityReserved");
+        assertThat(payload).containsKey("availableQuantity");
         assertThat(payload).containsKey("percentUsed");
         // 150/500 = 30%
         assertThat((double) payload.get("percentUsed")).isEqualTo(30.0);
@@ -92,8 +92,8 @@ class WebhookPayloadBuilderTest {
     @Test
     void thresholdPayload_percentUsed_isZero_whenTotalLimitIsZero() {
         budget.setTotalLimit(BigDecimal.ZERO);
-        budget.setAmountSpent(BigDecimal.ZERO);
-        budget.setAmountReserved(BigDecimal.ZERO);
+        budget.setQuantitySpent(BigDecimal.ZERO);
+        budget.setQuantityReserved(BigDecimal.ZERO);
 
         Map<String, Object> payload = builder.buildThresholdPayload(
             WebhookEventType.BUDGET_50_PCT, budget);
@@ -111,7 +111,7 @@ class WebhookPayloadBuilderTest {
 
         assertThat(payload.get("eventType")).isEqualTo("SPEND_DENIED");
         assertThat(payload.get("spendEventId")).isEqualTo(event.getId());
-        assertThat(payload.get("requestedAmount")).isEqualTo(event.getRequestedAmount());
+        assertThat(payload.get("requestedQuantity")).isEqualTo(event.getRequestedQuantity());
         assertThat(payload.get("denialReason")).isEqualTo("INSUFFICIENT_FUNDS");
         assertThat(payload.get("agentId")).isEqualTo("agent_001");
     }
@@ -126,10 +126,10 @@ class WebhookPayloadBuilderTest {
 
         assertThat(payload.get("eventType")).isEqualTo("SPEND_CONFIRMED");
         assertThat(payload.get("spendEventId")).isEqualTo(event.getId());
-        assertThat(payload.get("requestedAmount")).isEqualTo(event.getRequestedAmount());
-        assertThat(payload.get("confirmedAmount")).isEqualTo(event.getConfirmedAmount());
+        assertThat(payload.get("requestedQuantity")).isEqualTo(event.getRequestedQuantity());
+        assertThat(payload.get("confirmedQuantity")).isEqualTo(event.getConfirmedQuantity());
         assertThat(payload.get("agentId")).isEqualTo("agent_001");
-        assertThat(payload).containsKey("availableAmount");
+        assertThat(payload).containsKey("availableQuantity");
     }
 
     // -------------------------------------------------------------------------
@@ -143,7 +143,7 @@ class WebhookPayloadBuilderTest {
         assertThat(payload.get("eventType")).isEqualTo("SPEND_PAYMENT_FAILED");
         assertThat(payload.get("spendEventId")).isEqualTo(event.getId());
         assertThat(payload.get("failureReason")).isEqualTo("PAYMENT_DECLINED");
-        assertThat(payload).containsKey("availableAmount");
+        assertThat(payload).containsKey("availableQuantity");
     }
 
     // -------------------------------------------------------------------------
@@ -153,14 +153,14 @@ class WebhookPayloadBuilderTest {
     @Test
     void ledgerIntegrityViolationPayload_containsViolationDetails() {
         Map<String, Object> payload = builder.buildLedgerIntegrityViolationPayload(
-            budget, "OVERSPEND", "amountSpent(510) > totalLimit(500)");
+            budget, "OVERSPEND", "quantitySpent(510) > totalLimit(500)");
 
         assertThat(payload.get("eventType")).isEqualTo("LEDGER_INTEGRITY_VIOLATION");
         assertThat(payload.get("violationType")).isEqualTo("OVERSPEND");
-        assertThat(payload.get("detail")).isEqualTo("amountSpent(510) > totalLimit(500)");
+        assertThat(payload.get("detail")).isEqualTo("quantitySpent(510) > totalLimit(500)");
         assertThat(payload).containsKey("totalLimit");
-        assertThat(payload).containsKey("amountSpent");
-        assertThat(payload).containsKey("amountReserved");
+        assertThat(payload).containsKey("quantitySpent");
+        assertThat(payload).containsKey("quantityReserved");
     }
 
     // -------------------------------------------------------------------------

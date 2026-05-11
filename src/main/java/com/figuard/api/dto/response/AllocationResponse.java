@@ -19,8 +19,8 @@ public class AllocationResponse {
     private List<String> forbiddenItemTypes;    // null when not set
     private EnforcementMode enforcementMode;
     private BigDecimal limit;
-    private BigDecimal amountSpent;
-    private BigDecimal amountReserved;
-    private BigDecimal availableAmount;
+    private BigDecimal quantitySpent;
+    private BigDecimal quantityReserved;
+    private BigDecimal availableQuantity;
     private AllocationStatus status;
 }

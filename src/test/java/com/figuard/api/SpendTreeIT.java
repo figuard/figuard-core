@@ -182,7 +182,7 @@ class SpendTreeIT extends IntegrationTestBase {
         bodyBuilder.put("agentId", "agent_tree_test");
         bodyBuilder.put("actionType", "PURCHASE");
         bodyBuilder.put("description", "tree test spend");
-        bodyBuilder.put("requestedAmount", Double.parseDouble(amount));
+        bodyBuilder.put("requestedQuantity", Double.parseDouble(amount));
         bodyBuilder.put("currency", "USD");
         bodyBuilder.put("idempotencyKey", UUID.randomUUID().toString());
         if (parentEventId != null) {
@@ -205,7 +205,7 @@ class SpendTreeIT extends IntegrationTestBase {
             "agentId", "agent_tree_test",
             "actionType", "PURCHASE",
             "description", "tree test spend",
-            "requestedAmount", Double.parseDouble(amount),
+            "requestedQuantity", Double.parseDouble(amount),
             "currency", "USD",
             "idempotencyKey", UUID.randomUUID().toString()
         );

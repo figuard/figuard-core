@@ -34,7 +34,7 @@ class BudgetControllerIT extends IntegrationTestBase {
             .andExpect(jsonPath("$.sessionToken", startsWith("st_")))
             .andExpect(jsonPath("$.sessionTokenPrefix").isNotEmpty())
             .andExpect(jsonPath("$.status").value("ACTIVE"))
-            .andExpect(jsonPath("$.availableAmount").value(400.00));
+            .andExpect(jsonPath("$.availableQuantity").value(400.00));
     }
 
     @Test
@@ -59,6 +59,7 @@ class BudgetControllerIT extends IntegrationTestBase {
         Map<String, Object> body = Map.of(
             "userId", "user_test",
             "totalLimit", 100.00,
+            "currency", "USD",
             "expiresAt", expiresAt(),
             "allocations", List.of(
                 Map.of("category", "flight",

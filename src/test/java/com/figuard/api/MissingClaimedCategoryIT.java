@@ -31,7 +31,7 @@ class MissingClaimedCategoryIT extends IntegrationTestBase {
             "agentId", "agent_001",
             "actionType", "PURCHASE",
             "description", "missing category test",
-            "requestedAmount", 50.00,
+            "requestedQuantity", 50.00,
             "currency", "USD",
             "idempotencyKey", UUID.randomUUID().toString()
             // claimedCategory intentionally omitted
@@ -55,7 +55,7 @@ class MissingClaimedCategoryIT extends IntegrationTestBase {
             "agentId", "agent_001",
             "actionType", "PURCHASE",
             "description", "valid category test",
-            "requestedAmount", 50.00,
+            "requestedQuantity", 50.00,
             "currency", "USD",
             "claimedCategory", "flight",
             "idempotencyKey", UUID.randomUUID().toString()

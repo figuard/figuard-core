@@ -23,9 +23,9 @@ import java.util.List;
  * Runs every 5 minutes via @Scheduled + ShedLock.
  *
  * Three invariants checked:
- *  1. OVERSPEND       — amountSpent + amountReserved > totalLimit
- *  2. RESERVATION_MISMATCH — budget.amountReserved != SUM(AUTHORIZED events.requestedAmount)
- *  3. SPEND_MISMATCH  — budget.amountSpent != SUM(CONFIRMED events.confirmedAmount)
+ *  1. OVERSPEND       — quantitySpent + quantityReserved > totalLimit
+ *  2. RESERVATION_MISMATCH — budget.quantityReserved != SUM(AUTHORIZED events.requestedQuantity)
+ *  3. SPEND_MISMATCH  — budget.quantitySpent != SUM(CONFIRMED events.confirmedQuantity)
  *
  * On any violation: emits figuard.integrity.violations counter, logs ERROR,
  * fires LEDGER_INTEGRITY_VIOLATION webhook so the ops team is immediately alerted.
@@ -80,28 +80,28 @@ public class LedgerIntegrityService {
 
     private void checkBudget(AgentBudget budget) {
         // Invariant 1: Overspend
-        BigDecimal consumed = budget.getAmountSpent().add(budget.getAmountReserved());
+        BigDecimal consumed = budget.getQuantitySpent().add(budget.getQuantityReserved());
         if (consumed.compareTo(budget.getTotalLimit()) > 0) {
             reportViolation(budget, "OVERSPEND",
-                "amountSpent(" + budget.getAmountSpent() + ") + amountReserved("
-                    + budget.getAmountReserved() + ") = " + consumed
+                "quantitySpent(" + budget.getQuantitySpent() + ") + quantityReserved("
+                    + budget.getQuantityReserved() + ") = " + consumed
                     + " exceeds totalLimit(" + budget.getTotalLimit() + ")");
         }
 
         // Invariant 2: Reservation mismatch
         BigDecimal sumAuthorized = eventRepository.sumAuthorizedAmountByBudget(budget.getId());
-        if (sumAuthorized.compareTo(budget.getAmountReserved()) != 0) {
+        if (sumAuthorized.compareTo(budget.getQuantityReserved()) != 0) {
             reportViolation(budget, "RESERVATION_MISMATCH",
-                "budget.amountReserved=" + budget.getAmountReserved()
-                    + " but SUM(AUTHORIZED.requestedAmount)=" + sumAuthorized);
+                "budget.quantityReserved=" + budget.getQuantityReserved()
+                    + " but SUM(AUTHORIZED.requestedQuantity)=" + sumAuthorized);
         }
 
         // Invariant 3: Spend mismatch
         BigDecimal sumConfirmed = eventRepository.sumConfirmedAmountByBudget(budget.getId());
-        if (sumConfirmed.compareTo(budget.getAmountSpent()) != 0) {
+        if (sumConfirmed.compareTo(budget.getQuantitySpent()) != 0) {
             reportViolation(budget, "SPEND_MISMATCH",
-                "budget.amountSpent=" + budget.getAmountSpent()
-                    + " but SUM(CONFIRMED.confirmedAmount)=" + sumConfirmed);
+                "budget.quantitySpent=" + budget.getQuantitySpent()
+                    + " but SUM(CONFIRMED.confirmedQuantity)=" + sumConfirmed);
         }
     }
 

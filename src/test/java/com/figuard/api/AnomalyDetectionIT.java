@@ -189,7 +189,7 @@ class AnomalyDetectionIT extends IntegrationTestBase {
             "agentId", "agent_anomaly",
             "actionType", "PURCHASE",
             "description", "anomaly test purchase",
-            "requestedAmount", Double.parseDouble(amount),
+            "requestedQuantity", Double.parseDouble(amount),
             "currency", "USD",
             "idempotencyKey", UUID.randomUUID().toString()
         ));

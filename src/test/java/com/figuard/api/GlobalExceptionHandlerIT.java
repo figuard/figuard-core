@@ -144,7 +144,7 @@ class GlobalExceptionHandlerIT extends IntegrationTestBase {
                     "agentId", "agent_409_test",
                     "actionType", "PURCHASE",
                     "description", "conflict test",
-                    "requestedAmount", 100.00,
+                    "requestedQuantity", 100.00,
                     "idempotencyKey", UUID.randomUUID().toString()
                 ))))
             .andExpect(status().isOk())
@@ -157,14 +157,14 @@ class GlobalExceptionHandlerIT extends IntegrationTestBase {
         mockMvc.perform(post("/api/v1/events/{id}/confirm", eventId)
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("confirmedAmount", 100.00))))
+                .content(objectMapper.writeValueAsString(Map.of("confirmedQuantity", 100.00))))
             .andExpect(status().isOk());
 
         // Second confirm — 409 with error structure
         mockMvc.perform(post("/api/v1/events/{id}/confirm", eventId)
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("confirmedAmount", 100.00))))
+                .content(objectMapper.writeValueAsString(Map.of("confirmedQuantity", 100.00))))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.error").isNotEmpty());
     }

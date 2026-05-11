@@ -18,8 +18,8 @@ class BudgetAllocationTest {
         a.setForbiddenItemTypes(forbiddenItemTypes);
         a.setEnforcementMode(mode);
         a.setTotalLimit(new BigDecimal("500.00"));
-        a.setAmountSpent(BigDecimal.ZERO);
-        a.setAmountReserved(BigDecimal.ZERO);
+        a.setQuantitySpent(BigDecimal.ZERO);
+        a.setQuantityReserved(BigDecimal.ZERO);
         a.setStatus(AllocationStatus.ACTIVE);
         return a;
     }
@@ -95,7 +95,7 @@ class BudgetAllocationTest {
     @Test
     void canAccommodate_returnsFalse_whenInsufficientFunds() {
         BudgetAllocation a = allocation(new String[]{"flight"}, null, EnforcementMode.CATEGORY_CONSTRAINED);
-        a.setAmountSpent(new BigDecimal("490.00"));
+        a.setQuantitySpent(new BigDecimal("490.00"));
         // Available = $10.00; requesting $20.00 should fail
         assertThat(a.canAccommodate(new BigDecimal("20.00"))).isFalse();
     }

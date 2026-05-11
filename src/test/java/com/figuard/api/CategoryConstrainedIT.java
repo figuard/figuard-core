@@ -35,7 +35,7 @@ class CategoryConstrainedIT extends IntegrationTestBase {
             "agentId", "agent_001",
             "actionType", "PURCHASE",
             "description", "category constrained test",
-            "requestedAmount", 50.00,
+            "requestedQuantity", 50.00,
             "currency", "USD",
             "claimedCategory", "entertainment",
             "claimedItemType", "gift_card",    // would be blocked under STRICT — must pass here
@@ -59,7 +59,7 @@ class CategoryConstrainedIT extends IntegrationTestBase {
             "agentId", "agent_001",
             "actionType", "PURCHASE",
             "description", "wrong category test",
-            "requestedAmount", 50.00,
+            "requestedQuantity", 50.00,
             "currency", "USD",
             "claimedCategory", "flight",   // allocation only covers "entertainment"
             "idempotencyKey", UUID.randomUUID().toString()

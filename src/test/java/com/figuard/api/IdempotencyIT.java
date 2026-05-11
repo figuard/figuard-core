@@ -67,7 +67,7 @@ class IdempotencyIT extends IntegrationTestBase {
             "agentId", "agent_001",
             "actionType", "PURCHASE",
             "description", "test purchase",
-            "requestedAmount", 50.00,
+            "requestedQuantity", 50.00,
             "currency", "USD"
             // idempotencyKey intentionally omitted
         );
@@ -105,7 +105,7 @@ class IdempotencyIT extends IntegrationTestBase {
             "agentId", "agent_001",
             "actionType", "PURCHASE",
             "description", "test purchase",
-            "requestedAmount", Double.parseDouble(amount),
+            "requestedQuantity", Double.parseDouble(amount),
             "currency", "USD",
             "idempotencyKey", idempotencyKey
         ));

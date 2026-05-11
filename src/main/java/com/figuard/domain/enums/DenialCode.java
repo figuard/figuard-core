@@ -18,8 +18,8 @@ public enum DenialCode {
     INVALID_PARENT_EVENT,           // parentEventId belongs to a different budget
     CAUSAL_CYCLE_DETECTED,          // parentEventId creates a cycle in the causal chain
     CAUSAL_CHAIN_TOO_DEEP,          // parentEventId chain exceeds 10 levels
-    EXCEEDS_TRANSACTION_LIMIT,      // requestedAmount exceeds budget.maxTransactionAmount ceiling
+    EXCEEDS_QUANTITY_LIMIT,         // requestedQuantity exceeds budget.maxTransactionQuantity ceiling
     INTENT_SCOPE_VIOLATION,         // flat budget has intentTags but request intentContext has no matching tag
-    ANOMALY_DETECTED,               // requestedAmount exceeds mean * multiplier threshold; budget auto-paused
+    ANOMALY_DETECTED,               // requestedQuantity exceeds mean * multiplier threshold; budget auto-paused
     ENTITY_ALREADY_AUTHORIZED       // entityId already has an AUTHORIZED or CONFIRMED event on this budget (dedup)
 }

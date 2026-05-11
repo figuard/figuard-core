@@ -133,7 +133,7 @@ class SessionTokenRotationIT extends IntegrationTestBase {
             "agentId", "agent_rotation_test",
             "actionType", "PURCHASE",
             "description", "Rotation test purchase",
-            "requestedAmount", amount,
+            "requestedQuantity", amount,
             "currency", "USD",
             "idempotencyKey", UUID.randomUUID().toString()
         ));

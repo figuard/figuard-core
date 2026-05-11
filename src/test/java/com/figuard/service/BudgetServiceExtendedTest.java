@@ -57,8 +57,8 @@ class BudgetServiceExtendedTest {
         budget.setTenant(tenant);
         budget.setStatus(BudgetStatus.ACTIVE);
         budget.setTotalLimit(new BigDecimal("500.00"));
-        budget.setAmountSpent(new BigDecimal("100.00"));
-        budget.setAmountReserved(BigDecimal.ZERO);
+        budget.setQuantitySpent(new BigDecimal("100.00"));
+        budget.setQuantityReserved(BigDecimal.ZERO);
     }
 
     // -------------------------------------------------------------------------
@@ -134,7 +134,7 @@ class BudgetServiceExtendedTest {
 
     @Test
     void updateBudget_rejects_totalLimitBelowAmountSpent() {
-        // budget.amountSpent = 100.00; trying to set totalLimit = 90.00
+        // budget.quantitySpent = 100.00; trying to set totalLimit = 90.00
         when(budgetRepository.findById(budget.getId())).thenReturn(Optional.of(budget));
 
         UpdateBudgetRequest req = new UpdateBudgetRequest();
@@ -142,18 +142,18 @@ class BudgetServiceExtendedTest {
 
         assertThatThrownBy(() -> budgetService.updateBudget(budget.getId(), req, tenant))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("amountSpent");
+            .hasMessageContaining("quantitySpent");
     }
 
     @Test
     void updateBudget_allows_totalLimitEqualToAmountSpent() {
-        // Exactly equal to amountSpent is allowed (budget is fully spent)
+        // Exactly equal to quantitySpent is allowed (budget is fully spent)
         when(budgetRepository.findById(budget.getId())).thenReturn(Optional.of(budget));
         when(budgetRepository.save(any())).thenReturn(budget);
         when(budgetMapper.toResponse(any(AgentBudget.class))).thenReturn(null);
 
         UpdateBudgetRequest req = new UpdateBudgetRequest();
-        req.setTotalLimit(new BigDecimal("100.00")); // == amountSpent
+        req.setTotalLimit(new BigDecimal("100.00")); // == quantitySpent
 
         budgetService.updateBudget(budget.getId(), req, tenant);
 
@@ -243,7 +243,7 @@ class BudgetServiceExtendedTest {
     @Test
     void cancelBudget_preservesAmountReserved() {
         // Cancel does NOT release reservations — that is the caller's responsibility
-        budget.setAmountReserved(new BigDecimal("200.00"));
+        budget.setQuantityReserved(new BigDecimal("200.00"));
         when(budgetRepository.findByIdWithLock(budget.getId())).thenReturn(Optional.of(budget));
         when(budgetRepository.save(any())).thenReturn(budget);
         when(budgetMapper.toResponse(any(AgentBudget.class))).thenReturn(null);
@@ -251,7 +251,7 @@ class BudgetServiceExtendedTest {
         budgetService.cancelBudget(budget.getId(), tenant);
 
         // Reserved funds must not be zeroed by cancel
-        assertThat(budget.getAmountReserved()).isEqualByComparingTo("200.00");
+        assertThat(budget.getQuantityReserved()).isEqualByComparingTo("200.00");
     }
 
     @Test

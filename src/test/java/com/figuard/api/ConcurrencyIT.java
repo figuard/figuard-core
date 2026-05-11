@@ -55,8 +55,8 @@ class ConcurrencyIT extends IntegrationTestBase {
         assertThat(denied.get()).isEqualTo(30);
 
         AgentBudget budget = budgetRepository.findById(budgetId).orElseThrow();
-        assertThat(budget.getAmountReserved()).isEqualByComparingTo("100.00");
-        assertThat(budget.getAmountSpent()).isEqualByComparingTo("0.00");
+        assertThat(budget.getQuantityReserved()).isEqualByComparingTo("100.00");
+        assertThat(budget.getQuantitySpent()).isEqualByComparingTo("0.00");
     }
 
     /**
@@ -84,8 +84,8 @@ class ConcurrencyIT extends IntegrationTestBase {
         List<BudgetAllocation> allocations =
             allocationRepository.findByParentBudgetIdOrderByCreatedAtAsc(budgetId);
         assertThat(allocations).hasSize(1);
-        assertThat(allocations.get(0).getAmountReserved()).isEqualByComparingTo("50.00");
-        assertThat(budget.getAmountReserved()).isEqualByComparingTo("50.00");
+        assertThat(allocations.get(0).getQuantityReserved()).isEqualByComparingTo("50.00");
+        assertThat(budget.getQuantityReserved()).isEqualByComparingTo("50.00");
     }
 
     // -------------------------------------------------------------------------
@@ -113,7 +113,7 @@ class ConcurrencyIT extends IntegrationTestBase {
                     bodyMap.put("agentId", "agent_" + idx);
                     bodyMap.put("actionType", "PURCHASE");
                     bodyMap.put("description", "Concurrent test purchase");
-                    bodyMap.put("requestedAmount", requestAmount);
+                    bodyMap.put("requestedQuantity", requestAmount);
                     bodyMap.put("currency", "USD");
                     bodyMap.put("idempotencyKey", UUID.randomUUID().toString());
                     if (claimedCategory != null) bodyMap.put("claimedCategory", claimedCategory);

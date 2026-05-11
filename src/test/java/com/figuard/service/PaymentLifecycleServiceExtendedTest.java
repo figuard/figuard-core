@@ -61,15 +61,15 @@ class PaymentLifecycleServiceExtendedTest {
         budget = new AgentBudget();
         budget.setId(UUID.randomUUID());
         budget.setTenant(tenant);
-        budget.setAmountReserved(new BigDecimal("100.00"));
-        budget.setAmountSpent(BigDecimal.ZERO);
+        budget.setQuantityReserved(new BigDecimal("100.00"));
+        budget.setQuantitySpent(BigDecimal.ZERO);
 
         event = new SpendEvent();
         event.setId(UUID.randomUUID());
         event.setTenant(tenant);
         event.setBudget(budget);
         event.setDecision(SpendDecision.AUTHORIZED);
-        event.setRequestedAmount(new BigDecimal("100.00"));
+        event.setRequestedQuantity(new BigDecimal("100.00"));
         event.setConfirmationTimeoutAt(OffsetDateTime.now().plusMinutes(5));
     }
 
@@ -87,7 +87,7 @@ class PaymentLifecycleServiceExtendedTest {
 
         assertThat(event.getDecision()).isEqualTo(SpendDecision.VOIDED);
         assertThat(event.getFailureReason()).isEqualTo("CONFIRMATION_TIMEOUT");
-        assertThat(budget.getAmountReserved()).isEqualByComparingTo("0.00");
+        assertThat(budget.getQuantityReserved()).isEqualByComparingTo("0.00");
     }
 
     @Test
@@ -137,7 +137,7 @@ class PaymentLifecycleServiceExtendedTest {
         when(webhookPayloadBuilder.buildSpendConfirmedPayload(any(), any())).thenReturn(java.util.Map.of());
 
         ConfirmEventRequest req = new ConfirmEventRequest();
-        req.setConfirmedAmount(new BigDecimal("100.00"));
+        req.setConfirmedQuantity(new BigDecimal("100.00"));
 
         service.confirmEvent(event.getId(), req, tenant);
 
@@ -156,7 +156,7 @@ class PaymentLifecycleServiceExtendedTest {
         when(webhookPayloadBuilder.buildSpendConfirmedPayload(any(), any())).thenReturn(java.util.Map.of());
 
         ConfirmEventRequest req = new ConfirmEventRequest();
-        req.setConfirmedAmount(new BigDecimal("75.00"));
+        req.setConfirmedQuantity(new BigDecimal("75.00"));
 
         service.confirmEvent(event.getId(), req, tenant);
 
@@ -195,7 +195,7 @@ class PaymentLifecycleServiceExtendedTest {
         SpendEvent child = new SpendEvent();
         child.setId(UUID.randomUUID());
         child.setDecision(SpendDecision.AUTHORIZED);
-        child.setRequestedAmount(new BigDecimal("20.00"));
+        child.setRequestedQuantity(new BigDecimal("20.00"));
 
         when(eventRepository.findByIdWithLock(event.getId())).thenReturn(Optional.of(event));
         when(eventRepository.findByParentEventId(event.getId())).thenReturn(List.of(child));
@@ -250,7 +250,7 @@ class PaymentLifecycleServiceExtendedTest {
         when(eventRepository.findByIdWithLock(event.getId())).thenReturn(Optional.of(event));
 
         ConfirmEventRequest req = new ConfirmEventRequest();
-        req.setConfirmedAmount(new BigDecimal("100.00"));
+        req.setConfirmedQuantity(new BigDecimal("100.00"));
 
         assertThatThrownBy(() -> service.confirmEvent(event.getId(), req, otherTenant))
             .isInstanceOf(ResponseStatusException.class)

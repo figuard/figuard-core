@@ -19,6 +19,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -95,6 +99,15 @@ public class BudgetService {
         return budgetMapper.toResponse(budget);   // sessionToken = null on reads
     }
 
+    @Transactional(readOnly = true)
+    public Page<BudgetResponse> listBudgets(Tenant tenant, int page, int size, BudgetStatus status) {
+        PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<AgentBudget> budgets = status != null
+                ? budgetRepository.findByTenantAndStatus(tenant, status, pageable)
+                : budgetRepository.findByTenant(tenant, pageable);
+        return budgets.map(budgetMapper::toResponse);
+    }
+
     @Transactional
     public BudgetResponse updateBudget(UUID id, UpdateBudgetRequest request, Tenant tenant) {
         AgentBudget budget = budgetRepository.findById(id)
@@ -115,9 +128,9 @@ public class BudgetService {
         }
 
         if (request.getTotalLimit() != null) {
-            if (request.getTotalLimit().compareTo(budget.getAmountSpent()) < 0) {
+            if (request.getTotalLimit().compareTo(budget.getQuantitySpent()) < 0) {
                 throw new IllegalArgumentException(
-                    "totalLimit cannot be less than amountSpent (" + budget.getAmountSpent() + ")");
+                    "totalLimit cannot be less than quantitySpent (" + budget.getQuantitySpent() + ")");
             }
             budget.setTotalLimit(request.getTotalLimit());
         }

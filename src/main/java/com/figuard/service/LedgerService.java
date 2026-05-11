@@ -38,14 +38,26 @@ public class LedgerService {
     @Transactional(readOnly = true)
     public Page<SpendEventResponse> getLedger(UUID budgetId, Tenant tenant,
                                                int page, int size,
-                                               SpendDecision decision) {
+                                               SpendDecision decision,
+                                               String traceId) {
         AgentBudget budget = findBudgetForTenant(budgetId, tenant);
 
         PageRequest pageable = PageRequest.of(page, size);
 
-        Page<SpendEvent> events = decision != null
-            ? spendEventRepository.findByBudgetIdAndDecisionOrderByCreatedAtDesc(budget.getId(), decision, pageable)
-            : spendEventRepository.findByBudgetIdOrderByCreatedAtDesc(budget.getId(), pageable);
+        Page<SpendEvent> events;
+        if (traceId != null && decision != null) {
+            events = spendEventRepository
+                .findByBudgetIdAndTraceIdAndDecisionOrderByCreatedAtDesc(budget.getId(), traceId, decision, pageable);
+        } else if (traceId != null) {
+            events = spendEventRepository
+                .findByBudgetIdAndTraceIdOrderByCreatedAtDesc(budget.getId(), traceId, pageable);
+        } else if (decision != null) {
+            events = spendEventRepository
+                .findByBudgetIdAndDecisionOrderByCreatedAtDesc(budget.getId(), decision, pageable);
+        } else {
+            events = spendEventRepository
+                .findByBudgetIdOrderByCreatedAtDesc(budget.getId(), pageable);
+        }
 
         return events.map(budgetMapper::toResponse);
     }
@@ -99,8 +111,8 @@ public class LedgerService {
             .agentType(event.getAgentType())
             .actionType(event.getActionType())
             .description(event.getDescription())
-            .requestedAmount(event.getRequestedAmount())
-            .confirmedAmount(event.getConfirmedAmount())
+            .requestedQuantity(event.getRequestedQuantity())
+            .confirmedQuantity(event.getConfirmedQuantity())
             .currency(event.getCurrency() != null ? event.getCurrency().trim() : null)
             .entityId(event.getEntityId())
             .claimedCategory(event.getClaimedCategory())
@@ -134,7 +146,7 @@ public class LedgerService {
         List<SpendDecision> target = List.of(decisions);
         return events.stream()
             .filter(e -> target.contains(e.getDecision()))
-            .map(SpendEvent::getRequestedAmount)
+            .map(SpendEvent::getRequestedQuantity)
             .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 

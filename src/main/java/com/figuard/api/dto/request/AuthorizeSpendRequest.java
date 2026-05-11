@@ -22,13 +22,15 @@ public class AuthorizeSpendRequest {
     @Size(max = 1000)
     private String description;
 
-    @NotNull(message = "requestedAmount is required")
-    @PositiveOrZero(message = "requestedAmount must be zero or positive")
+    @NotNull(message = "requestedQuantity is required")
+    @PositiveOrZero(message = "requestedQuantity must be zero or positive")
     @Digits(integer = 15, fraction = 4)
-    private BigDecimal requestedAmount;
+    private BigDecimal requestedQuantity;
 
+    // Required for monetary budgets — must match budget currency.
+    // Omit or null for resource budgets (tokens, api_calls, etc.).
     @Size(min = 3, max = 3, message = "currency must be a 3-letter ISO code")
-    private String currency = "USD";
+    private String currency;
 
     // Required when budget has allocations — enforced in service, not here.
     // Agents explicitly declare what category this spend belongs to.
@@ -51,5 +53,15 @@ public class AuthorizeSpendRequest {
     @NotBlank(message = "idempotencyKey is required")
     private String idempotencyKey;
 
+    // Optional. Links all authorize calls from a single agent run together.
+    // Callers supply their own run ID — any opaque string (UUID, span ID, etc.)
+    // Filterable on the ledger: GET /api/v1/budgets/{id}/ledger?traceId=...
+    private String traceId;
+
     private Map<String, Object> metadata;
+
+    // When true, all enforcement checks run and a full AUTHORIZED/DENIED response
+    // is returned, but nothing is written to the ledger and no webhooks fire.
+    // Use during integration testing to verify enforcement logic without creating records.
+    private boolean dryRun;
 }
