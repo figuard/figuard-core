@@ -51,6 +51,31 @@ Denied decisions are recorded in the ledger regardless. The agent always gets a 
 
 ---
 
+## Auth Explained
+
+FiGuard has two types of credentials — they serve different purposes and must never be swapped.
+
+**API keys** (`ab_live_...`) are service-to-service credentials. Your backend uses an API key to call FiGuard. One key per service. Treat like a database password — never pass it to agents.
+
+**Session tokens** (`st_...`) are budget-scoped credentials. When you create a budget, FiGuard returns a session token. You hand this to the agent. The agent presents it on every `authorize()` call. The token is scoped to exactly one budget — if it leaks, an attacker can only spend up to that budget's remaining limit.
+
+```
+Your backend                          Agent
+    │                                   │
+    │  create_budget(api_key=...)        │
+    │ ─────────────────────────▶         │
+    │ ◀─────────────────────────         │
+    │  budget.session_token              │
+    │                                   │
+    │  ──── pass session_token ────────▶ │
+    │                                   │
+    │                   authorize(session_token=...) │
+    │ ◀─────────────────────────────────│
+    │  AUTHORIZED / DENIED              │
+```
+
+---
+
 ## 60-Second Quickstart
 
 **1. Start FiGuard**
@@ -84,29 +109,39 @@ client = FiGuardClient(
     base_url="http://localhost:8080",
 )
 
-# Create a budget for this agent session
+# Create a budget for this agent session.
+# expires_in accepts "24h", "7d", "30m", a timedelta, or seconds as int.
+# authorization_expiry_seconds recycles stale reservations — set it to your
+# agent's expected max run time so abandoned reservations don't lock funds forever.
 budget = client.create_budget(
     user_id="agent_001",
     total_limit=500.00,
-    expires_at="2026-06-01T00:00:00Z",
+    expires_in="24h",
+    authorization_expiry_seconds=300,
     intent_context="travel booking session",
 )
 
-# Pre-authorize before any spend
+# Pre-authorize before any spend.
+# The agent estimates $270 — the actual charge may differ.
 auth = client.authorize(
     session_token=budget.session_token,
     agent_id="travel_agent",
     action_type="PURCHASE",
     description="JetBlue SFO→JFK roundtrip",
-    requested_amount=267.00,
+    requested_amount=270.00,
     idempotency_key="booking-001",
 )
 
 print(auth.decision)        # AUTHORIZED
-print(auth.approved_amount) # 267.0
+print(auth.approved_amount) # 270.0
 
-# After the real transaction succeeds
-client.confirm_event(auth.event_id, confirmed_amount=267.00)
+# After the real transaction succeeds, confirm with the ACTUAL charged amount.
+# This is the value that lands in your ledger as real spend — pass what was
+# really charged, not just the approved amount.
+actual_charge = 267.00
+client.confirm_event(auth.event_id, confirmed_amount=actual_charge)
+# If you never call confirm/fail/void, the reservation auto-releases
+# after authorization_expiry_seconds (300s above).
 ```
 
 ---
@@ -120,31 +155,6 @@ client.confirm_event(auth.event_id, confirmed_amount=267.00)
 **Not a firewall for human users.** FiGuard is purpose-built for agent-to-service authorization. The session token model assumes agents are ephemeral and untrusted by default.
 
 **Not a replacement for Stripe spending controls.** Use both if you want defense in depth. FiGuard blocks at agent decision time; Stripe blocks at payment time. Different attack surfaces.
-
----
-
-## Auth Explained
-
-FiGuard has two types of credentials — they serve different purposes and must never be swapped.
-
-**API keys** (`ab_live_...`) are service-to-service credentials. Your backend uses an API key to call FiGuard. One key per service. Treat like a database password — never pass it to agents.
-
-**Session tokens** (`st_...`) are budget-scoped credentials. When you create a budget, FiGuard returns a session token. You hand this to the agent. The agent presents it on every `authorize()` call. The token is scoped to exactly one budget — if it leaks, an attacker can only spend up to that budget's remaining limit.
-
-```
-Your backend                          Agent
-    │                                   │
-    │  create_budget(api_key=...)        │
-    │ ─────────────────────────▶         │
-    │ ◀─────────────────────────         │
-    │  budget.session_token              │
-    │                                   │
-    │  ──── pass session_token ────────▶ │
-    │                                   │
-    │                   authorize(session_token=...) │
-    │ ◀─────────────────────────────────│
-    │  AUTHORIZED / DENIED              │
-```
 
 ---
 
@@ -206,6 +216,10 @@ executor = AgentExecutor(
         client=client,
         session_token=budget.session_token,
         tool_category_map={"book_flight": "flight", "book_hotel": "hotel"},
+        amount_extractor=lambda d: d.get("price") or d.get("amount", 0),
+        # amount_extractor receives the parsed tool input dict.
+        # Use it when your tools have different kwarg names for the spend amount.
+        # Falls back to amount_param="amount" if amount_extractor is not set.
     )],
 )
 # Denied tool calls raise ToolException before the tool runs.
@@ -222,7 +236,8 @@ FiGuardToolGuard(
     client=client,
     session_token=budget.session_token,
     category="flight",
-    amount_key="price",   # kwarg that holds the spend amount
+    amount_extractor=lambda **kw: kw.get("price", 0),
+    # debug=True prints what category + amount FiGuard is receiving — useful during setup
 )
 # book_flight_tool is now guarded — pass to create_react_agent as normal
 ```
@@ -241,7 +256,7 @@ FiGuardCrewGuard(
     client=client,
     session_token=budget.session_token,
     category="flight",
-    amount_key="price",
+    amount_extractor=lambda **kw: kw.get("price", 0),
 )
 # Patches tool._run in-place. Pass the tool to Agent as normal.
 travel_agent = Agent(role="Travel Coordinator", tools=[book_flight_tool])
@@ -262,7 +277,7 @@ from figuard.integrations.openai_agents import guarded_function_tool
     client=client,
     session_token=budget.session_token,
     category="flight",
-    amount_key="price",
+    amount_extractor=lambda **kw: kw.get("price", 0),
 )
 def book_flight(destination: str, price: float) -> str:
     """Book a flight to the specified destination."""
@@ -285,7 +300,7 @@ from figuard.integrations.openai import guarded_openai_function
     client=client,
     session_token=budget.session_token,
     category="flight",
-    amount_key="price",
+    amount_extractor=lambda **kw: kw.get("price", 0),
 )
 def book_flight(destination: str, price: float) -> str:
     ...
@@ -310,6 +325,7 @@ from figuard.integrations.anthropic import guarded_anthropic_tool
     client=client,
     session_token=budget.session_token,
     category="flight",
+    amount_extractor=lambda **kw: kw.get("amount", 0),
 )
 def book_flight(destination: str, amount: float) -> str:
     ...
@@ -351,7 +367,7 @@ budget = client.create_budget(
 | Code | Recoverable? | Meaning |
 |---|---|---|
 | `INSUFFICIENT_FUNDS` | No | Budget or allocation has no remaining balance |
-| `NO_MATCHING_ALLOCATION` | Maybe | Category not in budget's allocation list — try a different category |
+| `NO_MATCHING_ALLOCATION` | Maybe | Category not in budget's allocation list. Category matching is case-insensitive — `"flight"` and `"Flight"` both match |
 | `MISSING_CLAIMED_CATEGORY` | Yes | Add `claimed_category` to the request |
 | `ALLOCATION_EXHAUSTED` | Maybe | This allocation is at its limit — other allocations may have room |
 | `BUDGET_PAUSED` | Maybe | Administratively paused — an admin can unpause |
@@ -373,13 +389,66 @@ budget = client.create_budget(
 
 **Multi-agent causal chains**
 
+When an orchestrator spawns sub-agents, link each sub-agent's spend back to the orchestrator's authorization with `parent_event_id`. FiGuard builds a full spend tree you can query later.
+
 ```python
-# Sub-agent links its spend to the orchestrator's authorization
-auth = client.authorize(
-    ...,
-    parent_event_id=orchestrator_event.event_id,  # causal link
+# Orchestrator authorizes the overall task
+orch_auth = client.authorize(
+    session_token=orch_budget.session_token,
+    agent_id="orchestrator",
+    action_type="TASK",
+    description="Book conference trip",
+    requested_amount=500.00,
+    idempotency_key="task-001",
 )
-# spend_tree shows exactly which agent triggered which spend
+
+# Sub-agents link their spend to the orchestrator event
+flight_auth = client.authorize(
+    session_token=sub_budget.session_token,
+    agent_id="flight_agent",
+    action_type="PURCHASE",
+    description="JetBlue SFO→JFK",
+    requested_amount=267.00,
+    idempotency_key="flight-001",
+    parent_event_id=orch_auth.event_id,  # causal link
+)
+
+hotel_auth = client.authorize(
+    session_token=sub_budget.session_token,
+    agent_id="hotel_agent",
+    action_type="PURCHASE",
+    description="Hotel — The Aster",
+    requested_amount=198.00,
+    idempotency_key="hotel-001",
+    parent_event_id=orch_auth.event_id,  # same orchestrator event
+)
+
+# Retrieve the full spend tree — shows who spent what and why
+tree = client.get_spend_tree(sub_budget.budget_id)
+# tree.roots → [orchestrator event]
+#   └── flight_agent: $267.00 CONFIRMED
+#   └── hotel_agent:  $198.00 CONFIRMED
+```
+
+`parent_event_id` is audit-only — it does not affect enforcement. The tree is available via `client.get_spend_tree(budget_id)` and in the ledger response.
+
+**Integration testing with dry_run**
+
+```python
+# Test your enforcement logic without writing to the ledger
+auth = client.authorize(
+    session_token=budget.session_token,
+    agent_id="test_agent",
+    action_type="PURCHASE",
+    description="Test: would this be allowed?",
+    requested_amount=500.00,
+    claimed_category="flight",
+    idempotency_key="test-001",
+    dry_run=True,   # runs all checks, returns decision, writes nothing
+)
+print(auth.decision)       # AUTHORIZED or DENIED
+print(auth.denial_reason)  # populated if DENIED
+# No ledger entry created, no webhooks fired, budget balance unchanged
 ```
 
 **Idempotency**
@@ -423,6 +492,7 @@ Three things caused this: no idempotency on retries, no reservation-aware availa
 
 | Example | What you learn |
 |---|---|
+| **[`examples/enforcement_cookbook.py`](examples/enforcement_cookbook.py)** | **Every enforcement capability in one runnable script — flat budgets, category allocations, STRICT mode, per-transaction ceiling, entity dedup, TraceId, resource budgets, CompositeGuard, and auto-expiry. Start here if you want to understand what FiGuard can enforce and how to configure it.** |
 | [`examples/langchain-shopping-agent/`](examples/langchain-shopping-agent/) | How allocation budgets enforce category policy mid-run — flight and hotel authorized, insurance and dining denied with structured denial codes the LLM receives |
 | [`examples/langchain-ap-agent/`](examples/langchain-ap-agent/) | How `ALLOCATION_EXHAUSTED` works when a batch of invoices drains a category mid-run, and how the agent handles partial approval |
 | [`examples/crewai-research-fleet/`](examples/crewai-research-fleet/) | How three agents sharing a budget produce a causal spend tree, and how `parent_event_id` ties sub-agent spend back to orchestrator decisions |
@@ -475,9 +545,24 @@ figuard-core/
 │   │           ├── openai.py
 │   │           └── anthropic.py
 │   └── java/               # Java SDK — Maven Central
-├── examples/               # Runnable examples
+├── examples/
+│   ├── enforcement_cookbook.py   # All enforcement capabilities — start here
+│   └── ...                       # Framework-specific examples
 └── docker-compose.yml
 ```
+
+---
+
+## SDK Support
+
+| SDK | Status | Install |
+|---|---|---|
+| Python | ✅ Stable | `pip install figuard` |
+| TypeScript / Node.js | 🔨 In progress | `npm install figuard` *(coming soon)* |
+| Java | ✅ Stable | Maven Central: `com.figuard:figuard-sdk` |
+| Go | 📋 Planned | — |
+
+The TypeScript SDK covers the same surface as the Python SDK with native `fetch` (no external dependencies), full type definitions, and integrations for Vercel AI SDK, LangChain.js, OpenAI Node, Anthropic Node, and Mastra.
 
 ---
 
@@ -489,7 +574,7 @@ Issues, PRs, and integration requests welcome.
 - [Good first issues](https://github.com/figuard/figuard-core/labels/good-first-issue)
 - [GitHub Discussions](https://github.com/figuard/figuard-core/discussions)
 
-Looking for contributors on: TypeScript SDK · Go SDK · LlamaIndex integration · Vercel AI SDK integration · DSPy integration
+Looking for contributors on: Go SDK · LlamaIndex integration · DSPy integration
 
 ---
 

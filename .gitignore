@@ -38,6 +38,10 @@ build/
 figuard-dayplan.md
 agent-billing-sdk-spec.md
 
+### Competitive/positioning docs (not ready to publish) ###
+docs/figuard-vs-stripe-agent-toolkit.md
+docs/figuard-vs-payman.md
+
 ### Python build artifacts ###
 sdk/python/dist/
 sdk/python/build/
