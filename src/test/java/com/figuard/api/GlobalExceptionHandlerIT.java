@@ -74,6 +74,7 @@ class GlobalExceptionHandlerIT extends IntegrationTestBase {
                 .content(objectMapper.writeValueAsString(Map.of(
                     "userId", "user_test",
                     "totalLimit", 100.00,
+                    "currency", "USD",
                     "expiresAt", OffsetDateTime.now().plusHours(1)
                         .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
                     "allocations", java.util.List.of(

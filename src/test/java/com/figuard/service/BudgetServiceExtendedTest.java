@@ -1,10 +1,12 @@
 package com.figuard.service;
 
 import com.figuard.api.dto.request.UpdateBudgetRequest;
+import com.figuard.api.dto.request.ExtendBudgetRequest;
 import com.figuard.api.mapper.BudgetMapper;
 import com.figuard.domain.entity.AgentBudget;
 import com.figuard.domain.entity.Tenant;
 import com.figuard.domain.enums.BudgetStatus;
+import com.figuard.domain.enums.WebhookEventType;
 import com.figuard.domain.repository.AgentBudgetRepository;
 import com.figuard.exception.BudgetNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,15 +17,19 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
@@ -275,5 +281,174 @@ class BudgetServiceExtendedTest {
         budgetService.cancelBudget(budget.getId(), tenant);
 
         assertThat(budget.getStatus()).isEqualTo(BudgetStatus.CANCELLED);
+    }
+
+    // -------------------------------------------------------------------------
+    // updateBudget — BUDGET_PAUSED webhook (Issue 7)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void updateBudget_firesBudgetPausedWebhook_whenTransitioningToPaused() {
+        when(budgetRepository.findById(budget.getId())).thenReturn(Optional.of(budget));
+        when(budgetRepository.save(any())).thenReturn(budget);
+        when(budgetMapper.toResponse(any(AgentBudget.class))).thenReturn(null);
+        when(webhookPayloadBuilder.buildBudgetPausedPayload(any(), eq("MANUAL"))).thenReturn(Map.of());
+
+        UpdateBudgetRequest req = new UpdateBudgetRequest();
+        req.setStatus(BudgetStatus.PAUSED);
+
+        budgetService.updateBudget(budget.getId(), req, tenant);
+
+        verify(webhookDispatcher).dispatch(eq(tenant.getId()), eq(WebhookEventType.BUDGET_PAUSED), any());
+    }
+
+    @Test
+    void updateBudget_doesNotFireBudgetPausedWebhook_whenAlreadyPaused() {
+        budget.setStatus(BudgetStatus.PAUSED); // already paused — no transition
+        when(budgetRepository.findById(budget.getId())).thenReturn(Optional.of(budget));
+        when(budgetRepository.save(any())).thenReturn(budget);
+        when(budgetMapper.toResponse(any(AgentBudget.class))).thenReturn(null);
+
+        UpdateBudgetRequest req = new UpdateBudgetRequest();
+        req.setStatus(BudgetStatus.PAUSED);
+
+        budgetService.updateBudget(budget.getId(), req, tenant);
+
+        verify(webhookDispatcher, never()).dispatch(any(), eq(WebhookEventType.BUDGET_PAUSED), any());
+    }
+
+    @Test
+    void updateBudget_doesNotFireBudgetPausedWebhook_whenResumingFromPaused() {
+        budget.setStatus(BudgetStatus.PAUSED);
+        when(budgetRepository.findById(budget.getId())).thenReturn(Optional.of(budget));
+        when(budgetRepository.save(any())).thenReturn(budget);
+        when(budgetMapper.toResponse(any(AgentBudget.class))).thenReturn(null);
+
+        UpdateBudgetRequest req = new UpdateBudgetRequest();
+        req.setStatus(BudgetStatus.ACTIVE);
+
+        budgetService.updateBudget(budget.getId(), req, tenant);
+
+        verify(webhookDispatcher, never()).dispatch(any(), eq(WebhookEventType.BUDGET_PAUSED), any());
+    }
+
+    // -------------------------------------------------------------------------
+    // cancelBatch (Issue 9)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void cancelBatch_cancelsEligibleBudgets() {
+        AgentBudget b2 = new AgentBudget();
+        b2.setId(UUID.randomUUID());
+        b2.setTenant(tenant);
+        b2.setStatus(BudgetStatus.ACTIVE);
+
+        when(budgetRepository.findByTenantAndIdIn(eq(tenant), any()))
+            .thenReturn(List.of(budget, b2));
+        when(budgetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(budgetMapper.toResponse(any(AgentBudget.class))).thenReturn(null);
+
+        budgetService.cancelBatch(List.of(budget.getId(), b2.getId()), tenant);
+
+        assertThat(budget.getStatus()).isEqualTo(BudgetStatus.CANCELLED);
+        assertThat(b2.getStatus()).isEqualTo(BudgetStatus.CANCELLED);
+    }
+
+    @Test
+    void cancelBatch_skipsAlreadyTerminalBudgets() {
+        budget.setStatus(BudgetStatus.EXPIRED);
+
+        when(budgetRepository.findByTenantAndIdIn(eq(tenant), any()))
+            .thenReturn(List.of(budget));
+        when(budgetMapper.toResponse(any(AgentBudget.class))).thenReturn(null);
+
+        budgetService.cancelBatch(List.of(budget.getId()), tenant);
+
+        // Already terminal — must not call save
+        verify(budgetRepository, never()).save(any());
+        assertThat(budget.getStatus()).isEqualTo(BudgetStatus.EXPIRED);
+    }
+
+    @Test
+    void cancelBatch_rejects_emptyList() {
+        assertThatThrownBy(() -> budgetService.cancelBatch(List.of(), tenant))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("must not be empty");
+    }
+
+    @Test
+    void cancelBatch_rejects_listExceeding100() {
+        List<UUID> ids = java.util.stream.IntStream.range(0, 101)
+            .mapToObj(i -> UUID.randomUUID())
+            .toList();
+
+        assertThatThrownBy(() -> budgetService.cancelBatch(ids, tenant))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("100");
+    }
+
+    // -------------------------------------------------------------------------
+    // extendBudget (Issue 1b)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void extendBudget_updatesExpiresAt() {
+        budget.setExpiresAt(OffsetDateTime.now().plusHours(1));
+        OffsetDateTime newExpiry = OffsetDateTime.now().plusHours(3);
+
+        when(budgetRepository.findByIdWithLock(budget.getId())).thenReturn(Optional.of(budget));
+        when(budgetRepository.save(any())).thenReturn(budget);
+        when(budgetMapper.toResponse(any(AgentBudget.class))).thenReturn(null);
+
+        budgetService.extendBudget(budget.getId(), newExpiry, tenant);
+
+        assertThat(budget.getExpiresAt()).isEqualTo(newExpiry);
+    }
+
+    @Test
+    void extendBudget_rejects_whenNewExpiresAtIsBeforeCurrent() {
+        budget.setExpiresAt(OffsetDateTime.now().plusHours(3));
+        OffsetDateTime earlier = OffsetDateTime.now().plusHours(1);
+
+        when(budgetRepository.findByIdWithLock(budget.getId())).thenReturn(Optional.of(budget));
+
+        assertThatThrownBy(() -> budgetService.extendBudget(budget.getId(), earlier, tenant))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("later than the current expiresAt");
+    }
+
+    @Test
+    void extendBudget_rejects_whenBudgetIsCancelled() {
+        budget.setStatus(BudgetStatus.CANCELLED);
+        budget.setExpiresAt(OffsetDateTime.now().plusHours(1));
+
+        when(budgetRepository.findByIdWithLock(budget.getId())).thenReturn(Optional.of(budget));
+
+        assertThatThrownBy(() -> budgetService.extendBudget(budget.getId(), OffsetDateTime.now().plusHours(2), tenant))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("CANCELLED");
+    }
+
+    @Test
+    void extendBudget_rejects_whenNewExpiresAtExceeds24hCap() {
+        budget.setExpiresAt(OffsetDateTime.now().plusHours(1));
+
+        when(budgetRepository.findByIdWithLock(budget.getId())).thenReturn(Optional.of(budget));
+
+        assertThatThrownBy(() -> budgetService.extendBudget(budget.getId(), OffsetDateTime.now().plusHours(25), tenant))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("24");
+    }
+
+    @Test
+    void extendBudget_returns404_forOtherTenant() {
+        Tenant other = new Tenant();
+        other.setId(UUID.randomUUID());
+        budget.setExpiresAt(OffsetDateTime.now().plusHours(1));
+
+        when(budgetRepository.findByIdWithLock(budget.getId())).thenReturn(Optional.of(budget));
+
+        assertThatThrownBy(() -> budgetService.extendBudget(budget.getId(), OffsetDateTime.now().plusHours(2), other))
+            .isInstanceOf(BudgetNotFoundException.class);
     }
 }

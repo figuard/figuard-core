@@ -187,6 +187,7 @@ class EntityDedupIT extends IntegrationTestBase {
                     "userId", "user_dedup_test",
                     "intentContext", "travel spend",
                     "totalLimit", 1000.00,
+                    "currency", "USD",
                     "entityDedupEnabled", entityDedupEnabled,
                     "expiresAt", expiresAt()))))
             .andExpect(status().isCreated())
