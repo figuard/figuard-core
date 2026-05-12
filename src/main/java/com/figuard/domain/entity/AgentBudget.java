@@ -87,6 +87,16 @@ public class AgentBudget {
     @Column(nullable = false)
     private boolean anomalyDetectionEnabled = false;
 
+    /**
+     * When true (default), an anomaly automatically pauses the budget and blocks all further
+     * spend until manually resumed. When false, the anomaly is recorded and the ANOMALY_DETECTED
+     * webhook fires, but the request is still denied and the budget stays ACTIVE — advisory mode.
+     * Set to false for high-throughput workloads where a single unusual spike should not halt
+     * the entire agent fleet.
+     */
+    @Column(nullable = false)
+    private boolean autoPauseOnAnomaly = true;
+
     @Column(precision = 5, scale = 2)
     private BigDecimal anomalyPauseThresholdMultiplier = new BigDecimal("3.00");
 
@@ -105,6 +115,13 @@ public class AgentBudget {
 
     @Column(nullable = false)
     private OffsetDateTime expiresAt;
+
+    /**
+     * Set to true once the BUDGET_EXPIRING_SOON webhook has been dispatched.
+     * Prevents re-firing on every sweep pass after the initial notification.
+     */
+    @Column(nullable = false)
+    private boolean expiringSoonNotified = false;
 
     @Column(nullable = false)
     private OffsetDateTime firstAuthorizeDeadline;

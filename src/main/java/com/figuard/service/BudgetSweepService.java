@@ -35,6 +35,7 @@ public class BudgetSweepService {
 
     private Counter sweepRunCounter;
     private Counter eventsProcessedCounter;
+    private Counter expiringSoonCounter;
 
     @PostConstruct
     void initMetrics() {
@@ -46,6 +47,11 @@ public class BudgetSweepService {
         eventsProcessedCounter = Counter.builder("figuard.sweep.events_processed")
             .tag("job", "orphaned_budget")
             .description("Number of orphaned budgets expired per sweep run")
+            .register(meterRegistry);
+
+        expiringSoonCounter = Counter.builder("figuard.sweep.events_processed")
+            .tag("job", "expiring_soon")
+            .description("Number of BUDGET_EXPIRING_SOON webhooks fired per sweep run")
             .register(meterRegistry);
     }
 
@@ -88,6 +94,54 @@ public class BudgetSweepService {
                 b.getTenant().getId(),
                 WebhookEventType.BUDGET_EXPIRED_UNUSED,
                 webhookPayloadBuilder.buildBudgetExpiredUnusedPayload(b));
+        });
+    }
+
+    /**
+     * Fires BUDGET_EXPIRING_SOON for budgets expiring within 60 minutes.
+     *
+     * The notification window is [now+55min, now+65min]. Combined with the 5-minute sweep
+     * interval, this ensures each budget is notified exactly once. The expiringSoonNotified
+     * flag provides an additional idempotency guard in case of sweep overlap or restart.
+     */
+    @Scheduled(
+        fixedDelayString   = "${agent-billing.budget.stale-budget-sweep-interval-ms:300000}",
+        initialDelayString = "${agent-billing.budget.stale-budget-sweep-interval-ms:300000}"
+    )
+    public void sweepExpiringSoon() {
+        OffsetDateTime now = OffsetDateTime.now();
+        List<AgentBudget> expiring = budgetRepository.findExpiringSoon(
+            now.plusMinutes(55), now.plusMinutes(65));
+
+        if (expiring.isEmpty()) {
+            return;
+        }
+
+        log.info("Expiry-soon sweep: found {} budgets expiring within 60 minutes", expiring.size());
+
+        for (AgentBudget budget : expiring) {
+            notifyExpiringSoon(budget);
+            expiringSoonCounter.increment();
+        }
+    }
+
+    @Transactional
+    public void notifyExpiringSoon(AgentBudget budget) {
+        budgetRepository.findById(budget.getId()).ifPresent(b -> {
+            // Guard: skip if status changed or already notified since the batch was loaded
+            if (b.isExpiringSoonNotified()) {
+                return;
+            }
+            if (b.getStatus() != BudgetStatus.ACTIVE && b.getStatus() != BudgetStatus.PAUSED) {
+                return;
+            }
+            b.setExpiringSoonNotified(true);
+            budgetRepository.save(b);
+            log.info("BUDGET_EXPIRING_SOON: id={} expiresAt={}", b.getId(), b.getExpiresAt());
+            webhookDispatcher.dispatch(
+                b.getTenant().getId(),
+                WebhookEventType.BUDGET_EXPIRING_SOON,
+                webhookPayloadBuilder.buildBudgetExpiringSoonPayload(b));
         });
     }
 }
