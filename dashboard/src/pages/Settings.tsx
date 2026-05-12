@@ -16,7 +16,7 @@ export function Settings() {
   return (
     <div className="max-w-lg space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-gray-900">Connection settings</h1>
+        <h1 className="text-xl font-semibold text-gray-900">Settings</h1>
         <p className="mt-1 text-sm text-gray-500">
           Stored in your browser's localStorage — never sent anywhere except
           directly to your FiGuard server.

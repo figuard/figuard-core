@@ -11,6 +11,10 @@ export interface ListBudgetsParams {
   status?: BudgetStatus | "";
 }
 
+export async function resumeBudget(id: string): Promise<BudgetResponse> {
+  return apiFetch<BudgetResponse>(`/api/v1/budgets/${id}/resume`, { method: "POST" });
+}
+
 export async function listBudgets(
   params: ListBudgetsParams = {},
 ): Promise<Page<BudgetResponse>> {
