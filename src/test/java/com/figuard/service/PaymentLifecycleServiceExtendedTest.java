@@ -199,6 +199,7 @@ class PaymentLifecycleServiceExtendedTest {
 
         when(eventRepository.findByIdWithLock(event.getId())).thenReturn(Optional.of(event));
         when(eventRepository.findByParentEventId(event.getId())).thenReturn(List.of(child));
+        when(eventRepository.findByParentEventId(child.getId())).thenReturn(List.of()); // no grandchildren
         when(budgetRepository.findByIdWithLock(budget.getId())).thenReturn(Optional.of(budget));
         when(eventRepository.save(any())).thenReturn(event);
         when(budgetMapper.toResponse(any(SpendEvent.class))).thenReturn(mock(SpendEventResponse.class));
@@ -222,6 +223,8 @@ class PaymentLifecycleServiceExtendedTest {
         child.setDecision(SpendDecision.AUTHORIZED);
 
         when(eventRepository.findByIdWithLock(event.getId())).thenReturn(Optional.of(event));
+        // No children for this event — descendants list will be empty
+        when(eventRepository.findByParentEventId(event.getId())).thenReturn(List.of());
         when(budgetRepository.findByIdWithLock(budget.getId())).thenReturn(Optional.of(budget));
         when(eventRepository.save(any())).thenReturn(event);
         when(budgetMapper.toResponse(any(SpendEvent.class))).thenReturn(mock(SpendEventResponse.class));
@@ -233,9 +236,84 @@ class PaymentLifecycleServiceExtendedTest {
 
         service.voidEvent(event.getId(), req, tenant);
 
-        // Children not touched when voidChildEvents=false
-        verify(eventRepository, never()).findByParentEventId(any());
+        // Child was never persisted via save — voidEvent only touches descendants from findByParentEventId
         assertThat(child.getDecision()).isEqualTo(SpendDecision.AUTHORIZED);
+    }
+
+    // -------------------------------------------------------------------------
+    // voidEvent — cascade void reservation release
+    // -------------------------------------------------------------------------
+
+    @Test
+    void voidEvent_cascadeVoid_releasesChildReservationOnBudget() {
+        SpendEvent child = new SpendEvent();
+        child.setId(UUID.randomUUID());
+        child.setDecision(SpendDecision.AUTHORIZED);
+        child.setRequestedQuantity(new BigDecimal("30.00"));
+
+        // Budget holds parent (100) + child (30) = 130 reserved
+        budget.setQuantityReserved(new BigDecimal("130.00"));
+
+        when(eventRepository.findByIdWithLock(event.getId())).thenReturn(Optional.of(event));
+        when(eventRepository.findByParentEventId(event.getId())).thenReturn(List.of(child));
+        when(eventRepository.findByParentEventId(child.getId())).thenReturn(List.of());
+        when(budgetRepository.findByIdWithLock(budget.getId())).thenReturn(Optional.of(budget));
+        when(eventRepository.save(any())).thenReturn(event);
+        when(budgetMapper.toResponse(any(SpendEvent.class))).thenReturn(mock(SpendEventResponse.class));
+        when(webhookPayloadBuilder.buildSpendVoidedPayload(any(), any())).thenReturn(java.util.Map.of());
+
+        VoidEventRequest req = new VoidEventRequest();
+        req.setReason("USER_CANCELLED");
+        req.setVoidChildEvents(true);
+
+        service.voidEvent(event.getId(), req, tenant);
+
+        // Both parent (100) and child (30) reservations must be released
+        assertThat(budget.getQuantityReserved()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void voidEvent_throws409_whenChildrenExist_andFlagNotSet() {
+        SpendEvent child = new SpendEvent();
+        child.setId(UUID.randomUUID());
+        child.setDecision(SpendDecision.AUTHORIZED);
+        child.setRequestedQuantity(new BigDecimal("20.00"));
+
+        when(eventRepository.findByIdWithLock(event.getId())).thenReturn(Optional.of(event));
+        when(eventRepository.findByParentEventId(event.getId())).thenReturn(List.of(child));
+        when(eventRepository.findByParentEventId(child.getId())).thenReturn(List.of());
+
+        VoidEventRequest req = new VoidEventRequest();
+        req.setReason("USER_CANCELLED");
+        req.setVoidChildEvents(false);
+
+        assertThatThrownBy(() -> service.voidEvent(event.getId(), req, tenant))
+            .isInstanceOf(ResponseStatusException.class)
+            .satisfies(e -> assertThat(((ResponseStatusException) e).getStatusCode().value()).isEqualTo(409))
+            .hasMessageContaining("authorized descendant");
+    }
+
+    @Test
+    void voidEvent_throws409_whenDescendantHasExternalTransactionId_andCascadeEnabled() {
+        SpendEvent child = new SpendEvent();
+        child.setId(UUID.randomUUID());
+        child.setDecision(SpendDecision.AUTHORIZED);
+        child.setRequestedQuantity(new BigDecimal("20.00"));
+        child.setExternalTransactionId("ext_txn_123"); // cannot be voided
+
+        when(eventRepository.findByIdWithLock(event.getId())).thenReturn(Optional.of(event));
+        when(eventRepository.findByParentEventId(event.getId())).thenReturn(List.of(child));
+        when(eventRepository.findByParentEventId(child.getId())).thenReturn(List.of());
+        when(budgetRepository.findByIdWithLock(budget.getId())).thenReturn(Optional.of(budget));
+
+        VoidEventRequest req = new VoidEventRequest();
+        req.setReason("USER_CANCELLED");
+        req.setVoidChildEvents(true);
+
+        assertThatThrownBy(() -> service.voidEvent(event.getId(), req, tenant))
+            .isInstanceOf(ResponseStatusException.class)
+            .satisfies(e -> assertThat(((ResponseStatusException) e).getStatusCode().value()).isEqualTo(409))
+            .hasMessageContaining("VOID_REQUIRES_REFUND");
     }
 
     // -------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import com.figuard.api.dto.response.AuthorizationResponse;
 import com.figuard.api.mapper.BudgetMapper;
 import com.figuard.domain.entity.AgentBudget;
 import com.figuard.domain.entity.BudgetAllocation;
+import com.figuard.domain.entity.BudgetAnomalyBaseline;
 import com.figuard.domain.entity.SpendEvent;
 import com.figuard.domain.entity.Tenant;
 import com.figuard.domain.enums.AllocationStatus;
@@ -13,6 +14,7 @@ import com.figuard.domain.enums.BudgetStatus;
 import com.figuard.domain.enums.DenialCode;
 import com.figuard.domain.enums.EnforcementMode;
 import com.figuard.domain.enums.SpendDecision;
+import com.figuard.domain.enums.WebhookEventType;
 import com.figuard.domain.repository.AgentBudgetRepository;
 import com.figuard.domain.repository.BudgetAllocationRepository;
 import com.figuard.domain.repository.BudgetAnomalyBaselineRepository;
@@ -347,6 +349,7 @@ class AuthorizationServiceTest {
         UUID parentId = UUID.randomUUID();
         ReflectionTestUtils.setField(parent, "id", parentId);
         parent.setBudget(budget);
+        parent.setDecision(SpendDecision.AUTHORIZED); // must be in active decision state
 
         when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
         when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any()))
@@ -371,6 +374,80 @@ class AuthorizationServiceTest {
         verify(spendEventRepository).save(eventCaptor.capture());
         assertThat(eventCaptor.getValue().getParentEvent()).isNotNull();
         assertThat(eventCaptor.getValue().getParentEvent().getId()).isEqualTo(parentId);
+    }
+
+    @Test
+    void authorize_rejects_whenParentEventIsDenied() {
+        SpendEvent parent = new SpendEvent();
+        UUID parentId = UUID.randomUUID();
+        ReflectionTestUtils.setField(parent, "id", parentId);
+        parent.setBudget(budget);
+        parent.setDecision(SpendDecision.DENIED);
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any()))
+            .thenReturn(Optional.empty());
+        when(spendEventRepository.findById(parentId)).thenReturn(Optional.of(parent));
+
+        AuthorizeSpendRequest req = validRequest();
+        req.setParentEventId(parentId);
+
+        assertThatThrownBy(() -> service.authorize("st_token", req, tenant))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("INVALID_PARENT_EVENT")
+            .hasMessageContaining("DENIED");
+    }
+
+    @Test
+    void authorize_rejects_whenParentEventIsVoided() {
+        SpendEvent parent = new SpendEvent();
+        UUID parentId = UUID.randomUUID();
+        ReflectionTestUtils.setField(parent, "id", parentId);
+        parent.setBudget(budget);
+        parent.setDecision(SpendDecision.VOIDED);
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any()))
+            .thenReturn(Optional.empty());
+        when(spendEventRepository.findById(parentId)).thenReturn(Optional.of(parent));
+
+        AuthorizeSpendRequest req = validRequest();
+        req.setParentEventId(parentId);
+
+        assertThatThrownBy(() -> service.authorize("st_token", req, tenant))
+            .isInstanceOf(ResponseStatusException.class)
+            .hasMessageContaining("INVALID_PARENT_EVENT")
+            .hasMessageContaining("VOIDED");
+    }
+
+    @Test
+    void authorize_accepts_parentEvent_whenConfirmed() {
+        SpendEvent parent = new SpendEvent();
+        UUID parentId = UUID.randomUUID();
+        ReflectionTestUtils.setField(parent, "id", parentId);
+        parent.setBudget(budget);
+        parent.setDecision(SpendDecision.CONFIRMED); // CONFIRMED is also a valid parent state
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any()))
+            .thenReturn(Optional.empty());
+        when(spendEventRepository.findById(parentId)).thenReturn(Optional.of(parent));
+        when(allocationRepository.findByParentBudgetIdOrderByCreatedAtAsc(any()))
+            .thenReturn(List.of(flightAllocation));
+        when(categoryMatchingService.findMatch(any(), any(), any()))
+            .thenReturn(new MatchResult.Match(flightAllocation));
+        when(allocationRepository.findByIdWithLock(any())).thenReturn(Optional.of(flightAllocation));
+        when(allocationRepository.save(any())).thenReturn(flightAllocation);
+        when(budgetRepository.save(any())).thenReturn(budget);
+        when(budgetMapper.toAllocationSnapshot(any())).thenReturn(null);
+
+        AuthorizeSpendRequest req = validRequest();
+        req.setClaimedCategory("flight");
+        req.setParentEventId(parentId);
+
+        AuthorizationResponse response = service.authorize("st_token", req, tenant);
+
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.AUTHORIZED);
     }
 
     @Test
@@ -478,6 +555,184 @@ class AuthorizationServiceTest {
         AuthorizationResponse response = service.authorize("st_token", req, tenant);
 
         assertThat(response.getDecision()).isEqualTo(SpendDecision.AUTHORIZED);
+    }
+
+    // -------------------------------------------------------------------------
+    // Anomaly detection — autoPauseOnAnomaly (Issue 6)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void authorize_pausesBudget_whenAnomalyDetected_andAutoPauseEnabled() {
+        budget.setAnomalyDetectionEnabled(true);
+        budget.setAutoPauseOnAnomaly(true);
+
+        BudgetAnomalyBaseline baseline = new BudgetAnomalyBaseline();
+        baseline.setSampleCount(10);
+        baseline.setMeanAmount(new BigDecimal("50.00"));
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any())).thenReturn(Optional.empty());
+        when(anomalyBaselineRepository.findByBudgetId(any())).thenReturn(Optional.of(baseline));
+        when(webhookPayloadBuilder.buildBudgetPausedPayload(any(), eq("ANOMALY_DETECTED"))).thenReturn(java.util.Map.of());
+        when(webhookPayloadBuilder.buildAnomalyDetectedPayload(any(), any(), any(), any())).thenReturn(java.util.Map.of());
+
+        AuthorizeSpendRequest req = validRequest();
+        req.setRequestedQuantity(new BigDecimal("500.00")); // far exceeds 3× mean (150)
+
+        AuthorizationResponse response = service.authorize("st_token", req, tenant);
+
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.DENIED);
+        assertThat(response.getDenialReason()).isEqualTo(DenialCode.ANOMALY_DETECTED);
+        assertThat(budget.getStatus()).isEqualTo(BudgetStatus.PAUSED);
+        verify(webhookDispatcher).dispatch(eq(tenant.getId()), eq(WebhookEventType.BUDGET_PAUSED), any());
+        verify(webhookDispatcher).dispatch(eq(tenant.getId()), eq(WebhookEventType.ANOMALY_DETECTED), any());
+    }
+
+    @Test
+    void authorize_doesNotPauseBudget_whenAnomalyDetected_andAdvisoryMode() {
+        budget.setAnomalyDetectionEnabled(true);
+        budget.setAutoPauseOnAnomaly(false); // advisory mode
+
+        BudgetAnomalyBaseline baseline = new BudgetAnomalyBaseline();
+        baseline.setSampleCount(10);
+        baseline.setMeanAmount(new BigDecimal("50.00"));
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any())).thenReturn(Optional.empty());
+        when(anomalyBaselineRepository.findByBudgetId(any())).thenReturn(Optional.of(baseline));
+        when(webhookPayloadBuilder.buildAnomalyDetectedPayload(any(), any(), any(), any())).thenReturn(java.util.Map.of());
+
+        AuthorizeSpendRequest req = validRequest();
+        req.setRequestedQuantity(new BigDecimal("500.00")); // exceeds threshold
+
+        AuthorizationResponse response = service.authorize("st_token", req, tenant);
+
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.DENIED);
+        assertThat(response.getDenialReason()).isEqualTo(DenialCode.ANOMALY_DETECTED);
+        // Advisory mode: budget must NOT be paused
+        assertThat(budget.getStatus()).isEqualTo(BudgetStatus.ACTIVE);
+        verify(webhookDispatcher, never()).dispatch(any(), eq(WebhookEventType.BUDGET_PAUSED), any());
+        verify(webhookDispatcher).dispatch(eq(tenant.getId()), eq(WebhookEventType.ANOMALY_DETECTED), any());
+    }
+
+    // -------------------------------------------------------------------------
+    // Resource budget — anomaly detection skipped (Priority 8)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void authorize_skipsAnomalyDetection_forResourceBudget() {
+        // Budget is a resource/token budget (unit set, currency null)
+        budget.setCurrency(null);
+        budget.setUnit("tokens");
+        budget.setAnomalyDetectionEnabled(true);
+        budget.setAutoPauseOnAnomaly(true);
+        // Even with anomalyDetectionEnabled=true, a resource budget should never
+        // invoke the anomaly baseline check — dollar thresholds are meaningless for token counts.
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any())).thenReturn(Optional.empty());
+        when(spendEventRepository.sumAuthorizedQuantityAfter(any(), any()))
+            .thenReturn(BigDecimal.ZERO);
+        when(allocationRepository.findByParentBudgetIdOrderByCreatedAtAsc(any())).thenReturn(List.of());
+        when(budgetMapper.toBudgetSnapshot(any())).thenReturn(null);
+        when(spendEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(budgetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        AuthorizeSpendRequest req = validRequest();
+        req.setRequestedQuantity(new BigDecimal("50000")); // large token count
+
+        AuthorizationResponse response = service.authorize("st_token", req, tenant);
+
+        // Should be authorized — anomaly baseline must not have been consulted
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.AUTHORIZED);
+        verify(anomalyBaselineRepository, never()).findByBudgetId(any());
+    }
+
+    @Test
+    void authorize_runsAnomalyDetection_forMonetaryBudget() {
+        // Monetary budget — anomaly detection must still run
+        budget.setCurrency("USD");
+        budget.setUnit(null);
+        budget.setAnomalyDetectionEnabled(true);
+        budget.setAutoPauseOnAnomaly(false);
+
+        BudgetAnomalyBaseline baseline = new BudgetAnomalyBaseline();
+        baseline.setSampleCount(10);
+        baseline.setMeanAmount(new BigDecimal("50.00"));
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any())).thenReturn(Optional.empty());
+        when(anomalyBaselineRepository.findByBudgetId(any())).thenReturn(Optional.of(baseline));
+        when(webhookPayloadBuilder.buildAnomalyDetectedPayload(any(), any(), any(), any())).thenReturn(java.util.Map.of());
+
+        AuthorizeSpendRequest req = validRequest();
+        req.setRequestedQuantity(new BigDecimal("500.00")); // exceeds 3× mean
+
+        AuthorizationResponse response = service.authorize("st_token", req, tenant);
+
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.DENIED);
+        assertThat(response.getDenialReason()).isEqualTo(DenialCode.ANOMALY_DETECTED);
+        verify(anomalyBaselineRepository).findByBudgetId(any());
+    }
+
+    // -------------------------------------------------------------------------
+    // ALLOCATION_EXHAUSTED webhook (Issue 7)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void authorize_firesAllocationExhaustedWebhook_whenAllocationAtZero() {
+        // Allocation is completely spent — available = 0
+        flightAllocation.setQuantitySpent(new BigDecimal("300.00"));
+        flightAllocation.setQuantityReserved(BigDecimal.ZERO);
+        // availableQuantity() = 300 - 300 - 0 = 0
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any())).thenReturn(Optional.empty());
+        when(allocationRepository.findByParentBudgetIdOrderByCreatedAtAsc(any()))
+            .thenReturn(List.of(flightAllocation));
+        when(categoryMatchingService.findMatch(any(), any(), any()))
+            .thenReturn(new MatchResult.Match(flightAllocation));
+        when(allocationRepository.findByIdWithLock(any())).thenReturn(Optional.of(flightAllocation));
+        when(budgetMapper.toAllocationSnapshot(any())).thenReturn(null);
+        when(webhookPayloadBuilder.buildSpendDeniedPayload(any(), any())).thenReturn(java.util.Map.of());
+        when(webhookPayloadBuilder.buildAllocationExhaustedPayload(any(), any(), any(), any())).thenReturn(java.util.Map.of());
+
+        AuthorizeSpendRequest req = validRequest();
+        req.setClaimedCategory("flight");
+
+        AuthorizationResponse response = service.authorize("st_token", req, tenant);
+
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.DENIED);
+        assertThat(response.getDenialReason()).isEqualTo(DenialCode.ALLOCATION_EXHAUSTED);
+        verify(webhookDispatcher).dispatch(eq(tenant.getId()), eq(WebhookEventType.ALLOCATION_EXHAUSTED), any());
+    }
+
+    @Test
+    void authorize_doesNotFireAllocationExhaustedWebhook_whenAllocationHasSomeCapacity() {
+        // Allocation has some capacity left but not enough for this specific request
+        flightAllocation.setQuantitySpent(new BigDecimal("250.00"));
+        flightAllocation.setQuantityReserved(BigDecimal.ZERO);
+        // availableQuantity() = 300 - 250 - 0 = 50 (> 0)
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any())).thenReturn(Optional.empty());
+        when(allocationRepository.findByParentBudgetIdOrderByCreatedAtAsc(any()))
+            .thenReturn(List.of(flightAllocation));
+        when(categoryMatchingService.findMatch(any(), any(), any()))
+            .thenReturn(new MatchResult.Match(flightAllocation));
+        when(allocationRepository.findByIdWithLock(any())).thenReturn(Optional.of(flightAllocation));
+        when(budgetMapper.toAllocationSnapshot(any())).thenReturn(null);
+        when(webhookPayloadBuilder.buildSpendDeniedPayload(any(), any())).thenReturn(java.util.Map.of());
+
+        AuthorizeSpendRequest req = validRequest();
+        req.setClaimedCategory("flight");
+        req.setRequestedQuantity(new BigDecimal("100.00")); // > 50 available but allocation not zero
+
+        AuthorizationResponse response = service.authorize("st_token", req, tenant);
+
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.DENIED);
+        // ALLOCATION_EXHAUSTED webhook must NOT fire — allocation still has capacity, just not enough
+        verify(webhookDispatcher, never()).dispatch(any(), eq(WebhookEventType.ALLOCATION_EXHAUSTED), any());
     }
 
     // -------------------------------------------------------------------------

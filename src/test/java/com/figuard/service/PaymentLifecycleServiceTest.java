@@ -193,12 +193,14 @@ class PaymentLifecycleServiceTest {
         child.setExternalTransactionId("pi_child_charged");
 
         when(eventRepository.findByIdWithLock(event.getId())).thenReturn(Optional.of(event));
+        when(eventRepository.findByParentEventId(event.getId())).thenReturn(java.util.List.of(child));
+        when(eventRepository.findByParentEventId(child.getId())).thenReturn(java.util.List.of());
+        // Budget lock is acquired before descendant validation — must be stubbed
+        when(budgetRepository.findByIdWithLock(budget.getId())).thenReturn(Optional.of(budget));
 
         VoidEventRequest req = new VoidEventRequest();
         req.setReason("USER_CANCELLED");
         req.setVoidChildEvents(true);
-
-        when(eventRepository.findByParentEventId(event.getId())).thenReturn(java.util.List.of(child));
 
         assertThatThrownBy(() -> service.voidEvent(event.getId(), req, tenant))
             .isInstanceOf(ResponseStatusException.class)
