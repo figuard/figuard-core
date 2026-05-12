@@ -168,29 +168,34 @@ class TestCreateBudget:
 class TestAuthorize:
 
     @pytest.mark.asyncio
-    async def test_raises_value_error_when_idempotency_key_missing(self) -> None:
+    async def test_auto_generates_idempotency_key_when_omitted(self) -> None:
         async with AsyncFiGuardClient(api_key=API_KEY, base_url=BASE) as client:
-            with pytest.raises(ValueError, match="idempotency_key is required"):
-                await client.authorize(
+            with aioresponses_ctx() as m:
+                m.post(f"{BASE}/api/v1/authorize", payload=_authorized_payload(), status=200)
+                # No idempotency_key — SDK must auto-generate a UUID and not raise
+                result = await client.authorize(
                     session_token=SESSION_TOKEN,
                     agent_id="agent_001",
                     action_type="PURCHASE",
                     description="test",
                     requested_quantity=50.0,
                 )
+                assert result.is_authorized is True
 
     @pytest.mark.asyncio
-    async def test_raises_value_error_when_idempotency_key_blank(self) -> None:
+    async def test_auto_generates_idempotency_key_when_blank(self) -> None:
         async with AsyncFiGuardClient(api_key=API_KEY, base_url=BASE) as client:
-            with pytest.raises(ValueError):
-                await client.authorize(
+            with aioresponses_ctx() as m:
+                m.post(f"{BASE}/api/v1/authorize", payload=_authorized_payload(), status=200)
+                result = await client.authorize(
                     session_token=SESSION_TOKEN,
                     agent_id="agent_001",
                     action_type="PURCHASE",
                     description="test",
                     requested_quantity=50.0,
-                    idempotency_key="   ",
+                    idempotency_key="   ",  # blank — SDK should auto-generate
                 )
+                assert result.is_authorized is True
 
     @pytest.mark.asyncio
     async def test_authorized_returns_result_with_is_authorized_true(self) -> None:
