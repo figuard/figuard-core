@@ -102,6 +102,14 @@ public class SpendEvent {
     @Column(length = 255)
     private String traceId;
 
+    /**
+     * Set when this event was authorized via a DelegatedToken rather than a direct budget token.
+     * Used by the lifecycle service (confirm/fail/void) to update the per-token category cap counters.
+     * NULL for events created via a normal session token.
+     */
+    @Column
+    private UUID delegatedTokenId;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private Map<String, Object> metadata;

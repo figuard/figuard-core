@@ -28,7 +28,9 @@ public class CreateBudgetRequest {
     private BigDecimal totalLimit;
 
     // Monetary budgets: 3-letter ISO code (e.g. "USD"). Exactly one of currency or unit must be set.
-    @Size(min = 3, max = 3, message = "currency must be a 3-letter ISO code")
+    @Size(min = 3, max = 3,
+        message = "currency must be a 3-letter ISO code (e.g. \"USD\"). " +
+                  "For non-monetary resources (tokens, api_calls, gpu_hours) use unit instead.")
     private String currency;
 
     // Resource budgets: free-form label (e.g. "tokens", "api_calls", "gpu_hours").
@@ -36,7 +38,12 @@ public class CreateBudgetRequest {
     @Size(max = 50, message = "unit must be 50 characters or fewer")
     private String unit;
 
-    @AssertTrue(message = "exactly one of currency or unit must be set")
+    @AssertTrue(
+        message = "Exactly one of currency or unit must be set. " +
+                  "Use currency for monetary budgets (e.g. currency=\"USD\"). " +
+                  "Use unit for resource budgets (e.g. unit=\"tokens\", unit=\"api_calls\", unit=\"gpu_hours\"). " +
+                  "Setting both or neither is not allowed."
+    )
     private boolean isCurrencyOrUnitValid() {
         boolean hasCurrency = currency != null && !currency.isBlank();
         boolean hasUnit = unit != null && !unit.isBlank();
@@ -67,6 +74,25 @@ public class CreateBudgetRequest {
     private boolean entityDedupEnabled = false;
 
     private boolean anomalyDetectionEnabled = false;
+
+    @AssertTrue(
+        message = "anomalyDetectionEnabled is not supported for resource budgets (unit is set). " +
+                  "Anomaly detection thresholds are calibrated for monetary amounts and produce " +
+                  "false positives on token or call counts. Remove anomalyDetectionEnabled or switch to a monetary budget."
+    )
+    private boolean isAnomalyDetectionValidForBudgetType() {
+        boolean hasUnit = unit != null && !unit.isBlank();
+        return !(hasUnit && anomalyDetectionEnabled);
+    }
+
+    /**
+     * When true (default), anomaly detection pauses the budget on the triggering request.
+     * When false, the anomalous request is denied and ANOMALY_DETECTED webhook fires, but the
+     * budget stays ACTIVE. Use false for high-throughput workloads where a single spike should
+     * not halt the entire agent fleet.
+     * Only meaningful when anomalyDetectionEnabled=true.
+     */
+    private boolean autoPauseOnAnomaly = true;
 
     // Anomaly detection tuning — only used when anomalyDetectionEnabled=true.
     // If omitted, AgentBudget defaults apply (multiplier=3.0, minSamples=5).

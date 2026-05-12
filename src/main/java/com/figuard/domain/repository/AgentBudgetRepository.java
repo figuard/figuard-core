@@ -56,4 +56,31 @@ public interface AgentBudgetRepository extends JpaRepository<AgentBudget, UUID> 
     Page<AgentBudget> findByTenant(Tenant tenant, Pageable pageable);
 
     Page<AgentBudget> findByTenantAndStatus(Tenant tenant, BudgetStatus status, Pageable pageable);
+
+    // Default list (no status filter): exclude CANCELLED so the dashboard shows live budgets
+    // by default. Callers pass ?status=CANCELLED to opt in to seeing cancelled budgets.
+    Page<AgentBudget> findByTenantAndStatusNot(Tenant tenant, BudgetStatus excludedStatus, Pageable pageable);
+
+    // Batch cancel: find all budgets in a given set of IDs for this tenant
+    @Query("SELECT b FROM AgentBudget b WHERE b.tenant = :tenant AND b.id IN :ids")
+    List<AgentBudget> findByTenantAndIdIn(@Param("tenant") Tenant tenant, @Param("ids") Collection<UUID> ids);
+
+    // Idempotent budget creation: look up an active/paused budget by externalReference.
+    // Terminal budgets (EXPIRED, CANCELLED, EXHAUSTED) are excluded so a new budget can
+    // always be created after the previous one finishes.
+    Optional<AgentBudget> findByTenantAndExternalReferenceAndStatusIn(
+        Tenant tenant, String externalReference, Collection<BudgetStatus> statuses);
+
+    // Expiry-soon sweep: find ACTIVE or PAUSED budgets expiring within the notification
+    // window that haven't been notified yet. :windowStart is typically now+55min,
+    // :windowEnd is now+65min, so the 5-minute sweep fires the notification exactly once.
+    @Query("""
+        SELECT b FROM AgentBudget b
+        WHERE b.status IN ('ACTIVE', 'PAUSED')
+          AND b.expiresAt BETWEEN :windowStart AND :windowEnd
+          AND b.expiringSoonNotified = false
+        """)
+    List<AgentBudget> findExpiringSoon(
+        @Param("windowStart") OffsetDateTime windowStart,
+        @Param("windowEnd")   OffsetDateTime windowEnd);
 }

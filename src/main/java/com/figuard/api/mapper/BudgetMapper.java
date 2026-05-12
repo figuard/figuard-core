@@ -53,6 +53,8 @@ public class BudgetMapper {
             .availableQuantity(budget.availableQuantity())
             .softLimit(budget.getSoftLimit())
             .authorizationExpirySeconds(budget.getAuthorizationExpirySeconds())
+            .anomalyDetectionEnabled(budget.isAnomalyDetectionEnabled())
+            .autoPauseOnAnomaly(budget.isAutoPauseOnAnomaly())
             .status(budget.getStatus())
             .allocations(allocations)
             .expiresAt(budget.getExpiresAt())
@@ -142,6 +144,7 @@ public class BudgetMapper {
         budget.setSoftLimit(request.getSoftLimit());
         budget.setEntityDedupEnabled(request.isEntityDedupEnabled());
         budget.setAnomalyDetectionEnabled(request.isAnomalyDetectionEnabled());
+        budget.setAutoPauseOnAnomaly(request.isAutoPauseOnAnomaly());
         if (request.getAnomalyPauseThresholdMultiplier() != null) {
             budget.setAnomalyPauseThresholdMultiplier(request.getAnomalyPauseThresholdMultiplier());
         }

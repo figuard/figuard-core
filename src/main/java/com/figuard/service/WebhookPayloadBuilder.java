@@ -1,6 +1,8 @@
 package com.figuard.service;
 
 import com.figuard.domain.entity.AgentBudget;
+import com.figuard.domain.entity.BudgetAllocation;
+import com.figuard.domain.entity.DelegatedToken;
 import com.figuard.domain.entity.SpendEvent;
 import com.figuard.domain.enums.WebhookEventType;
 import org.springframework.stereotype.Component;
@@ -10,6 +12,7 @@ import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Builds the JSON payload delivered to webhook endpoints.
@@ -121,6 +124,69 @@ public class WebhookPayloadBuilder {
         if (overrideBy != null) {
             payload.put("overrideBy", overrideBy);
         }
+        return payload;
+    }
+
+    /**
+     * BUDGET_PAUSED — fired when a budget is paused, either by anomaly detection or manually.
+     * Includes the pause reason so orchestrators can distinguish the two cases.
+     */
+    public Map<String, Object> buildBudgetPausedPayload(AgentBudget budget, String reason) {
+        Map<String, Object> payload = basePayload(WebhookEventType.BUDGET_PAUSED, budget);
+        payload.put("reason",            reason);
+        payload.put("totalLimit",        budget.getTotalLimit());
+        payload.put("quantitySpent",     budget.getQuantitySpent());
+        payload.put("availableQuantity", budget.availableQuantity());
+        return payload;
+    }
+
+    /**
+     * ALLOCATION_EXHAUSTED — fired when a category allocation has no remaining capacity.
+     * Helps orchestrators reroute remaining work to a different category.
+     *
+     * @param triggeringEventId  ID of the SPEND_DENIED event that triggered this alert
+     * @param requestedQuantity  the quantity that was denied (last straw that caused exhaustion)
+     */
+    public Map<String, Object> buildAllocationExhaustedPayload(AgentBudget budget,
+                                                                 BudgetAllocation allocation,
+                                                                 UUID triggeringEventId,
+                                                                 BigDecimal requestedQuantity) {
+        Map<String, Object> payload = basePayload(WebhookEventType.ALLOCATION_EXHAUSTED, budget);
+        payload.put("allocationId",      allocation.getId());
+        payload.put("category",          allocation.getCategory());
+        payload.put("allocationLimit",   allocation.getTotalLimit());
+        payload.put("quantitySpent",     allocation.getQuantitySpent());
+        payload.put("triggeringEventId", triggeringEventId);
+        payload.put("requestedQuantity", requestedQuantity);
+        return payload;
+    }
+
+    /**
+     * BUDGET_EXPIRING_SOON — fired 60 minutes before budget expiry.
+     * Gives orchestrators a window to extend the budget or initiate graceful shutdown.
+     */
+    public Map<String, Object> buildBudgetExpiringSoonPayload(AgentBudget budget) {
+        Map<String, Object> payload = basePayload(WebhookEventType.BUDGET_EXPIRING_SOON, budget);
+        payload.put("expiresAt",         budget.getExpiresAt());
+        payload.put("totalLimit",        budget.getTotalLimit());
+        payload.put("quantitySpent",     budget.getQuantitySpent());
+        payload.put("availableQuantity", budget.availableQuantity());
+        return payload;
+    }
+
+    /**
+     * DELEGATION_TOKEN_REVOKED — fired when a delegation token is explicitly revoked.
+     * Orchestrators should stop routing work to the sub-agent that held this token.
+     */
+    public Map<String, Object> buildDelegationTokenRevokedPayload(DelegatedToken token) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("eventType",      WebhookEventType.DELEGATION_TOKEN_REVOKED.name());
+        payload.put("delegationTokenId", token.getId());
+        payload.put("parentBudgetId", token.getParentBudget().getId());
+        payload.put("tenantId",       token.getTenant().getId());
+        payload.put("label",          token.getLabel());
+        payload.put("revokedAt",      token.getRevokedAt() != null ? token.getRevokedAt().toString() : null);
+        payload.put("timestamp",      OffsetDateTime.now().toString());
         return payload;
     }
 
