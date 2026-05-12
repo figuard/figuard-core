@@ -1,4 +1,5 @@
 import { useParams } from "react-router-dom";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   AreaChart,
   Area,
@@ -14,6 +15,7 @@ import { AllocationRings } from "../components/AllocationRings";
 import { ExpiryBadge } from "../components/ExpiryBadge";
 import { BUDGET_STATUS_BADGE } from "../lib/colors";
 import { formatDateTime, formatAmount, shortId } from "../lib/format";
+import { resumeBudget } from "../api/budgets";
 
 // Build 7-day daily spend buckets from ledger events.
 function buildSparkline(
@@ -49,6 +51,15 @@ export function BudgetOverview() {
   const { data: budget, isLoading, isError, error } = useBudget(id);
   // Fetch up to 500 recent events for the sparkline (covers 7 days of typical traffic)
   const { data: ledgerPage } = useLedger(id, { page: 0, size: 500 });
+
+  // Hooks must come before any early returns
+  const queryClient = useQueryClient();
+  const resumeMutation = useMutation({
+    mutationFn: () => resumeBudget(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["budget", id] });
+    },
+  });
 
   if (isLoading) {
     return (
@@ -109,6 +120,30 @@ export function BudgetOverview() {
           {` · Created ${formatDateTime(budget.createdAt)}`}
         </p>
       </div>
+
+      {/* PAUSED callout with resume action */}
+      {budget.status === "PAUSED" && (
+        <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4 flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-yellow-800">Budget paused — spend requests are blocked</p>
+            <p className="text-xs text-yellow-700">
+              This budget was automatically paused, likely by anomaly detection. Review the{" "}
+              <a href={`/budgets/${id}/ledger`} className="underline font-medium hover:text-yellow-900">Ledger</a>{" "}
+              for the triggering event, then resume when you're confident the activity is legitimate.
+            </p>
+            {resumeMutation.isError && (
+              <p className="text-xs text-red-600 mt-1">Failed to resume. Try again.</p>
+            )}
+          </div>
+          <button
+            onClick={() => resumeMutation.mutate()}
+            disabled={resumeMutation.isPending}
+            className="shrink-0 rounded-lg bg-yellow-600 px-4 py-2 text-sm font-medium text-white hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 transition-colors"
+          >
+            {resumeMutation.isPending ? "Resuming…" : "Resume budget"}
+          </button>
+        </div>
+      )}
 
       {/* Allocation rings */}
       {budget.allocations && budget.allocations.length > 0 && (
@@ -175,29 +210,41 @@ export function BudgetOverview() {
         )}
       </div>
 
-      {/* Intent tags / metadata */}
+      {/* Intent — structured scope enforcement */}
       {((budget.intentTags && budget.intentTags.length > 0) ||
         budget.intentContext) && (
         <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-3 text-sm font-semibold text-gray-700">
-            Intent
-          </h2>
+          <div className="flex items-start justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-700">Intent</h2>
+            {budget.intentTags && budget.intentTags.length > 0 && !budget.allocations?.length && (
+              <span className="text-xs rounded-full bg-violet-50 text-violet-700 px-2.5 py-0.5 font-medium border border-violet-100">
+                Scope enforced
+              </span>
+            )}
+          </div>
           {budget.intentContext && (
-            <p className="text-sm text-gray-600 mb-2">
-              Context: <span className="font-mono">{budget.intentContext}</span>
+            <p className="text-sm text-gray-600 mb-3 leading-snug">
+              {budget.intentContext}
             </p>
           )}
           {budget.intentTags && budget.intentTags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {budget.intentTags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
+            <>
+              <p className="text-xs text-gray-400 mb-1.5">
+                {!budget.allocations?.length
+                  ? "Declared scope — spend outside these tags is blocked:"
+                  : "Declared scope tags:"}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {budget.intentTags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 border border-violet-100"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}

@@ -48,7 +48,7 @@ export function App() {
       <aside className="w-52 shrink-0 flex flex-col border-r border-gray-200 bg-white">
         {/* Logo */}
         <div className="flex items-center px-4 py-4 border-b border-gray-100">
-          <span className="font-semibold text-gray-800 tracking-tight">FiGuard</span>
+          <img src="/wordmark-nav-light.svg" alt="FiGuard" className="h-6 w-auto" />
         </div>
 
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
@@ -65,14 +65,14 @@ export function App() {
             to="/settings"
             className={({ isActive }) => navItem(isActive)}
           >
-            <span>⚙</span> Connection
+            <span>⚙</span> Settings
           </NavLink>
         </div>
       </aside>
 
       {/* Main content */}
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-5xl mx-auto px-6 py-6">
+        <div className="px-8 py-6">
           {!isConfigured() && location.pathname !== "/settings" && (
             <div className="mb-4 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
               No API key configured.{" "}
@@ -80,7 +80,7 @@ export function App() {
                 onClick={() => navigate("/settings")}
                 className="font-medium underline hover:text-yellow-900"
               >
-                Open Connection settings
+                Open Settings
               </button>{" "}
               to connect to your FiGuard server.
             </div>
