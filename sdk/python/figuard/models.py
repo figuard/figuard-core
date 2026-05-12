@@ -212,3 +212,39 @@ class SpendTree:
     budget_id: str
     roots: List[SpendTreeNode]
     total_events: int
+
+
+# ---------------------------------------------------------------------------
+# Delegation tokens
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class DelegationTokenAllocation:
+    id: str
+    category: str
+    total_limit: float
+    quantity_spent: float
+    quantity_reserved: float
+    available_quantity: float
+
+
+@dataclass(frozen=True)
+class DelegationToken:
+    id: str
+    parent_budget_id: str
+    label: str
+    status: str
+    session_token_prefix: str
+    caps: List[DelegationTokenAllocation]
+    # Only present immediately after create_delegation_token(). None on all subsequent reads.
+    session_token: Optional[str] = None
+    revoked_at: Optional[str] = None
+    created_at: Optional[str] = None
+
+    @property
+    def is_active(self) -> bool:
+        return self.status == "ACTIVE"
+
+    @property
+    def is_revoked(self) -> bool:
+        return self.status == "REVOKED"

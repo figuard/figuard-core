@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union
 
@@ -46,6 +47,8 @@ from .models import (
     AuthorizationResult,
     Budget,
     BudgetSnapshot,
+    DelegationToken,
+    DelegationTokenAllocation,
     LedgerPage,
     SpendEventResponse,
     SpendTree,
@@ -109,6 +112,7 @@ class FiGuardClient:
         max_transaction_quantity: Optional[float] = None,
         authorization_expiry_seconds: Optional[int] = None,
         anomaly_detection_enabled: bool = False,
+        auto_pause_on_anomaly: bool = True,
         entity_dedup_enabled: bool = False,
         allocations: Optional[List[Dict[str, Any]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -157,6 +161,8 @@ class FiGuardClient:
             body["authorizationExpirySeconds"] = authorization_expiry_seconds
         if anomaly_detection_enabled:
             body["anomalyDetectionEnabled"] = True
+        if not auto_pause_on_anomaly:
+            body["autoPauseOnAnomaly"] = False
         if entity_dedup_enabled:
             body["entityDedupEnabled"] = True
         if allocations is not None:
@@ -192,6 +198,235 @@ class FiGuardClient:
             "POST", f"/api/v1/budgets/{budget_id}/resume", json=body, retryable=True
         )
         return _parse_budget(data)
+
+    def extend_budget(
+        self,
+        budget_id: str,
+        expires_at: Optional[str] = None,
+        expires_in: Optional[Union[str, int, timedelta]] = None,
+    ) -> Budget:
+        """
+        Extend a budget's expiry window.
+
+        The new ``expires_at`` must be later than the current one and at most 24 hours
+        from now (the same cap as creation — ``extend`` can be called repeatedly to keep
+        a long-running agent alive).
+
+        :param expires_at: Absolute ISO 8601 timestamp for the new expiry.
+        :param expires_in: Relative duration from now (e.g. ``"2h"``, ``"30m"``).
+            Mutually exclusive with ``expires_at``.
+        :raises FiGuardApiError: HTTP 409 if budget is CANCELLED or EXHAUSTED.
+        :raises FiGuardApiError: HTTP 400 if ``expires_at`` is before the current one.
+        """
+        body: Dict[str, Any] = {
+            "expiresAt": _resolve_expires_at(expires_at, expires_in),
+        }
+        data = self._request(
+            "POST", f"/api/v1/budgets/{budget_id}/extend", json=body, retryable=False
+        )
+        return _parse_budget(data)
+
+    def cancel_batch(self, budget_ids: List[str]) -> List[Budget]:
+        """
+        Cancel up to 100 budgets in a single call.
+
+        Already-terminal budgets (EXPIRED, CANCELLED, EXHAUSTED) are included in
+        the response without raising an error — the call is idempotent per budget.
+
+        :param budget_ids: List of budget IDs to cancel. Maximum 100.
+        :raises FiGuardApiError: HTTP 400 if the list is empty or exceeds 100 items.
+        :returns: List of updated ``Budget`` objects.
+        """
+        body: Dict[str, Any] = {"budgetIds": budget_ids}
+        data = self._request(
+            "POST", "/api/v1/budgets/cancel-batch", json=body, retryable=False
+        )
+        return [_parse_budget(b) for b in data]
+
+    # -----------------------------------------------------------------------
+    # Delegation tokens
+    # -----------------------------------------------------------------------
+
+    def create_delegation_token(
+        self,
+        budget_id: str,
+        label: str,
+        caps: List[Dict[str, Any]],
+    ) -> DelegationToken:
+        """
+        Create a scoped delegation token for a fleet budget.
+
+        Each sub-agent (e.g. per-customer refund agent) gets its own token with
+        per-category spend caps. The sub-agent calls ``authorize()`` with this token
+        exactly as it would with a normal session token — FiGuard resolves the parent
+        budget and enforces both the per-token caps and the fleet-level allocations.
+
+        :param budget_id: The fleet budget ID.
+        :param label: Human-readable label, e.g. ``"refund-agent-order-123"``.
+        :param caps: List of per-category caps::
+
+            [
+                {"category": "refund",     "limit": 3000},
+                {"category": "llm_tokens", "limit": 10000},
+            ]
+
+        :returns: ``DelegationToken`` with ``session_token`` populated — hand it to the
+                  sub-agent immediately; it is never returned again.
+        """
+        body: Dict[str, Any] = {"label": label, "caps": caps}
+        data = self._request(
+            "POST", f"/api/v1/budgets/{budget_id}/delegation-tokens",
+            json=body, retryable=False
+        )
+        return _parse_delegation_token(data)
+
+    def get_delegation_token(self, token_id: str) -> DelegationToken:
+        """Get a delegation token by ID. The raw session token is never returned."""
+        data = self._request(
+            "GET", f"/api/v1/delegation-tokens/{token_id}", retryable=True
+        )
+        return _parse_delegation_token(data)
+
+    def list_delegation_tokens(self, budget_id: str) -> List[DelegationToken]:
+        """List all delegation tokens for a fleet budget."""
+        data = self._request(
+            "GET", f"/api/v1/budgets/{budget_id}/delegation-tokens", retryable=True
+        )
+        return [_parse_delegation_token(t) for t in data]
+
+    def revoke_delegation_token(self, token_id: str) -> DelegationToken:
+        """
+        Revoke a delegation token immediately.
+
+        Any subsequent authorize call using this token returns INVALID_SESSION_TOKEN.
+        Already-authorized events are not affected. Idempotent.
+
+        Fires ``DELEGATION_TOKEN_REVOKED`` webhook.
+        """
+        data = self._request(
+            "DELETE", f"/api/v1/delegation-tokens/{token_id}", retryable=False
+        )
+        return _parse_delegation_token(data)
+
+    # -----------------------------------------------------------------------
+    # Resource budget convenience methods
+    # -----------------------------------------------------------------------
+
+    def create_token_budget(
+        self,
+        *,
+        model: str,
+        max_tokens: int,
+        expires_at: Optional[str] = None,
+        expires_in: Optional[Union[str, int, timedelta]] = None,
+        intent_context: Optional[str] = None,
+        user_id: str = "agent",
+        external_reference: Optional[str] = None,
+        allocations: Optional[List[Dict[str, Any]]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Budget:
+        """
+        Create a resource budget for tracking token usage.
+
+        Anomaly detection is disabled for token budgets — thresholds calibrated
+        for dollar amounts produce false positives on token counts.
+
+        :param model:      LLM model identifier stored in metadata (e.g. ``"gpt-4o"``).
+        :param max_tokens: Total token cap for the budget.
+        :param expires_at: Absolute ISO 8601 expiry. Mutually exclusive with ``expires_in``.
+        :param expires_in: Relative duration (e.g. ``"2h"``, ``"30m"``).
+
+        Example::
+
+            budget = client.create_token_budget(
+                model="gpt-4o",
+                max_tokens=50_000,
+                expires_in="2h",
+            )
+        """
+        meta = dict(metadata or {})
+        meta.setdefault("model", model)
+        return self.create_budget(
+            user_id=user_id,
+            total_limit=float(max_tokens),
+            expires_at=expires_at,
+            expires_in=expires_in,
+            unit="tokens",
+            intent_context=intent_context,
+            external_reference=external_reference,
+            anomaly_detection_enabled=False,
+            allocations=allocations,
+            metadata=meta,
+        )
+
+    def authorize_tokens(
+        self,
+        *,
+        session_token: str,
+        agent_id: str,
+        estimated_tokens: int,
+        model: str,
+        idempotency_key: Optional[str] = None,
+        description: Optional[str] = None,
+        claimed_category: Optional[str] = None,
+        trace_id: Optional[str] = None,
+        dry_run: bool = False,
+        **kwargs: Any,
+    ) -> AuthorizationResult:
+        """
+        Pre-flight authorization for a token budget.
+
+        Convenience wrapper around :meth:`authorize` for resource (token) budgets.
+        Omits ``currency`` so the currency-mismatch check is skipped server-side.
+
+        :param estimated_tokens: Upper-bound estimate of tokens this action will consume.
+            After the LLM call completes, call :meth:`confirm_tokens` with the actual count.
+        :param model: Stored in description for audit (e.g. ``"gpt-4o"``).
+
+        Example::
+
+            auth = client.authorize_tokens(
+                session_token=budget.session_token,
+                agent_id="summarizer",
+                estimated_tokens=4_000,
+                model="gpt-4o",
+                idempotency_key="run-abc-step-1",
+            )
+            if auth.is_authorized:
+                response = openai_client.chat(...)
+                client.confirm_tokens(auth.event_id, actual_tokens=response.usage.total_tokens)
+        """
+        desc = description or f"LLM call via {model} — estimated {estimated_tokens:,} tokens"
+        return self.authorize(
+            session_token=session_token,
+            agent_id=agent_id,
+            action_type="LLM_CALL",
+            description=desc,
+            requested_quantity=float(estimated_tokens),
+            idempotency_key=idempotency_key,
+            claimed_category=claimed_category,
+            trace_id=trace_id,
+            dry_run=dry_run,
+            **kwargs,
+        )
+
+    def confirm_tokens(
+        self,
+        event_id: str,
+        actual_tokens: int,
+        external_transaction_id: Optional[str] = None,
+    ) -> SpendEventResponse:
+        """
+        Confirm a token authorization with the actual token count.
+
+        :param actual_tokens: Real token count from the LLM response
+            (e.g. ``response.usage.total_tokens``). May be less than estimated.
+        """
+        return self.confirm_event(
+            event_id=event_id,
+            confirmed_quantity=float(actual_tokens),
+            external_transaction_id=external_transaction_id,
+        )
 
     def rotate_session_token(self, budget_id: str) -> str:
         """
@@ -238,9 +473,10 @@ class FiGuardClient:
             is the dollar amount; for resource budgets it's the token/call count.
         :param currency: Required for monetary budgets — must match the budget's currency.
             Omit or pass ``None`` for resource budgets (tokens, api_calls, etc.).
-        :param idempotency_key: **Required.** A unique key for this request so
-            retries are safe and never double-spend. Raises ``ValueError`` if
-            omitted or blank.
+        :param idempotency_key: Optional. A unique key for this request so retries
+            are safe and never double-spend. When omitted, a UUID v4 is generated
+            automatically. Pass an explicit key when you need idempotency across
+            retries (e.g. store it before the first attempt, reuse on retry).
         :param dry_run: When ``True``, all enforcement checks run and a full
             ``AUTHORIZED`` or ``DENIED`` result is returned, but nothing is written
             to the ledger and no webhooks fire. Use during integration testing.
@@ -249,10 +485,7 @@ class FiGuardClient:
             ``.raise_if_denied()`` for exception-driven flow.
         """
         if not idempotency_key or not idempotency_key.strip():
-            raise ValueError(
-                "idempotency_key is required for authorize(). "
-                "Generate one per logical spend intent (e.g. uuid4()) and reuse it on retries."
-            )
+            idempotency_key = str(uuid.uuid4())
 
         body: Dict[str, Any] = {
             "agentId": agent_id,
@@ -490,6 +723,76 @@ class FiGuardClient:
 
 
 # ---------------------------------------------------------------------------
+# Allocation builder helper
+# ---------------------------------------------------------------------------
+
+def build_allocations_from_percentages(
+    total: float,
+    percentages: Dict[str, float],
+    enforcement_mode: Optional[str] = None,
+    allowed_categories: Optional[Dict[str, List[str]]] = None,
+    forbidden_item_types: Optional[Dict[str, List[str]]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Build an allocations list from a total and a ``category → percentage`` mapping.
+
+    The last bucket absorbs the floating-point remainder so limits always sum to
+    exactly ``total``, avoiding ``$333.33 × 3 ≠ $1000.00`` precision errors.
+
+    :param total:               Total budget limit (same unit as the budget's totalLimit).
+    :param percentages:         ``{"flight": 60, "hotel": 30, "ground": 10}`` — must sum to 100.
+    :param enforcement_mode:    Optional enforcement mode applied to every allocation
+                                (``"OPEN"``, ``"CATEGORY_CONSTRAINED"``, ``"STRICT"``).
+    :param allowed_categories:  Per-category override: ``{"flight": ["flight", "airline"]}``.
+                                Required per-allocation when enforcement_mode is
+                                ``CATEGORY_CONSTRAINED`` or ``STRICT``.
+    :param forbidden_item_types: Per-category: ``{"flight": ["gift_card", "upgrade"]}``.
+                                 Only evaluated in ``STRICT`` mode.
+
+    :raises ValueError: If percentages do not sum to 100 (within 0.001 tolerance).
+
+    Example::
+
+        allocations = build_allocations_from_percentages(
+            total=1000.00,
+            percentages={"flight": 60, "hotel": 30, "ground": 10},
+        )
+        # → [{"category": "flight",  "limit": 600.0},
+        #    {"category": "hotel",   "limit": 300.0},
+        #    {"category": "ground",  "limit": 100.0}]  ← last bucket absorbs rounding
+    """
+    pct_sum = sum(percentages.values())
+    if abs(pct_sum - 100) > 0.001:
+        raise ValueError(
+            f"Percentages must sum to 100, got {pct_sum:.4f}. "
+            "Adjust your values so they add up to exactly 100."
+        )
+
+    categories = list(percentages.keys())
+    result: List[Dict[str, Any]] = []
+    assigned = 0.0
+
+    for i, category in enumerate(categories):
+        if i < len(categories) - 1:
+            limit = round(percentages[category] / 100.0 * total, 4)
+            assigned += limit
+        else:
+            # Last bucket: assign the remainder to absorb floating-point drift
+            limit = round(total - assigned, 4)
+
+        alloc: Dict[str, Any] = {"category": category, "limit": limit}
+        if enforcement_mode is not None:
+            alloc["enforcementMode"] = enforcement_mode
+        if allowed_categories and category in allowed_categories:
+            alloc["allowedCategories"] = allowed_categories[category]
+        if forbidden_item_types and category in forbidden_item_types:
+            alloc["forbiddenItemTypes"] = forbidden_item_types[category]
+        result.append(alloc)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # expires_in resolver
 # ---------------------------------------------------------------------------
 
@@ -670,6 +973,31 @@ def _parse_tree_node(data: Dict[str, Any]) -> SpendTreeNode:
         event = _parse_spend_event(data)
         children = [_parse_tree_node(c) for c in data.get("children", [])]
     return SpendTreeNode(event=event, children=children)
+
+
+def _parse_delegation_token(data: Dict[str, Any]) -> DelegationToken:
+    caps = [
+        DelegationTokenAllocation(
+            id=c["id"],
+            category=c["category"],
+            total_limit=c["totalLimit"],
+            quantity_spent=c["quantitySpent"],
+            quantity_reserved=c["quantityReserved"],
+            available_quantity=c["availableQuantity"],
+        )
+        for c in data.get("caps", [])
+    ]
+    return DelegationToken(
+        id=data["id"],
+        parent_budget_id=str(data["parentBudgetId"]),
+        label=data["label"],
+        status=data["status"],
+        session_token_prefix=data["sessionTokenPrefix"],
+        caps=caps,
+        session_token=data.get("sessionToken"),
+        revoked_at=data.get("revokedAt"),
+        created_at=data.get("createdAt"),
+    )
 
 
 def _str(value: Any) -> Optional[str]:

@@ -145,27 +145,42 @@ class TestCreateBudget:
 
 class TestAuthorize:
 
-    def test_raises_value_error_when_idempotency_key_missing(self, client: FiGuardClient) -> None:
-        with pytest.raises(ValueError, match="idempotency_key is required"):
-            client.authorize(
-                session_token=SESSION_TOKEN,
-                agent_id="agent_001",
-                action_type="PURCHASE",
-                description="test",
-                requested_quantity=50.0,
-                # idempotency_key intentionally omitted
-            )
+    @resp_lib.activate
+    def test_auto_generates_idempotency_key_when_omitted(self, client: FiGuardClient) -> None:
+        resp_lib.add(resp_lib.POST, f"{BASE}/api/v1/authorize",
+                     json=_authorized_payload(), status=200)
 
-    def test_raises_value_error_when_idempotency_key_blank(self, client: FiGuardClient) -> None:
-        with pytest.raises(ValueError):
-            client.authorize(
-                session_token=SESSION_TOKEN,
-                agent_id="agent_001",
-                action_type="PURCHASE",
-                description="test",
-                requested_quantity=50.0,
-                idempotency_key="   ",
-            )
+        # No idempotency_key provided — SDK must auto-generate a UUID and not raise
+        result = client.authorize(
+            session_token=SESSION_TOKEN,
+            agent_id="agent_001",
+            action_type="PURCHASE",
+            description="test",
+            requested_quantity=50.0,
+            # idempotency_key intentionally omitted
+        )
+        assert result.is_authorized is True
+        # Verify the auto-generated key was sent in the request body
+        sent_body = resp_lib.calls[0].request.body
+        import json as _json
+        parsed = _json.loads(sent_body)
+        assert "idempotencyKey" in parsed
+        assert len(parsed["idempotencyKey"]) == 36  # UUID v4 format
+
+    @resp_lib.activate
+    def test_auto_generates_idempotency_key_when_blank(self, client: FiGuardClient) -> None:
+        resp_lib.add(resp_lib.POST, f"{BASE}/api/v1/authorize",
+                     json=_authorized_payload(), status=200)
+
+        result = client.authorize(
+            session_token=SESSION_TOKEN,
+            agent_id="agent_001",
+            action_type="PURCHASE",
+            description="test",
+            requested_quantity=50.0,
+            idempotency_key="   ",  # blank — SDK should auto-generate
+        )
+        assert result.is_authorized is True
 
     @resp_lib.activate
     def test_authorized_returns_result_with_is_authorized_true(self, client: FiGuardClient) -> None:

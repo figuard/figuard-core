@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from typing import Any, Dict, List, Optional, Union
 from datetime import timedelta
 
@@ -57,6 +58,7 @@ from .models import (
     AuthorizationResult,
     Budget,
     BudgetSnapshot,
+    DelegationToken,
     LedgerPage,
     SpendEventResponse,
     SpendTree,
@@ -66,6 +68,7 @@ from .models import (
 from .client import (
     _parse_authorization_result,
     _parse_budget,
+    _parse_delegation_token,
     _parse_spend_event,
     _parse_tree_node,
 )
@@ -162,6 +165,7 @@ class AsyncFiGuardClient:
         max_transaction_quantity: Optional[float] = None,
         authorization_expiry_seconds: Optional[int] = None,
         anomaly_detection_enabled: bool = False,
+        auto_pause_on_anomaly: bool = True,
         entity_dedup_enabled: bool = False,
         allocations: Optional[List[Dict[str, Any]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -206,6 +210,8 @@ class AsyncFiGuardClient:
             body["authorizationExpirySeconds"] = authorization_expiry_seconds
         if anomaly_detection_enabled:
             body["anomalyDetectionEnabled"] = True
+        if not auto_pause_on_anomaly:
+            body["autoPauseOnAnomaly"] = False
         if entity_dedup_enabled:
             body["entityDedupEnabled"] = True
         if allocations is not None:
@@ -242,6 +248,144 @@ class AsyncFiGuardClient:
             "POST", f"/api/v1/budgets/{budget_id}/resume", json=body, retryable=True
         )
         return _parse_budget(data)
+
+    async def extend_budget(
+        self,
+        budget_id: str,
+        expires_at: Optional[str] = None,
+        expires_in: Optional[Union[str, int, timedelta]] = None,
+    ) -> Budget:
+        """
+        Extend a budget's expiry window.
+
+        The new ``expires_at`` must be later than the current one and at most 24 hours
+        from now. Can be called repeatedly to keep a long-running agent alive.
+
+        :raises FiGuardApiError: HTTP 409 if budget is CANCELLED or EXHAUSTED.
+        :raises FiGuardApiError: HTTP 400 if ``expires_at`` is before the current one.
+        """
+        body: Dict[str, Any] = {
+            "expiresAt": _resolve_expires_at(expires_at, expires_in),
+        }
+        data = await self._request(
+            "POST", f"/api/v1/budgets/{budget_id}/extend", json=body, retryable=False
+        )
+        return _parse_budget(data)
+
+    async def cancel_batch(self, budget_ids: List[str]) -> List[Budget]:
+        """
+        Cancel up to 100 budgets in a single call.
+
+        Already-terminal budgets are included in the response without an error.
+
+        :param budget_ids: List of budget IDs to cancel. Maximum 100.
+        :raises FiGuardApiError: HTTP 400 if the list is empty or exceeds 100 items.
+        :returns: List of updated ``Budget`` objects.
+        """
+        body: Dict[str, Any] = {"budgetIds": budget_ids}
+        data = await self._request(
+            "POST", "/api/v1/budgets/cancel-batch", json=body, retryable=False
+        )
+        return [_parse_budget(b) for b in data]
+
+    # -----------------------------------------------------------------------
+    # Resource budget convenience methods
+    # -----------------------------------------------------------------------
+
+    async def create_token_budget(
+        self,
+        *,
+        model: str,
+        max_tokens: int,
+        expires_at: Optional[str] = None,
+        expires_in: Optional[Union[str, int, timedelta]] = None,
+        intent_context: Optional[str] = None,
+        user_id: str = "agent",
+        external_reference: Optional[str] = None,
+        allocations: Optional[List[Dict[str, Any]]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Budget:
+        """
+        Create a resource budget for tracking token usage.
+
+        Anomaly detection is disabled for token budgets — thresholds calibrated
+        for dollar amounts produce false positives on token counts.
+
+        :param model:      LLM model identifier stored in metadata (e.g. ``"gpt-4o"``).
+        :param max_tokens: Total token cap for the budget.
+        :param expires_at: Absolute ISO 8601 expiry. Mutually exclusive with ``expires_in``.
+        :param expires_in: Relative duration (e.g. ``"2h"``, ``"30m"``).
+        """
+        meta = dict(metadata or {})
+        meta.setdefault("model", model)
+        return await self.create_budget(
+            user_id=user_id,
+            total_limit=float(max_tokens),
+            expires_at=expires_at,
+            expires_in=expires_in,
+            unit="tokens",
+            intent_context=intent_context,
+            external_reference=external_reference,
+            anomaly_detection_enabled=False,
+            allocations=allocations,
+            metadata=meta,
+        )
+
+    async def authorize_tokens(
+        self,
+        *,
+        session_token: str,
+        agent_id: str,
+        estimated_tokens: int,
+        model: str,
+        idempotency_key: Optional[str] = None,
+        description: Optional[str] = None,
+        claimed_category: Optional[str] = None,
+        trace_id: Optional[str] = None,
+        dry_run: bool = False,
+        **kwargs: Any,
+    ) -> AuthorizationResult:
+        """
+        Pre-flight authorization for a token budget.
+
+        Convenience wrapper around :meth:`authorize` for resource (token) budgets.
+        Omits ``currency`` so the currency-mismatch check is skipped server-side.
+
+        :param estimated_tokens: Upper-bound estimate of tokens this action will consume.
+            After the LLM call completes, call :meth:`confirm_tokens` with the actual count.
+        :param model: Stored in description for audit (e.g. ``"gpt-4o"``).
+        """
+        desc = description or f"LLM call via {model} — estimated {estimated_tokens:,} tokens"
+        return await self.authorize(
+            session_token=session_token,
+            agent_id=agent_id,
+            action_type="LLM_CALL",
+            description=desc,
+            requested_quantity=float(estimated_tokens),
+            idempotency_key=idempotency_key,
+            claimed_category=claimed_category,
+            trace_id=trace_id,
+            dry_run=dry_run,
+            **kwargs,
+        )
+
+    async def confirm_tokens(
+        self,
+        event_id: str,
+        actual_tokens: int,
+        external_transaction_id: Optional[str] = None,
+    ) -> SpendEventResponse:
+        """
+        Confirm a token authorization with the actual token count.
+
+        :param actual_tokens: Real token count from the LLM response
+            (e.g. ``response.usage.total_tokens``). May be less than estimated.
+        """
+        return await self.confirm_event(
+            event_id=event_id,
+            confirmed_quantity=float(actual_tokens),
+            external_transaction_id=external_transaction_id,
+        )
 
     async def rotate_session_token(self, budget_id: str) -> str:
         """
@@ -288,9 +432,10 @@ class AsyncFiGuardClient:
             is the dollar amount; for resource budgets it's the token/call count.
         :param currency: Required for monetary budgets — must match the budget's currency.
             Omit or pass ``None`` for resource budgets (tokens, api_calls, etc.).
-        :param idempotency_key: **Required.** A unique key for this request so
-            retries are safe and never double-spend. Raises ``ValueError`` if
-            omitted or blank.
+        :param idempotency_key: Optional. A unique key for this request so retries
+            are safe and never double-spend. When omitted, a UUID v4 is generated
+            automatically. Pass an explicit key when you need idempotency across
+            retries (e.g. store it before the first attempt, reuse on retry).
         :param dry_run: When ``True``, all enforcement checks run and a full
             ``AUTHORIZED`` or ``DENIED`` result is returned, but nothing is written
             to the ledger and no webhooks fire. Use during integration testing.
@@ -299,10 +444,7 @@ class AsyncFiGuardClient:
             ``.raise_if_denied()`` for exception-driven flow.
         """
         if not idempotency_key or not idempotency_key.strip():
-            raise ValueError(
-                "idempotency_key is required for authorize(). "
-                "Generate one per logical spend intent (e.g. uuid4()) and reuse it on retries."
-            )
+            idempotency_key = str(uuid.uuid4())
 
         body: Dict[str, Any] = {
             "agentId": agent_id,
@@ -472,6 +614,76 @@ class AsyncFiGuardClient:
             "GET", f"/api/v1/budgets/{budget_id}/receipt", retryable=True
         )
         return str(data["receiptUrl"])
+
+    # -----------------------------------------------------------------------
+    # Delegation tokens
+    # -----------------------------------------------------------------------
+
+    async def create_delegation_token(
+        self,
+        budget_id: str,
+        label: str,
+        caps: List[Dict[str, Any]],
+    ) -> DelegationToken:
+        """
+        Create a scoped delegation token for a fleet budget.
+
+        Each sub-agent in the fleet gets its own token with per-category spend
+        caps. The sub-agent calls ``authorize`` with this token exactly as it
+        would with a normal session token — FiGuard enforces both the per-token
+        caps and the fleet-level allocations transparently.
+
+        :param budget_id: The fleet budget ID to delegate from.
+        :param label:     Human-readable label, e.g. ``"refund-agent-order-123"``.
+        :param caps:      List of ``{"category": str, "limit": float}`` dicts.
+                          Only the listed categories have per-token caps. Others
+                          pass through to the fleet allocation only.
+
+        :returns: ``DelegationToken`` with ``session_token`` populated — store
+                  it securely and hand it to the sub-agent immediately. It is
+                  never returned again.
+        """
+        body: Dict[str, Any] = {"label": label, "caps": caps}
+        data = await self._request(
+            "POST",
+            f"/api/v1/budgets/{budget_id}/delegation-tokens",
+            json=body,
+            retryable=False,
+        )
+        return _parse_delegation_token(data)
+
+    async def get_delegation_token(self, token_id: str) -> DelegationToken:
+        """
+        Get the current state of a delegation token.
+
+        The raw session token is never returned — only the prefix.
+        """
+        data = await self._request(
+            "GET", f"/api/v1/delegation-tokens/{token_id}", retryable=True
+        )
+        return _parse_delegation_token(data)
+
+    async def list_delegation_tokens(self, budget_id: str) -> List[DelegationToken]:
+        """List all delegation tokens for a fleet budget."""
+        data = await self._request(
+            "GET",
+            f"/api/v1/budgets/{budget_id}/delegation-tokens",
+            retryable=True,
+        )
+        return [_parse_delegation_token(t) for t in data]
+
+    async def revoke_delegation_token(self, token_id: str) -> DelegationToken:
+        """
+        Revoke a delegation token immediately.
+
+        Any subsequent ``authorize`` call using this token will be rejected with
+        ``DELEGATION_TOKEN_REVOKED``. Already-authorized events are not affected.
+        Idempotent — revoking an already-revoked token returns HTTP 200.
+        """
+        data = await self._request(
+            "DELETE", f"/api/v1/delegation-tokens/{token_id}", retryable=False
+        )
+        return _parse_delegation_token(data)
 
     # -----------------------------------------------------------------------
     # Internal HTTP layer
