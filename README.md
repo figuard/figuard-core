@@ -344,6 +344,73 @@ pip install figuard[all]   # install every framework extra at once
 
 ---
 
+## TypeScript / Node.js SDK
+
+```bash
+npm install figuard
+```
+
+```typescript
+import { FiGuardClient } from "figuard";
+
+const client = new FiGuardClient({ apiKey: "ab_live_..." });
+
+const budget = await client.createBudget({
+  userId: "user_123",
+  totalLimit: 500,
+  currency: "USD",
+  expiresIn: "24h",
+});
+
+const result = await client.authorize({
+  sessionToken: budget.sessionToken,
+  agentId: "travel_agent",
+  actionType: "PURCHASE",
+  description: "JetBlue SFO→JFK",
+  requestedQuantity: 267,
+  claimedCategory: "flight",
+});
+
+if (result.isAuthorized) {
+  await client.confirmEvent({ eventId: result.eventId, confirmedQuantity: 267 });
+}
+```
+
+Full type definitions included. No external runtime dependencies — uses native `fetch`.
+
+---
+
+## MCP Server (Claude Code · Cursor · Claude Desktop)
+
+Use FiGuard directly from your AI coding assistant — no Python or TypeScript required.
+
+```bash
+npx figuard-mcp
+```
+
+Add to your MCP client config (Claude Code: `~/.claude.json`, Cursor: `~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "figuard": {
+      "command": "npx",
+      "args": ["figuard-mcp"],
+      "env": {
+        "FIGUARD_API_KEY": "ab_live_...",
+        "FIGUARD_BASE_URL": "http://localhost:8080"
+      }
+    }
+  }
+}
+```
+
+13 tools exposed: `figuard_create_budget` · `figuard_authorize` · `figuard_confirm` · `figuard_fail` · `figuard_void` · `figuard_get_budget` · `figuard_get_ledger` · `figuard_resume_budget` · `figuard_extend_budget` · `figuard_cancel_batch` · `figuard_create_delegation_token` · `figuard_get_delegation_token` · `figuard_revoke_delegation_token`
+
+The MCP server reads `FIGUARD_API_KEY` and `FIGUARD_BASE_URL` from its environment. No code changes needed to your agent.
+
+---
+
 ## Enforcement Features
 
 **Budget types**
@@ -378,14 +445,21 @@ budget = client.create_budget(
 | `EXCEEDS_TRANSACTION_LIMIT` | No | Single transaction over per-invoice ceiling |
 | `ANOMALY_DETECTED` | No | Amount is statistically unusual — budget auto-paused, requires admin review |
 | `ENTITY_ALREADY_AUTHORIZED` | No | Same real-world entity already has a live authorization |
+| `DELEGATE_CAP_EXCEEDED` | No | Delegation token's per-agent cap exhausted — fleet may still have room |
+| `DELEGATION_TOKEN_REVOKED` | No | Token was explicitly revoked by the orchestrator |
 
 **Anomaly detection**
 
 ```python
+# Default: budget auto-pauses on anomaly — requires human review to resume
+budget = client.create_budget(total_limit=2000.00, anomaly_detection_enabled=True)
+
+# Advisory mode: anomaly denies the request but keeps the budget ACTIVE
+# Use for high-throughput fleets where one spike should not halt all agents
 budget = client.create_budget(
     total_limit=2000.00,
     anomaly_detection_enabled=True,
-    # If a request exceeds mean × 3 (after 5+ samples), budget auto-pauses
+    auto_pause_on_anomaly=False,
 )
 ```
 
@@ -453,6 +527,23 @@ print(auth.denial_reason)  # populated if DENIED
 # No ledger entry created, no webhooks fired, budget balance unchanged
 ```
 
+**Budget lifecycle helpers**
+
+```python
+# Keep a long-running agent alive past its original expiry (max 24h at a time, repeatable)
+client.extend_budget(budget_id, expires_in="2h")
+
+# Cancel up to 100 budgets at once — already-terminal budgets included without error
+client.cancel_batch(budget_ids=["bgt_1", "bgt_2", "bgt_3"])
+
+# Idempotent budget creation — safe for orchestrator restarts
+budget = client.create_budget(
+    user_id="user_123",
+    total_limit=500.00,
+    external_reference="run-abc-123",  # re-calling with same ref returns existing budget
+)
+```
+
 **Idempotency**
 
 Every `authorize()` call requires an `idempotency_key`. Retrying the same key returns the original decision — including the same denial code if it was denied. You can never double-spend by retrying a network timeout, and you never lose audit history by retrying a successful call.
@@ -501,6 +592,52 @@ Three things caused this: no idempotency on retries, no reservation-aware availa
 
 ---
 
+## Fleet Agents
+
+For concurrent sub-agent fleets, use delegation tokens: one shared fleet budget with fleet-wide allocation caps, one scoped token per sub-agent with per-agent caps. Sub-agents use delegation tokens identically to normal session tokens — enforcement is fully server-side.
+
+```python
+# Orchestrator: create the fleet budget once
+fleet = client.create_budget(
+    user_id="refund-fleet",
+    total_limit=50_000,
+    currency="USD",
+    allocations=[
+        {"category": "refund",     "limit": 50_000},
+        {"category": "llm_tokens", "limit": 8_000_000},
+    ],
+)
+
+# Issue one scoped token per sub-agent
+token = client.create_delegation_token(
+    budget_id=fleet.id,
+    label="refund-agent-order-1001",
+    caps=[
+        {"category": "refund",     "limit": 3_000},   # per-agent cap
+        {"category": "llm_tokens", "limit": 10_000},  # per-agent cap
+    ],
+)
+session_token = token.session_token  # returned once — hand to sub-agent immediately
+
+# Sub-agent: uses token exactly like a normal session token
+result = client.authorize(
+    session_token=session_token,
+    agent_id="refund-agent-1001",
+    action_type="REFUND",
+    description="Order 1001 refund",
+    requested_quantity=2_500,
+    claimed_category="refund",
+)
+# FiGuard checks: per-agent cap ($3k) AND fleet cap ($50k) — both must pass
+
+# Orchestrator: revoke when the agent's work is done
+client.revoke_delegation_token(token.id)  # idempotent
+```
+
+FiGuard enforces the per-agent cap and the fleet-wide allocation in the same atomic transaction. The sub-agent never knows it's using a delegation token. Revocation is immediate — already-authorized events are unaffected.
+
+---
+
 ## Self-Hosting
 
 FiGuard is a Spring Boot service backed by PostgreSQL. Run it anywhere Docker runs.
@@ -546,7 +683,17 @@ figuard-core/
 │   │           ├── openai_agents.py
 │   │           ├── openai.py
 │   │           └── anthropic.py
+│   ├── typescript/         # TypeScript SDK — npm install figuard
+│   │   └── src/
+│   │       ├── client.ts
+│   │       └── models.ts
 │   └── java/               # Java SDK — Maven Central
+├── packages/
+│   └── mcp/                # MCP server — npx figuard-mcp
+│       └── src/
+│           ├── index.ts
+│           ├── tools.ts
+│           └── handlers.ts
 ├── examples/
 │   ├── enforcement_cookbook.py   # All enforcement capabilities — start here
 │   └── ...                       # Framework-specific examples
@@ -560,11 +707,35 @@ figuard-core/
 | SDK | Status | Install |
 |---|---|---|
 | Python | ✅ Stable | `pip install figuard` |
-| TypeScript / Node.js | 🔨 In progress | `npm install figuard` *(coming soon)* |
+| TypeScript / Node.js | ✅ Stable | `npm install figuard` |
+| MCP Server | ✅ Stable | `npx figuard-mcp` |
 | Java | ✅ Stable | Maven Central: `com.figuard:figuard-sdk` |
 | Go | 📋 Planned | — |
 
-The TypeScript SDK covers the same surface as the Python SDK with native `fetch` (no external dependencies), full type definitions, and integrations for Vercel AI SDK, LangChain.js, OpenAI Node, Anthropic Node, and Mastra.
+The TypeScript SDK covers the same surface as the Python SDK with native `fetch` (no external dependencies) and full type definitions. The MCP server exposes all 13 tools to any MCP-compatible client (Claude Code, Cursor, Claude Desktop).
+
+---
+
+## Use With Claude Code or Cursor
+
+Add FiGuard to your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "figuard": {
+      "command": "npx",
+      "args": ["figuard-mcp"],
+      "env": {
+        "FIGUARD_API_KEY": "sb_live_demo",
+        "FIGUARD_BASE_URL": "https://sandbox.figuard.io"
+      }
+    }
+  }
+}
+```
+
+Then ask your assistant: "Create a $500 travel budget with $300 for flights and $200 for hotels."
 
 ---
 
