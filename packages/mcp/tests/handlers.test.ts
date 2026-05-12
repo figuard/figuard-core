@@ -219,11 +219,22 @@ describe("handleAuthorize", () => {
     await expect(handleAuthorize(client, args)).rejects.toThrow("session_token");
   });
 
-  it("throws when idempotency_key is missing", async () => {
-    const client = makeClient();
+  it("succeeds when idempotency_key is omitted (SDK auto-generates)", async () => {
+    const client = makeClient({
+      authorize: jest.fn().mockResolvedValue({
+        isAuthorized: true,
+        eventId: "evt_001",
+        approvedQuantity: 50,
+        decision: "AUTHORIZED",
+        budgetSnapshot: { status: "ACTIVE", totalLimit: 500, quantitySpent: 0, quantityReserved: 50, availableQuantity: 450 },
+        raiseIfDenied: jest.fn().mockReturnThis(),
+      }),
+    });
     const args = { ...REQUIRED_ARGS };
     delete (args as any).idempotency_key;
-    await expect(handleAuthorize(client, args)).rejects.toThrow("idempotency_key");
+    // Should NOT throw — idempotencyKey is optional, SDK generates one
+    const result: any = await handleAuthorize(client, args);
+    expect(result.decision).toBe("AUTHORIZED");
   });
 });
 
@@ -450,10 +461,15 @@ describe("TOOLS definitions", () => {
     "figuard_get_budget",
     "figuard_get_ledger",
     "figuard_resume_budget",
+    "figuard_extend_budget",
+    "figuard_cancel_batch",
+    "figuard_create_delegation_token",
+    "figuard_revoke_delegation_token",
+    "figuard_get_delegation_token",
   ];
 
-  it("exports exactly 8 tools", () => {
-    expect(TOOLS).toHaveLength(8);
+  it("exports exactly 13 tools", () => {
+    expect(TOOLS).toHaveLength(13);
   });
 
   it("has all expected tool names", () => {
@@ -482,12 +498,13 @@ describe("TOOLS definitions", () => {
     expect((tool.inputSchema as any).required).toContain("total_limit");
   });
 
-  it("figuard_authorize requires session_token, agent_id, idempotency_key", () => {
+  it("figuard_authorize requires session_token, agent_id (idempotency_key is now optional)", () => {
     const tool = TOOLS.find((t) => t.name === "figuard_authorize")!;
     const required = (tool.inputSchema as any).required;
     expect(required).toContain("session_token");
     expect(required).toContain("agent_id");
-    expect(required).toContain("idempotency_key");
+    // idempotency_key is optional — SDK auto-generates when omitted
+    expect(required).not.toContain("idempotency_key");
   });
 
   it("figuard_confirm requires event_id and confirmed_quantity", () => {
