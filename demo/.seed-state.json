@@ -1,0 +1,17 @@
+{
+  "travel": "afaec910-9735-4ccb-b5d5-f6c1b0b28500",
+  "procurement": "7cdb1c11-6acd-42fd-92d7-2b7bdbe9d9fc",
+  "legal": [
+    "a34bac94-46f8-4fd8-af5c-a4ee285303af",
+    "902e3c15-4b86-4815-a573-9b5df22743cf"
+  ],
+  "support": "c7c97dae-7d4b-4a08-a6dc-e2a40f54c5d2",
+  "marketing": "691395e2-c0a4-4fa2-98bf-5600cdb8b989",
+  "cloud": "49df008f-fffe-4234-8901-827e1fc81c1c",
+  "financial": "dba5dc41-6475-4cd5-b7e9-de88e448a9dc",
+  "sales": "b8b0e751-e06a-403b-ac26-a4d82c9d4ed9",
+  "research": [
+    "47dbd9b2-56df-4324-b280-4e0787d5c3e5",
+    "b49bd453-833a-4467-9b67-b70b212d280b"
+  ]
+}
