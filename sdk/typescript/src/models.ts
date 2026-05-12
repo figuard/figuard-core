@@ -169,6 +169,39 @@ export interface SpendTree {
 }
 
 // ---------------------------------------------------------------------------
+// Delegation tokens
+// ---------------------------------------------------------------------------
+
+export interface DelegationTokenAllocation {
+  readonly id: string;
+  readonly category: string;
+  readonly totalLimit: number;
+  readonly quantitySpent: number;
+  readonly quantityReserved: number;
+  readonly availableQuantity: number;
+}
+
+export interface DelegationToken {
+  readonly id: string;
+  readonly parentBudgetId: string;
+  readonly label: string;
+  readonly status: string;
+  readonly sessionTokenPrefix: string;
+  readonly caps: DelegationTokenAllocation[];
+  /**
+   * Only present immediately after createDelegationToken(). Undefined on all subsequent reads.
+   * Hand this to the sub-agent immediately; it is never returned again.
+   */
+  readonly sessionToken?: string;
+  readonly revokedAt?: string;
+  readonly createdAt?: string;
+  /** True when status === "ACTIVE". */
+  readonly isActive: boolean;
+  /** True when status === "REVOKED". */
+  readonly isRevoked: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Internal factory functions (build model objects with computed properties)
 // ---------------------------------------------------------------------------
 
@@ -316,6 +349,34 @@ export function makeSpendTreeNode(data: Record<string, unknown>): SpendTreeNode 
   return {
     event: makeSpendEvent(data),
     children: ((data["children"] as Record<string, unknown>[] | undefined) ?? []).map(makeSpendTreeNode),
+  };
+}
+
+export function makeDelegationToken(data: Record<string, unknown>): DelegationToken {
+  const caps = ((data["caps"] as Record<string, unknown>[] | undefined) ?? []).map(
+    (c) => ({
+      id: c["id"] as string,
+      category: c["category"] as string,
+      totalLimit: c["totalLimit"] as number,
+      quantitySpent: c["quantitySpent"] as number,
+      quantityReserved: c["quantityReserved"] as number,
+      availableQuantity: c["availableQuantity"] as number,
+    }) as DelegationTokenAllocation,
+  );
+
+  const status = data["status"] as string;
+  return {
+    id: data["id"] as string,
+    parentBudgetId: data["parentBudgetId"] as string,
+    label: data["label"] as string,
+    status,
+    sessionTokenPrefix: data["sessionTokenPrefix"] as string,
+    caps,
+    sessionToken: (data["sessionToken"] as string | undefined) ?? undefined,
+    revokedAt: (data["revokedAt"] as string | undefined) ?? undefined,
+    createdAt: (data["createdAt"] as string | undefined) ?? undefined,
+    isActive: status === "ACTIVE",
+    isRevoked: status === "REVOKED",
   };
 }
 
