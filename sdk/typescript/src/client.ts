@@ -33,12 +33,14 @@ import {
   AllocationResponse,
   AuthorizationResult,
   Budget,
+  DelegationToken,
   LedgerPage,
   SpendEventResponse,
   SpendTree,
   VoidResult,
   makeBudget,
   makeAuthorizationResult,
+  makeDelegationToken,
   makeSpendEvent,
   makeSpendTreeNode,
 } from "./models";
@@ -86,9 +88,42 @@ export interface CreateBudgetOptions {
   maxTransactionQuantity?: number;
   authorizationExpirySeconds?: number;
   anomalyDetectionEnabled?: boolean;
+  /**
+   * When false, anomaly detection fires ANOMALY_DETECTED webhook and denies the
+   * request but does NOT pause the budget (advisory mode). Default: true.
+   * Only meaningful when anomalyDetectionEnabled is true.
+   */
+  autoPauseOnAnomaly?: boolean;
   entityDedupEnabled?: boolean;
   allocations?: AllocationInput[];
   metadata?: Record<string, unknown>;
+}
+
+export interface DelegationCapInput {
+  category: string;
+  limit: number;
+}
+
+export interface CreateDelegationTokenOptions {
+  budgetId: string;
+  label: string;
+  /**
+   * Per-category spend caps for the sub-agent.
+   * Only listed categories are cap-enforced at the delegation level.
+   * Categories not listed pass through to the fleet allocation only.
+   */
+  caps: DelegationCapInput[];
+}
+
+export interface ExtendBudgetOptions {
+  budgetId: string;
+  /** Absolute ISO 8601 expiry. Mutually exclusive with expiresIn. */
+  expiresAt?: string;
+  /**
+   * Relative duration from now (e.g. "2h", "30m").
+   * Mutually exclusive with expiresAt.
+   */
+  expiresIn?: string | number;
 }
 
 export interface AuthorizeOptions {
@@ -98,11 +133,12 @@ export interface AuthorizeOptions {
   description: string;
   requestedQuantity: number;
   /**
-   * Required. A unique key for this request so retries are safe and never
-   * double-spend. Generate once per logical spend intent (e.g. crypto.randomUUID())
-   * and reuse on retries.
+   * Optional. A unique key for this request so retries are safe and never
+   * double-spend. When omitted, a UUID v4 is generated automatically. Pass an
+   * explicit key when you need idempotency across retries (e.g. store it before
+   * the first attempt, reuse on retry).
    */
-  idempotencyKey: string;
+  idempotencyKey?: string;
   currency?: string;
   agentType?: string;
   intentContext?: string;
@@ -190,6 +226,7 @@ export class FiGuardClient {
     if (options.maxTransactionQuantity !== undefined) body["maxTransactionQuantity"] = options.maxTransactionQuantity;
     if (options.authorizationExpirySeconds !== undefined) body["authorizationExpirySeconds"] = options.authorizationExpirySeconds;
     if (options.anomalyDetectionEnabled) body["anomalyDetectionEnabled"] = true;
+    if (options.autoPauseOnAnomaly === false) body["autoPauseOnAnomaly"] = false;
     if (options.entityDedupEnabled) body["entityDedupEnabled"] = true;
     if (options.allocations !== undefined) body["allocations"] = options.allocations;
     if (options.metadata !== undefined) body["metadata"] = options.metadata;
@@ -213,6 +250,101 @@ export class FiGuardClient {
     return makeBudget(data);
   }
 
+  /**
+   * Extend a budget's expiry window.
+   *
+   * The new expiresAt must be later than the current one and at most 24 hours
+   * from now (the same cap as creation — extend can be called repeatedly).
+   *
+   * @throws FiGuardApiError HTTP 409 if budget is CANCELLED or EXHAUSTED.
+   * @throws FiGuardApiError HTTP 400 if expiresAt is before the current one.
+   */
+  async extendBudget(options: ExtendBudgetOptions): Promise<Budget> {
+    const body: Record<string, unknown> = {
+      expiresAt: resolveExpiresAt(options.expiresAt, options.expiresIn),
+    };
+    const data = await this.request("POST", `/api/v1/budgets/${options.budgetId}/extend`, {
+      body,
+      retryable: false,
+    });
+    return makeBudget(data);
+  }
+
+  /**
+   * Cancel up to 100 budgets in a single call.
+   *
+   * Already-terminal budgets (EXPIRED, CANCELLED, EXHAUSTED) are included in
+   * the response without raising an error.
+   *
+   * @throws FiGuardApiError HTTP 400 if the list is empty or exceeds 100 items.
+   */
+  async cancelBatch(budgetIds: string[]): Promise<Budget[]> {
+    const body: Record<string, unknown> = { budgetIds };
+    const data = await this.request("POST", "/api/v1/budgets/cancel-batch", {
+      body,
+      retryable: false,
+    });
+    return (data as unknown as unknown[]).map((b) => makeBudget(b as Record<string, unknown>));
+  }
+
+  // -------------------------------------------------------------------------
+  // Delegation tokens
+  // -------------------------------------------------------------------------
+
+  /**
+   * Create a scoped delegation token for a fleet budget.
+   *
+   * The sub-agent calls authorize() with this token exactly as it would with a normal
+   * session token. FiGuard resolves the parent budget and enforces both the per-token
+   * caps and the fleet-level allocations transparently.
+   *
+   * The session_token is returned once — hand it to the sub-agent immediately.
+   */
+  async createDelegationToken(options: CreateDelegationTokenOptions): Promise<DelegationToken> {
+    const body: Record<string, unknown> = {
+      label: options.label,
+      caps: options.caps,
+    };
+    const data = await this.request(
+      "POST",
+      `/api/v1/budgets/${options.budgetId}/delegation-tokens`,
+      { body, retryable: false },
+    );
+    return makeDelegationToken(data);
+  }
+
+  async getDelegationToken(tokenId: string): Promise<DelegationToken> {
+    const data = await this.request("GET", `/api/v1/delegation-tokens/${tokenId}`, {
+      retryable: true,
+    });
+    return makeDelegationToken(data);
+  }
+
+  async listDelegationTokens(budgetId: string): Promise<DelegationToken[]> {
+    const data = await this.request(
+      "GET",
+      `/api/v1/budgets/${budgetId}/delegation-tokens`,
+      { retryable: true },
+    );
+    return (data as unknown as unknown[]).map((t) =>
+      makeDelegationToken(t as Record<string, unknown>),
+    );
+  }
+
+  /**
+   * Revoke a delegation token immediately.
+   *
+   * Any subsequent authorize() call with this token returns INVALID_SESSION_TOKEN.
+   * Already-authorized events continue their lifecycle normally.
+   * Fires DELEGATION_TOKEN_REVOKED webhook. Idempotent.
+   */
+  async revokeDelegationToken(tokenId: string): Promise<DelegationToken> {
+    const data = await this.request("DELETE", `/api/v1/delegation-tokens/${tokenId}`, {
+      retryable: false,
+    });
+    return makeDelegationToken(data);
+  }
+
   async rotateSessionToken(budgetId: string): Promise<string> {
     const data = await this.request("POST", `/api/v1/budgets/${budgetId}/rotate-token`, {
       retryable: true,
@@ -221,23 +353,120 @@ export class FiGuardClient {
   }
 
   // -------------------------------------------------------------------------
+  // Resource budget convenience methods
+  // -------------------------------------------------------------------------
+
+  /**
+   * Create a resource budget for tracking token usage.
+   *
+   * Anomaly detection is disabled for token budgets — thresholds calibrated
+   * for dollar amounts produce false positives on token counts.
+   *
+   * @param model      LLM model identifier stored in metadata (e.g. "gpt-4o").
+   * @param maxTokens  Total token cap for the budget.
+   * @param expiresIn  Relative duration (e.g. "2h", "30m"). Mutually exclusive with expiresAt.
+   * @param expiresAt  Absolute ISO 8601 expiry. Mutually exclusive with expiresIn.
+   *
+   * @example
+   * const budget = await client.createTokenBudget({ model: "gpt-4o", maxTokens: 50_000, expiresIn: "2h" });
+   */
+  async createTokenBudget(options: {
+    model: string;
+    maxTokens: number;
+    expiresIn?: string | number;
+    expiresAt?: string;
+    userId?: string;
+    intentContext?: string;
+    externalReference?: string;
+    allocations?: AllocationInput[];
+    metadata?: Record<string, unknown>;
+  }): Promise<Budget> {
+    const meta: Record<string, unknown> = { model: options.model, ...options.metadata };
+    return this.createBudget({
+      userId: options.userId ?? "agent",
+      totalLimit: options.maxTokens,
+      expiresIn: options.expiresIn,
+      expiresAt: options.expiresAt,
+      unit: "tokens",
+      intentContext: options.intentContext,
+      externalReference: options.externalReference,
+      anomalyDetectionEnabled: false,
+      allocations: options.allocations,
+      metadata: meta,
+    });
+  }
+
+  /**
+   * Pre-flight authorization for a token budget.
+   *
+   * Convenience wrapper around {@link authorize} for resource (token) budgets.
+   * Omits `currency` so the currency-mismatch check is skipped server-side.
+   *
+   * After the LLM call completes, call {@link confirmTokens} with the actual count.
+   *
+   * @example
+   * const auth = await client.authorizeTokens({
+   *   sessionToken: budget.sessionToken!,
+   *   agentId: "summarizer",
+   *   estimatedTokens: 4_000,
+   *   model: "gpt-4o",
+   *   idempotencyKey: "run-abc-step-1",
+   * });
+   * if (auth.isAuthorized) {
+   *   const resp = await openai.chat(...);
+   *   await client.confirmTokens(auth.eventId, resp.usage.total_tokens);
+   * }
+   */
+  async authorizeTokens(options: {
+    sessionToken: string;
+    agentId: string;
+    estimatedTokens: number;
+    model: string;
+    idempotencyKey?: string;
+    description?: string;
+    claimedCategory?: string;
+    traceId?: string;
+    dryRun?: boolean;
+  }): Promise<AuthorizationResult> {
+    return this.authorize({
+      sessionToken: options.sessionToken,
+      agentId: options.agentId,
+      actionType: "LLM_CALL",
+      description: options.description ?? `LLM call via ${options.model} — estimated ${options.estimatedTokens.toLocaleString()} tokens`,
+      requestedQuantity: options.estimatedTokens,
+      idempotencyKey: options.idempotencyKey,
+      claimedCategory: options.claimedCategory,
+      traceId: options.traceId,
+      dryRun: options.dryRun,
+    });
+  }
+
+  /**
+   * Confirm a token authorization with the actual token count.
+   *
+   * @param eventId      The eventId from authorizeTokens.
+   * @param actualTokens Real token count from the LLM response (e.g. response.usage.total_tokens).
+   */
+  async confirmTokens(eventId: string, actualTokens: number): Promise<SpendEventResponse> {
+    return this.confirmEvent({ eventId, confirmedQuantity: actualTokens });
+  }
+
+  // -------------------------------------------------------------------------
   // Authorization
   // -------------------------------------------------------------------------
 
   async authorize(options: AuthorizeOptions): Promise<AuthorizationResult> {
-    if (!options.idempotencyKey || !options.idempotencyKey.trim()) {
-      throw new Error(
-        "idempotencyKey is required for authorize(). " +
-          "Generate one per logical spend intent (e.g. crypto.randomUUID()) and reuse on retries.",
-      );
-    }
+    const idempotencyKey =
+      options.idempotencyKey && options.idempotencyKey.trim()
+        ? options.idempotencyKey
+        : crypto.randomUUID();
 
     const body: Record<string, unknown> = {
       agentId: options.agentId,
       actionType: options.actionType,
       description: options.description,
       requestedQuantity: options.requestedQuantity,
-      idempotencyKey: options.idempotencyKey,
+      idempotencyKey,
     };
     if (options.currency !== undefined) body["currency"] = options.currency;
     if (options.agentType !== undefined) body["agentType"] = options.agentType;
@@ -483,4 +712,72 @@ export function resolveExpiresAt(
 }
 
 // Re-export model types that handlers need
-export type { AllocationResponse, AuthorizationResult, Budget, LedgerPage, SpendEventResponse, SpendTree, VoidResult };
+export type { AllocationResponse, AuthorizationResult, Budget, DelegationToken, LedgerPage, SpendEventResponse, SpendTree, VoidResult };
+
+// ---------------------------------------------------------------------------
+// Allocation builder helper
+// ---------------------------------------------------------------------------
+
+export interface AllocationPercentageInput {
+  category: string;
+  percent: number;
+  enforcementMode?: string;
+  allowedCategories?: string[];
+  forbiddenItemTypes?: string[];
+}
+
+/**
+ * Build an allocations array from a total and an array of category/percentage entries.
+ *
+ * The last bucket absorbs the floating-point remainder so limits always sum to
+ * exactly ``total``, avoiding ``$333.33 × 3 ≠ $1000.00`` precision errors.
+ *
+ * @param total       Total budget limit (same unit as the budget's totalLimit).
+ * @param allocations Array of ``{ category, percent, ...optional fields }`` — percents must sum to 100.
+ *
+ * @throws Error if percents do not sum to 100 (within 0.001 tolerance).
+ *
+ * @example
+ * const allocs = buildAllocationsFromPercentages(1000, [
+ *   { category: "flight", percent: 60 },
+ *   { category: "hotel",  percent: 30 },
+ *   { category: "ground", percent: 10 },
+ * ]);
+ * // → [{ category: "flight", limit: 600 }, { category: "hotel", limit: 300 }, { category: "ground", limit: 100 }]
+ */
+export function buildAllocationsFromPercentages(
+  total: number,
+  allocations: AllocationPercentageInput[],
+): Array<Record<string, unknown>> {
+  const pctSum = allocations.reduce((s, a) => s + a.percent, 0);
+  if (Math.abs(pctSum - 100) > 0.001) {
+    throw new Error(
+      `Percentages must sum to 100, got ${pctSum.toFixed(4)}. ` +
+      "Adjust your values so they add up to exactly 100.",
+    );
+  }
+
+  const result: Array<Record<string, unknown>> = [];
+  let assigned = 0;
+
+  for (let i = 0; i < allocations.length; i++) {
+    const { category, percent, enforcementMode, allowedCategories, forbiddenItemTypes } = allocations[i];
+    let limit: number;
+    if (i < allocations.length - 1) {
+      // Round to 4 decimal places — matches server's NUMERIC(19,4) column
+      limit = Math.round(percent / 100 * total * 10000) / 10000;
+      assigned += limit;
+    } else {
+      // Last bucket absorbs rounding remainder
+      limit = Math.round((total - assigned) * 10000) / 10000;
+    }
+
+    const alloc: Record<string, unknown> = { category, limit };
+    if (enforcementMode) alloc["enforcementMode"] = enforcementMode;
+    if (allowedCategories?.length) alloc["allowedCategories"] = allowedCategories;
+    if (forbiddenItemTypes?.length) alloc["forbiddenItemTypes"] = forbiddenItemTypes;
+    result.push(alloc);
+  }
+
+  return result;
+}

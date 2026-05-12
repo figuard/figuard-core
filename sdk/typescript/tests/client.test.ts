@@ -192,17 +192,30 @@ describe("authorize", () => {
     expect(result.raiseIfDenied()).toBe(result);
   });
 
-  it("throws when idempotencyKey is blank", async () => {
-    await expect(
-      client.authorize({
-        sessionToken: "st_abc_secret",
-        agentId: "agent_1",
-        actionType: "PURCHASE",
-        description: "Flight",
-        requestedQuantity: 299,
-        idempotencyKey: "   ",
-      }),
-    ).rejects.toThrow("idempotencyKey is required");
+  it("auto-generates idempotencyKey when blank", async () => {
+    mockFetch(200, AUTH_AUTHORIZED);
+    const result = await client.authorize({
+      sessionToken: "st_abc_secret",
+      agentId: "agent_1",
+      actionType: "PURCHASE",
+      description: "Flight",
+      requestedQuantity: 299,
+      idempotencyKey: "   ", // blank — SDK should auto-generate a UUID
+    });
+    expect(result.isAuthorized).toBe(true);
+  });
+
+  it("auto-generates idempotencyKey when omitted", async () => {
+    mockFetch(200, AUTH_AUTHORIZED);
+    const result = await client.authorize({
+      sessionToken: "st_abc_secret",
+      agentId: "agent_1",
+      actionType: "PURCHASE",
+      description: "Flight",
+      requestedQuantity: 299,
+      // idempotencyKey intentionally omitted
+    });
+    expect(result.isAuthorized).toBe(true);
   });
 
   it("sends X-Session-Token header", async () => {

@@ -35,10 +35,11 @@
 export const VERSION = "0.1.0";
 
 // Client
-export { FiGuardClient, resolveExpiresAt } from "./client";
+export { FiGuardClient, resolveExpiresAt, buildAllocationsFromPercentages } from "./client";
 export type {
   FiGuardClientOptions,
   AllocationInput,
+  AllocationPercentageInput,
   CreateBudgetOptions,
   AuthorizeOptions,
   ConfirmEventOptions,
