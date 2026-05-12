@@ -13,13 +13,23 @@ export const TOOLS = [
       "Create a new FiGuard budget for an agent session. Returns a session_token that must be passed to figuard_authorize. " +
       "The session_token is only returned once — store it for the duration of the agent session. " +
       "Use currency (e.g. 'USD') for monetary budgets. Use unit (e.g. 'tokens') for resource budgets. " +
-      "Optionally add allocations to ring-fence spend by category (e.g. separate limits for flights and hotels).",
+      "Optionally add allocations to ring-fence spend by category (e.g. separate limits for flights and hotels). " +
+      "Pass external_reference to make this call idempotent: if a live budget with that reference already exists it is " +
+      "returned (HTTP 200) instead of creating a duplicate. If the reference exists but with a different configuration, " +
+      "a 409 is returned. Use this to safely handle orchestrator restarts.",
     inputSchema: {
       type: "object",
       properties: {
         user_id: {
           type: "string",
           description: "Identifier for the user or agent session this budget belongs to.",
+        },
+        external_reference: {
+          type: "string",
+          description:
+            "Optional stable identifier for this budget (e.g. 'run-abc-123', 'order-456'). " +
+            "When provided, re-calling figuard_create_budget with the same external_reference returns " +
+            "the existing live budget instead of creating a duplicate — safe for orchestrator restarts.",
         },
         total_limit: {
           type: "number",
@@ -43,7 +53,14 @@ export const TOOLS = [
         },
         anomaly_detection_enabled: {
           type: "boolean",
-          description: "When true, FiGuard auto-pauses the budget if a single spend request is statistically unusual. Recommended for production.",
+          description: "When true, FiGuard monitors spend requests for statistical anomalies. Recommended for production.",
+        },
+        auto_pause_on_anomaly: {
+          type: "boolean",
+          description:
+            "Controls anomaly response mode. When true (default), an anomalous request pauses the budget — no further spend until a human resumes it. " +
+            "When false (advisory mode), the anomalous request is still denied and ANOMALY_DETECTED webhook fires, but the budget stays ACTIVE. " +
+            "Use false for high-throughput agents where a single spike should not halt the entire fleet.",
         },
         allocations: {
           type: "array",
@@ -61,7 +78,9 @@ export const TOOLS = [
               allowed_categories: {
                 type: "array",
                 items: { type: "string" },
-                description: "Spend is only allowed when claimed_category matches one of these values.",
+                description: "Required when enforcement_mode is CATEGORY_CONSTRAINED or STRICT. " +
+                  "Omit for OPEN mode. Defines which claimedCategory values this allocation will accept. " +
+                  "Example: [\"flight\"] for a flights allocation.",
               },
               forbidden_item_types: {
                 type: "array",
@@ -84,7 +103,8 @@ export const TOOLS = [
       "Returns AUTHORIZED (with event_id) or DENIED (with denial_reason). " +
       "Always call this before spending. Only proceed if the result is AUTHORIZED. " +
       "The idempotency_key must be unique per logical spend intent — reuse the same key on retries so the same spend is never double-authorized. " +
-      "After the action succeeds call figuard_confirm; if it fails call figuard_fail.",
+      "After the action succeeds call figuard_confirm; if it fails call figuard_fail. " +
+      "IMPORTANT: When the budget has allocations, pass the exact category string from the budget's allocation_categories field — do not use synonyms or plural forms (e.g. use 'flight' not 'flights').",
     inputSchema: {
       type: "object",
       properties: {
@@ -110,7 +130,10 @@ export const TOOLS = [
         },
         idempotency_key: {
           type: "string",
-          description: "Unique key for this spend intent. Use a UUID or stable identifier. Reuse on retries — never generate a new key for the same logical spend.",
+          description:
+            "Optional. Unique key for this spend intent. Use a UUID or stable identifier. " +
+            "Reuse on retries — never generate a new key for the same logical spend. " +
+            "When omitted, the SDK auto-generates a UUID v4 (safe for fire-and-forget calls).",
         },
         claimed_category: {
           type: "string",
@@ -122,7 +145,10 @@ export const TOOLS = [
         },
         parent_event_id: {
           type: "string",
-          description: "event_id of the parent spend if this is a sub-agent call. Used to build the causal chain.",
+          description:
+            "event_id of the parent spend if this is a sub-agent call. Used to build the causal chain. " +
+            "The parent event must be in AUTHORIZED or CONFIRMED state — passing a DENIED or VOIDED " +
+            "parent_event_id will result in a 400 INVALID_PARENT_EVENT error.",
         },
         trace_id: {
           type: "string",
@@ -133,7 +159,7 @@ export const TOOLS = [
           description: "When true, runs all enforcement checks and returns AUTHORIZED/DENIED but writes nothing to the ledger. Use for testing.",
         },
       },
-      required: ["session_token", "agent_id", "action_type", "description", "requested_quantity", "idempotency_key"],
+      required: ["session_token", "agent_id", "action_type", "description", "requested_quantity"],
     },
   },
 
@@ -267,8 +293,8 @@ export const TOOLS = [
   {
     name: "figuard_resume_budget",
     description:
-      "Resume a budget that was paused by anomaly detection. " +
-      "A budget is auto-paused when a spend request is statistically unusual (anomaly detection). " +
+      "Resume a budget that was paused by anomaly detection or manually. " +
+      "A budget is paused when a spend request is statistically unusual (autoPauseOnAnomaly=true) or via PATCH /budgets/{id}. " +
       "A human must review and provide an override reason before the budget can be used again. " +
       "Requires override_reason explaining why the pause was reviewed and cleared.",
     inputSchema: {
@@ -288,6 +314,125 @@ export const TOOLS = [
         },
       },
       required: ["budget_id", "override_reason"],
+    },
+  },
+
+  {
+    name: "figuard_extend_budget",
+    description:
+      "Extend a budget's expiry window. Use this to keep a long-running agent alive past its original expiry. " +
+      "The new expiry must be later than the current one and at most 24 hours from now. " +
+      "Can be called repeatedly (e.g. extend by 2 hours every 2 hours for a 6-hour task). " +
+      "Returns 409 if the budget is CANCELLED or EXHAUSTED. Returns 400 if the new expiry is earlier than the current one.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        budget_id: {
+          type: "string",
+          description: "The budget ID to extend.",
+        },
+        expires_in: {
+          type: "string",
+          description: "Relative duration from now (e.g. '2h', '30m'). Mutually exclusive with expires_at.",
+        },
+        expires_at: {
+          type: "string",
+          description: "Absolute ISO 8601 expiry timestamp. Mutually exclusive with expires_in.",
+        },
+      },
+      required: ["budget_id"],
+    },
+  },
+
+  {
+    name: "figuard_create_delegation_token",
+    description:
+      "Create a scoped delegation token for a fleet budget. Each sub-agent (e.g. per-customer refund agent) " +
+      "gets its own token with per-category spend caps. The sub-agent calls figuard_authorize with this token " +
+      "exactly as it would with a normal session token — FiGuard enforces both the per-token caps and the " +
+      "fleet-level allocations transparently. " +
+      "The session_token is returned once — hand it to the sub-agent immediately and store it securely.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        budget_id: {
+          type: "string",
+          description: "The fleet budget ID to delegate from.",
+        },
+        label: {
+          type: "string",
+          description: "Human-readable label for this token, e.g. 'refund-agent-order-123'.",
+        },
+        caps: {
+          type: "array",
+          description:
+            "Per-category spend caps for this sub-agent. Only listed categories are cap-enforced at the " +
+            "delegation level. Categories not listed pass through to the fleet allocation only.",
+          items: {
+            type: "object",
+            properties: {
+              category: { type: "string", description: "Category name (must match a fleet allocation category)." },
+              limit: { type: "number", description: "Maximum spend for this category via this token." },
+            },
+            required: ["category", "limit"],
+          },
+        },
+      },
+      required: ["budget_id", "label", "caps"],
+    },
+  },
+
+  {
+    name: "figuard_revoke_delegation_token",
+    description:
+      "Revoke a delegation token immediately. Any subsequent figuard_authorize call using this token " +
+      "will be rejected with INVALID_SESSION_TOKEN. Already-authorized events are not affected. " +
+      "Fires DELEGATION_TOKEN_REVOKED webhook. Idempotent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        token_id: {
+          type: "string",
+          description: "The delegation token ID to revoke.",
+        },
+      },
+      required: ["token_id"],
+    },
+  },
+
+  {
+    name: "figuard_get_delegation_token",
+    description:
+      "Get the current state of a delegation token — label, status, per-category cap usage. " +
+      "The raw session_token is never returned, only the prefix.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        token_id: {
+          type: "string",
+          description: "The delegation token ID.",
+        },
+      },
+      required: ["token_id"],
+    },
+  },
+
+  {
+    name: "figuard_cancel_batch",
+    description:
+      "Cancel up to 100 budgets in a single call. " +
+      "Already-terminal budgets (EXPIRED, CANCELLED, EXHAUSTED) are included in the response without an error — the call is idempotent per budget. " +
+      "Use this for bulk teardown of agent sessions (e.g. cancel all budgets for a deactivated user or a completed workflow).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        budget_ids: {
+          type: "array",
+          items: { type: "string" },
+          description: "List of budget IDs to cancel. Maximum 100.",
+        },
+      },
+      required: ["budget_ids"],
     },
   },
 ] as const;

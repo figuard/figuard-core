@@ -45,12 +45,14 @@ function optBool(args: Args, key: string): boolean | undefined {
 export async function handleCreateBudget(client: FiGuardClient, args: Args): Promise<unknown> {
   const budget = await client.createBudget({
     userId: str(args, "user_id"),
+    externalReference: optStr(args, "external_reference"),
     totalLimit: num(args, "total_limit"),
     currency: optStr(args, "currency"),
     unit: optStr(args, "unit"),
     expiresIn: optStr(args, "expires_in") ?? "24h",
     intentContext: optStr(args, "intent_context"),
     anomalyDetectionEnabled: optBool(args, "anomaly_detection_enabled"),
+    autoPauseOnAnomaly: optBool(args, "auto_pause_on_anomaly"),
     allocations: args["allocations"] as Array<{
       category: string;
       limit: number;
@@ -75,6 +77,9 @@ export async function handleCreateBudget(client: FiGuardClient, args: Args): Pro
       available: a.availableQuantity,
       enforcement_mode: a.enforcementMode,
     })),
+    // Flat list of valid category strings — pass one of these as claimed_category in figuard_authorize.
+    // Do not use synonyms or plural forms; the match must be exact (case-insensitive).
+    allocation_categories: budget.allocations.map((a) => a.category),
     note: "Store session_token securely — it is never returned again.",
   };
 }
@@ -86,7 +91,7 @@ export async function handleAuthorize(client: FiGuardClient, args: Args): Promis
     actionType: str(args, "action_type"),
     description: str(args, "description"),
     requestedQuantity: num(args, "requested_quantity"),
-    idempotencyKey: str(args, "idempotency_key"),
+    idempotencyKey: optStr(args, "idempotency_key"),
     claimedCategory: optStr(args, "claimed_category"),
     claimedItemType: optStr(args, "claimed_item_type"),
     parentEventId: optStr(args, "parent_event_id"),
@@ -104,13 +109,22 @@ export async function handleAuthorize(client: FiGuardClient, args: Args): Promis
       next_step: "Proceed with the action, then call figuard_confirm with the actual amount.",
     };
   } else {
+    const nonRetryableCodes = new Set([
+      "ALLOCATION_EXHAUSTED", "BUDGET_CANCELLED", "BUDGET_EXPIRED", "BUDGET_EXHAUSTED",
+      "INSUFFICIENT_FUNDS", "DELEGATE_CAP_EXCEEDED", "ENTITY_ALREADY_AUTHORIZED",
+      "DELEGATION_TOKEN_REVOKED", "FORBIDDEN_ITEM_TYPE", "EXCEEDS_QUANTITY_LIMIT",
+    ]);
+    const retryable = !nonRetryableCodes.has(result.denialReason ?? "");
     return {
       decision: "DENIED",
       event_id: result.eventId,
       denial_reason: result.denialReason,
       denial_message: result.denialMessage,
       budget_available: result.budgetSnapshot?.availableQuantity,
-      next_step: "Do not proceed with the action. Inform the user of the denial reason.",
+      retryable,
+      next_step: retryable
+        ? "Fix the request (see denial_reason and denial_message) and retry."
+        : "Do not retry with the same parameters — this denial is not recoverable. Inform the user of the denial reason.",
     };
   }
 }
@@ -226,5 +240,93 @@ export async function handleResumeBudget(client: FiGuardClient, args: Args): Pro
     status: budget.status,
     available: budget.availableQuantity,
     message: "Budget resumed. Agent may now authorize spends again.",
+  };
+}
+
+export async function handleExtendBudget(client: FiGuardClient, args: Args): Promise<unknown> {
+  const budget = await client.extendBudget({
+    budgetId: str(args, "budget_id"),
+    expiresIn: optStr(args, "expires_in"),
+    expiresAt: optStr(args, "expires_at"),
+  });
+
+  return {
+    budget_id: budget.id,
+    status: budget.status,
+    expires_at: budget.expiresAt,
+    available: budget.availableQuantity,
+    message: "Budget expiry extended. Agent may continue spending until the new expires_at.",
+  };
+}
+
+export async function handleCreateDelegationToken(client: FiGuardClient, args: Args): Promise<unknown> {
+  const caps = args["caps"];
+  if (!Array.isArray(caps)) throw new Error("caps is required and must be an array");
+
+  const token = await client.createDelegationToken({
+    budgetId: str(args, "budget_id"),
+    label: str(args, "label"),
+    caps: caps as Array<{ category: string; limit: number }>,
+  });
+
+  return {
+    token_id: token.id,
+    parent_budget_id: token.parentBudgetId,
+    label: token.label,
+    status: token.status,
+    session_token: token.sessionToken,
+    session_token_prefix: token.sessionTokenPrefix,
+    caps: token.caps.map((c) => ({
+      category: c.category,
+      total_limit: c.totalLimit,
+      available: c.availableQuantity,
+    })),
+    note: token.sessionToken
+      ? "Store session_token securely — it is never returned again. Hand it to the sub-agent immediately."
+      : undefined,
+  };
+}
+
+export async function handleRevokeDelegationToken(client: FiGuardClient, args: Args): Promise<unknown> {
+  const token = await client.revokeDelegationToken(str(args, "token_id"));
+
+  return {
+    token_id: token.id,
+    status: token.status,
+    label: token.label,
+    revoked_at: token.revokedAt,
+    message: "Delegation token revoked. Sub-agent can no longer authorize new spends.",
+  };
+}
+
+export async function handleGetDelegationToken(client: FiGuardClient, args: Args): Promise<unknown> {
+  const token = await client.getDelegationToken(str(args, "token_id"));
+
+  return {
+    token_id: token.id,
+    parent_budget_id: token.parentBudgetId,
+    label: token.label,
+    status: token.status,
+    session_token_prefix: token.sessionTokenPrefix,
+    caps: token.caps.map((c) => ({
+      category: c.category,
+      total_limit: c.totalLimit,
+      spent: c.quantitySpent,
+      reserved: c.quantityReserved,
+      available: c.availableQuantity,
+    })),
+    revoked_at: token.revokedAt,
+  };
+}
+
+export async function handleCancelBatch(client: FiGuardClient, args: Args): Promise<unknown> {
+  const budgetIds = args["budget_ids"];
+  if (!Array.isArray(budgetIds)) throw new Error("budget_ids is required and must be an array");
+  const budgets = await client.cancelBatch(budgetIds as string[]);
+
+  return {
+    cancelled: budgets.map((b) => ({ budget_id: b.id, status: b.status })),
+    count: budgets.length,
+    message: `${budgets.length} budget(s) processed. Already-terminal budgets are included without error.`,
   };
 }

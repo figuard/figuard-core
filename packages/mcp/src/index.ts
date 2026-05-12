@@ -2,7 +2,7 @@
 /**
  * FiGuard MCP Server
  *
- * Exposes 8 FiGuard tools to any MCP client (Claude Code, Cursor, Claude Desktop).
+ * Exposes 13 FiGuard tools to any MCP client (Claude Code, Cursor, Claude Desktop).
  * Runs as a local stdio process — no cloud hosting required.
  *
  * Configuration (set in your MCP client config):
@@ -30,6 +30,11 @@ import {
   handleGetBudget,
   handleGetLedger,
   handleResumeBudget,
+  handleExtendBudget,
+  handleCancelBatch,
+  handleCreateDelegationToken,
+  handleRevokeDelegationToken,
+  handleGetDelegationToken,
 } from "./handlers.js";
 
 // ---------------------------------------------------------------------------
@@ -103,6 +108,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         break;
       case "figuard_resume_budget":
         result = await handleResumeBudget(client, args as Record<string, unknown>);
+        break;
+      case "figuard_extend_budget":
+        result = await handleExtendBudget(client, args as Record<string, unknown>);
+        break;
+      case "figuard_cancel_batch":
+        result = await handleCancelBatch(client, args as Record<string, unknown>);
+        break;
+      case "figuard_create_delegation_token":
+        result = await handleCreateDelegationToken(client, args as Record<string, unknown>);
+        break;
+      case "figuard_revoke_delegation_token":
+        result = await handleRevokeDelegationToken(client, args as Record<string, unknown>);
+        break;
+      case "figuard_get_delegation_token":
+        result = await handleGetDelegationToken(client, args as Record<string, unknown>);
         break;
       default:
         return {
