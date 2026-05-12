@@ -36,6 +36,8 @@ public class BudgetResponse {
     private BigDecimal availableQuantity;
     private BigDecimal softLimit;
     private Integer authorizationExpirySeconds;
+    private boolean anomalyDetectionEnabled;
+    private boolean autoPauseOnAnomaly;
     private BudgetStatus status;
     private List<AllocationResponse> allocations;
     private OffsetDateTime expiresAt;
