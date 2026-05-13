@@ -163,23 +163,49 @@ client.confirm_event(auth.event_id, confirmed_amount=actual_charge)
 ## How It Works
 
 ```
-                                           ┌──────────────────────────────┐
-  Agent wants to spend                     │  Decision recorded in ledger  │
-  ──────────────────────────▶  FiGuard ────│  (approved or denied)         │
-  (nothing has moved yet)                  └──────────────────────────────┘
-          │
-          │  AUTHORIZED                             DENIED
-          │  funds reserved                         nothing moves
-          │                                         agent gets structured response
-          ▼
-  [your payment processor]
-          │
-          │  payment succeeds ──▶ confirm()  → reservation → confirmed spend
-          │  payment fails    ──▶ fail()     → reservation released
-          │  action cancelled ──▶ void()     → reservation released
-          │
-          ▼
-  Decision finalized in ledger
+  Developer
+  ──────────▶ create budget ──▶ session token issued to agent
+              ($500 USD  or  100k tokens  or  any unit)
+                        │
+           ┌────────────┴────────────────────────────┐
+           │                                         │
+     single agent                            fleet agent
+           │                          issue delegation tokens
+           │                          ├─▶ sub-agent A ($3k refunds)
+           │                          └─▶ sub-agent B ($5k compute)
+           │                                         │
+           └────────────┬────────────────────────────┘
+                        │
+              ┌─────────┴──────────┐
+        monetary budget      resource budget
+        currency: "USD"      unit: "tokens"
+              └─────────┬──────────┘
+                        │
+                        ▼
+  authorize()    ← nothing has moved yet
+  checks: limit · category · expiry · anomaly · dedup
+                        │
+           ┌────────────┴────────────┐
+        AUTHORIZED               DENIED
+        funds reserved         nothing moves
+           │                   structured denial code
+           ▼
+  [agent executes action]
+  payment / API call / compute
+           │
+  ┌────────┼────────┐
+succeeds  fails  cancelled
+   │        │        │
+confirm() fail()  void()
+qty spent released released
+   └────────┴────────┘
+                        │
+                        ▼
+        ┌───────────────────────────────────┐
+        │  every decision recorded in the   │
+        │  append-only ledger — authorized, │
+        │  denied, confirmed, failed, voided│
+        └───────────────────────────────────┘
 ```
 
 **Every path writes a `SpendEvent`.** Authorized, denied, confirmed, failed, voided — all land in the append-only ledger. You always have a complete audit trail.
