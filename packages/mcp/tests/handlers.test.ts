@@ -192,7 +192,7 @@ describe("handleAuthorize", () => {
     expect(result.decision).toBe("DENIED");
     expect(result.denial_reason).toBe("INSUFFICIENT_FUNDS");
     expect(result.denial_message).toBe("Only $50 remaining");
-    expect(result.next_step).toMatch(/Do not proceed/);
+    expect(result.next_step).toMatch(/Do not retry/);
   });
 
   it("passes optional fields to client.authorize", async () => {
