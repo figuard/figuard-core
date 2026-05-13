@@ -452,6 +452,111 @@ export class FiGuardClient {
   }
 
   // -------------------------------------------------------------------------
+  // Replay
+  // -------------------------------------------------------------------------
+
+  /**
+   * Replay all events for a budget in chronological order.
+   *
+   * Returns each event with the projected budget state after it applied.
+   * Pure read — does not affect any budget state.
+   */
+  async replayBudget(options: {
+    budgetId: string;
+    from?: string;
+    until?: string;
+    includeDenied?: boolean;
+    includeStateSnapshots?: boolean;
+    pageSize?: number;
+    pageToken?: string;
+  }): Promise<Record<string, unknown>> {
+    const params: Record<string, string> = {
+      includeDenied: String(options.includeDenied ?? true),
+      includeStateSnapshots: String(options.includeStateSnapshots ?? true),
+      pageSize: String(Math.min(options.pageSize ?? 100, 500)),
+    };
+    if (options.from)       params["from"]       = options.from;
+    if (options.until)      params["until"]      = options.until;
+    if (options.pageToken)  params["pageToken"]  = options.pageToken;
+
+    const query = new URLSearchParams(params).toString();
+    return await this.request("GET", `/api/v1/budgets/${options.budgetId}/replay?${query}`, {
+      retryable: true,
+    });
+  }
+
+  /**
+   * Project the budget state to a specific point in time.
+   *
+   * @param at ISO 8601 timestamp to project state to.
+   */
+  async getBudgetStateAt(budgetId: string, at: string): Promise<Record<string, unknown>> {
+    const query = new URLSearchParams({ at }).toString();
+    return await this.request("GET", `/api/v1/budgets/${budgetId}/replay/state?${query}`, {
+      retryable: true,
+    });
+  }
+
+  /**
+   * Return events in chronological order without state snapshots.
+   * Lighter than replayBudget — use when you need timing but not projected state.
+   */
+  async getBudgetTimeline(options: {
+    budgetId: string;
+    from?: string;
+    until?: string;
+  }): Promise<Record<string, unknown>> {
+    const params: Record<string, string> = {};
+    if (options.from)  params["from"]  = options.from;
+    if (options.until) params["until"] = options.until;
+    const query = new URLSearchParams(params).toString();
+    const url = query
+      ? `/api/v1/budgets/${options.budgetId}/replay/timeline?${query}`
+      : `/api/v1/budgets/${options.budgetId}/replay/timeline`;
+    return await this.request("GET", url, { retryable: true });
+  }
+
+  /**
+   * Replay actual authorized events against a hypothetical policy.
+   *
+   * Answers: "If I had configured the budget differently, how many
+   * transactions would have been denied?"
+   *
+   * Provide exactly one of hypotheticalPolicy or manifestVersion.
+   *
+   * @example
+   * const result = await client.replayCounterfactual({
+   *   budgetId: "budget_abc",
+   *   hypotheticalPolicy: { totalLimit: 4000, maxTransactionQuantity: 500 },
+   * });
+   * console.log(`${result.hypotheticalPolicySummary.additionalDenials} extra denials`);
+   */
+  async replayCounterfactual(options: {
+    budgetId: string;
+    hypotheticalPolicy?: {
+      totalLimit?: number;
+      allocations?: Array<{ category: string; limit: number; enforcementMode?: string }>;
+      maxTransactionQuantity?: number;
+      anomalyDetectionEnabled?: boolean;
+    };
+    manifestVersion?: string;
+    from?: string;
+    until?: string;
+  }): Promise<Record<string, unknown>> {
+    const body: Record<string, unknown> = {};
+    if (options.hypotheticalPolicy) body["hypotheticalPolicy"] = options.hypotheticalPolicy;
+    if (options.manifestVersion)    body["manifestVersion"]    = options.manifestVersion;
+    if (options.from)               body["from"]               = options.from;
+    if (options.until)              body["until"]              = options.until;
+
+    return await this.request(
+      "POST",
+      `/api/v1/budgets/${options.budgetId}/replay/counterfactual`,
+      { body, retryable: false },
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // Authorization
   // -------------------------------------------------------------------------
 

@@ -98,7 +98,7 @@ class AuthorizationServiceTest {
         // lenient — not every test reaches the save call (e.g. token-not-found, idempotency hit)
         lenient().when(spendEventRepository.save(any())).thenAnswer(inv -> {
             SpendEvent e = inv.getArgument(0);
-            if (e.getId() == null) {
+            if (e != null && e.getId() == null) {
                 ReflectionTestUtils.setField(e, "id", UUID.randomUUID());
             }
             return e;
@@ -624,6 +624,7 @@ class AuthorizationServiceTest {
         // Budget is a resource/token budget (unit set, currency null)
         budget.setCurrency(null);
         budget.setUnit("tokens");
+        budget.setTotalLimit(new BigDecimal("100000")); // realistic token budget limit
         budget.setAnomalyDetectionEnabled(true);
         budget.setAutoPauseOnAnomaly(true);
         // Even with anomalyDetectionEnabled=true, a resource budget should never
@@ -631,8 +632,6 @@ class AuthorizationServiceTest {
 
         when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
         when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any())).thenReturn(Optional.empty());
-        when(spendEventRepository.sumAuthorizedQuantityAfter(any(), any()))
-            .thenReturn(BigDecimal.ZERO);
         when(allocationRepository.findByParentBudgetIdOrderByCreatedAtAsc(any())).thenReturn(List.of());
         when(budgetMapper.toBudgetSnapshot(any())).thenReturn(null);
         when(spendEventRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));

@@ -30,6 +30,9 @@ function BudgetSubNav({ budgetId }: { budgetId: string }) {
       <NavLink to={`/budgets/${budgetId}/tree`} className={({ isActive }) => subItem(isActive)}>
         Spend Tree
       </NavLink>
+      <NavLink to={`/budgets/${budgetId}/replay`} className={({ isActive }) => subItem(isActive)}>
+        Replay
+      </NavLink>
     </div>
   );
 }

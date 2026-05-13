@@ -70,4 +70,20 @@ public interface SpendEventRepository extends JpaRepository<SpendEvent, UUID> {
     // Ledger integrity — sum of confirmedQuantity for CONFIRMED events per budget
     @Query("SELECT COALESCE(SUM(e.confirmedQuantity), 0) FROM SpendEvent e WHERE e.budget.id = :budgetId AND e.decision = 'CONFIRMED'")
     java.math.BigDecimal sumConfirmedAmountByBudget(@Param("budgetId") UUID budgetId);
+
+    // Replay: all events within a time window in chronological order.
+    // NOTE: avoid 'from'/'until' as JPQL param names — both are reserved keywords.
+    @Query("SELECT e FROM SpendEvent e WHERE e.budget.id = :budgetId AND e.createdAt BETWEEN :windowStart AND :windowEnd ORDER BY e.createdAt ASC")
+    List<SpendEvent> findByBudgetIdInWindowOrderByCreatedAtAsc(
+        @Param("budgetId") UUID budgetId,
+        @Param("windowStart") OffsetDateTime windowStart,
+        @Param("windowEnd") OffsetDateTime windowEnd
+    );
+
+    // Replay point-in-time: all events up to and including a timestamp
+    @Query("SELECT e FROM SpendEvent e WHERE e.budget.id = :budgetId AND e.createdAt <= :windowEnd ORDER BY e.createdAt ASC")
+    List<SpendEvent> findByBudgetIdUpToOrderByCreatedAtAsc(
+        @Param("budgetId") UUID budgetId,
+        @Param("windowEnd") OffsetDateTime windowEnd
+    );
 }
