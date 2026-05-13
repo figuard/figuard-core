@@ -387,6 +387,89 @@ class AsyncFiGuardClient:
             external_transaction_id=external_transaction_id,
         )
 
+    # -------------------------------------------------------------------------
+    # Replay
+    # -------------------------------------------------------------------------
+
+    async def replay_budget(
+        self,
+        budget_id: str,
+        *,
+        from_time=None,
+        until=None,
+        include_denied: bool = True,
+        include_state_snapshots: bool = True,
+        page_size: int = 100,
+        page_token: str | None = None,
+    ) -> dict:
+        """
+        Replay all events for a budget in chronological order.
+
+        Returns each event with the projected budget state after it applied.
+        Pure read — does not affect any budget state.
+        """
+        params = {
+            "includeDenied": str(include_denied).lower(),
+            "includeStateSnapshots": str(include_state_snapshots).lower(),
+            "pageSize": min(page_size, 500),
+        }
+        if from_time is not None:
+            params["from"] = from_time.isoformat() if hasattr(from_time, "isoformat") else str(from_time)
+        if until is not None:
+            params["until"] = until.isoformat() if hasattr(until, "isoformat") else str(until)
+        if page_token:
+            params["pageToken"] = page_token
+        return await self._request("GET", f"/api/v1/budgets/{budget_id}/replay", params=params)
+
+    async def get_budget_state_at(self, budget_id: str, at) -> dict:
+        """Project the budget state to a specific point in time."""
+        at_str = at.isoformat() if hasattr(at, "isoformat") else str(at)
+        return await self._request(
+            "GET", f"/api/v1/budgets/{budget_id}/replay/state", params={"at": at_str}
+        )
+
+    async def get_budget_timeline(
+        self,
+        budget_id: str,
+        *,
+        from_time=None,
+        until=None,
+    ) -> dict:
+        """Return events in chronological order without state snapshots."""
+        params = {}
+        if from_time is not None:
+            params["from"] = from_time.isoformat() if hasattr(from_time, "isoformat") else str(from_time)
+        if until is not None:
+            params["until"] = until.isoformat() if hasattr(until, "isoformat") else str(until)
+        return await self._request("GET", f"/api/v1/budgets/{budget_id}/replay/timeline", params=params)
+
+    async def replay_counterfactual(
+        self,
+        budget_id: str,
+        *,
+        hypothetical_policy: dict | None = None,
+        manifest_version: str | None = None,
+        from_time=None,
+        until=None,
+    ) -> dict:
+        """
+        Replay actual authorized events against a hypothetical policy.
+
+        Provide exactly one of hypothetical_policy or manifest_version.
+        """
+        body: dict = {}
+        if hypothetical_policy is not None:
+            body["hypotheticalPolicy"] = hypothetical_policy
+        if manifest_version is not None:
+            body["manifestVersion"] = manifest_version
+        if from_time is not None:
+            body["from"] = from_time.isoformat() if hasattr(from_time, "isoformat") else str(from_time)
+        if until is not None:
+            body["until"] = until.isoformat() if hasattr(until, "isoformat") else str(until)
+        return await self._request(
+            "POST", f"/api/v1/budgets/{budget_id}/replay/counterfactual", json=body
+        )
+
     async def rotate_session_token(self, budget_id: str) -> str:
         """
         Issue a new session token for the budget.

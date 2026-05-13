@@ -152,6 +152,127 @@ export interface SpendTreeResponse {
 }
 
 // ------------------------------------------------------------
+// Replay types
+// ------------------------------------------------------------
+
+export interface ReplayAllocationState {
+  category: string;
+  limit: number;
+  quantitySpent: number;
+  quantityReserved: number;
+  available: number;
+  enforcementMode: string;
+}
+
+export interface ReplayBudgetState {
+  snapshotAt: string;
+  eventIndex: number;
+  triggeringEventId: string | null;
+  totalLimit: number;
+  quantitySpent: number;
+  quantityReserved: number;
+  available: number;
+  budgetStatus: string;
+  allocations: ReplayAllocationState[];
+}
+
+export interface ReplayEventDetail {
+  eventId: string;
+  agentId: string;
+  actionType: string;
+  description: string;
+  requestedQuantity: number;
+  confirmedQuantity: number | null;
+  currency: string | null;
+  claimedCategory: string | null;
+  decision: SpendDecision;
+  denialReason: string | null;
+  parentEventId: string | null;
+  delegatedTokenId: string | null;
+  createdAt: string;
+  confirmedAt: string | null;
+  millisSincePrevious: number;
+}
+
+export interface ReplayFrame {
+  eventIndex: number;
+  event: ReplayEventDetail;
+  stateAfter: ReplayBudgetState | null;
+}
+
+export interface ReplaySummary {
+  totalEvents: number;
+  authorizedCount: number;
+  deniedCount: number;
+  confirmedCount: number;
+  failedCount: number;
+  voidedCount: number;
+  uniqueAgents: number;
+  peakReservedQuantity: number;
+  peakReservedAt: string | null;
+}
+
+export interface ReplayWindow {
+  from: string;
+  until: string;
+  durationSeconds: number;
+}
+
+export interface BudgetReplayResponse {
+  budgetId: string;
+  replayWindow: ReplayWindow;
+  summary: ReplaySummary;
+  initialState: ReplayBudgetState;
+  events: ReplayFrame[];
+  finalState: ReplayBudgetState;
+  nextPageToken: string | null;
+}
+
+export interface TimelineEventItem {
+  eventIndex: number;
+  eventId: string;
+  agentId: string;
+  decision: SpendDecision;
+  requestedQuantity: number;
+  claimedCategory: string | null;
+  description: string;
+  createdAt: string;
+  millisSincePrevious: number;
+}
+
+export interface TimelineResponse {
+  budgetId: string;
+  totalEvents: number;
+  timeline: TimelineEventItem[];
+}
+
+export interface CounterfactualDelta {
+  eventId: string;
+  actualDecision: string;
+  hypotheticalDecision: string;
+  hypotheticalDenialReason: string | null;
+  requestedQuantity: number;
+  agentId: string;
+  description: string;
+  claimedCategory: string | null;
+}
+
+export interface CounterfactualPolicySummary {
+  authorizedCount: number;
+  deniedCount: number;
+  totalQuantitySpent: number;
+  additionalDenials?: number;
+}
+
+export interface CounterfactualReplayResponse {
+  budgetId: string;
+  policySource: { type: string; manifestVersion: string | null };
+  actualPolicySummary: CounterfactualPolicySummary;
+  hypotheticalPolicySummary: CounterfactualPolicySummary;
+  deltaEvents: CounterfactualDelta[];
+}
+
+// ------------------------------------------------------------
 // App-level types
 // ------------------------------------------------------------
 
