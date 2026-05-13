@@ -18,6 +18,7 @@ import com.figuard.domain.enums.WebhookEventType;
 import com.figuard.domain.repository.AgentBudgetRepository;
 import com.figuard.domain.repository.BudgetAllocationRepository;
 import com.figuard.domain.repository.BudgetAnomalyBaselineRepository;
+import com.figuard.domain.repository.DelegatedTokenRepository;
 import com.figuard.domain.repository.SpendEventRepository;
 import com.figuard.service.model.MatchResult;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +49,7 @@ class AuthorizationServiceTest {
     @Mock AgentBudgetRepository budgetRepository;
     @Mock BudgetAllocationRepository allocationRepository;
     @Mock SpendEventRepository spendEventRepository;
+    @Mock DelegatedTokenRepository delegatedTokenRepository;
     @Mock CategoryMatchingService categoryMatchingService;
     @Mock SessionTokenService sessionTokenService;
     @Spy IntentScopeValidator intentScopeValidator;

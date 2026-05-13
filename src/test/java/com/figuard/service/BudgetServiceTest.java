@@ -83,8 +83,8 @@ class BudgetServiceTest {
         CreateBudgetRequest request = validRequest();
         request.setTotalLimit(new BigDecimal("100.00"));
         request.setAllocations(List.of(
-            allocation("flight", new BigDecimal("60.00")),
-            allocation("hotel",  new BigDecimal("30.00"))   // sum = 90, not 100
+            allocation("flight", new BigDecimal("70.00")),
+            allocation("hotel",  new BigDecimal("50.00"))   // sum = 120, exceeds totalLimit of 100
         ));
 
         assertThatThrownBy(() -> budgetService.createBudget(request, tenant))

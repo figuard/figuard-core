@@ -101,8 +101,8 @@ class AuthorizationServiceDelegationTest {
         fleetAllocation.setStatus(AllocationStatus.ACTIVE);
         fleetAllocation.setEnforcementMode(EnforcementMode.CATEGORY_CONSTRAINED);
 
-        when(sessionTokenService.hashToken(anyString())).thenReturn("token-hash");
-        when(budgetMapper.toBudgetSnapshot(any())).thenReturn(mock(
+        lenient().when(sessionTokenService.hashToken(anyString())).thenReturn("token-hash");
+        lenient().when(budgetMapper.toBudgetSnapshot(any())).thenReturn(mock(
             com.figuard.api.dto.response.BudgetSnapshot.class));
     }
 
@@ -180,6 +180,8 @@ class AuthorizationServiceDelegationTest {
         delegateCap.setQuantityReserved(BigDecimal.valueOf(2900));
 
         setupDelegateTokenPath();
+        when(categoryMatchingService.findMatch(any(), eq("refund"), any()))
+            .thenReturn(new MatchResult.Match(fleetAllocation));
         when(delegatedTokenAllocationRepository.findByTokenIdAndCategoryWithLock(
             delegatedToken.getId(), "refund")).thenReturn(Optional.of(delegateCap));
         when(spendEventRepository.save(any())).thenAnswer(inv -> {
@@ -202,6 +204,8 @@ class AuthorizationServiceDelegationTest {
         fleetAllocation.setQuantityReserved(BigDecimal.valueOf(49800));
 
         setupDelegateTokenPath();
+        when(categoryMatchingService.findMatch(any(), eq("refund"), any()))
+            .thenReturn(new MatchResult.Match(fleetAllocation));
         when(delegatedTokenAllocationRepository.findByTokenIdAndCategoryWithLock(
             delegatedToken.getId(), "refund")).thenReturn(Optional.of(delegateCap));
         when(allocationRepository.findByIdWithLock(fleetAllocation.getId()))
@@ -246,6 +250,8 @@ class AuthorizationServiceDelegationTest {
     @Test
     void authorize_delegateCapApproved_reservesOnDelegateCap() {
         setupDelegateTokenPath();
+        when(categoryMatchingService.findMatch(any(), eq("refund"), any()))
+            .thenReturn(new MatchResult.Match(fleetAllocation));
         when(delegatedTokenAllocationRepository.findByTokenIdAndCategoryWithLock(
             delegatedToken.getId(), "refund")).thenReturn(Optional.of(delegateCap));
         when(allocationRepository.findByIdWithLock(fleetAllocation.getId()))
@@ -265,6 +271,8 @@ class AuthorizationServiceDelegationTest {
     @Test
     void authorize_delegateCapApproved_delegatedTokenIdSetOnSpendEvent() {
         setupDelegateTokenPath();
+        when(categoryMatchingService.findMatch(any(), eq("refund"), any()))
+            .thenReturn(new MatchResult.Match(fleetAllocation));
         when(delegatedTokenAllocationRepository.findByTokenIdAndCategoryWithLock(
             delegatedToken.getId(), "refund")).thenReturn(Optional.of(delegateCap));
         when(allocationRepository.findByIdWithLock(fleetAllocation.getId()))
@@ -296,8 +304,7 @@ class AuthorizationServiceDelegationTest {
             .thenReturn(Optional.of(fleetBudget));
         when(allocationRepository.findByParentBudgetIdOrderByCreatedAtAsc(fleetBudget.getId()))
             .thenReturn(List.of(fleetAllocation));
-        when(categoryMatchingService.findMatch(any(), eq("refund"), any()))
-            .thenReturn(new MatchResult.Match(fleetAllocation));
+        // Category match stub omitted — each test provides its own category-specific stub
     }
 
     private BudgetAllocation buildAllocation(String category, int limit) {
