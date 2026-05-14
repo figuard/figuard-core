@@ -10,6 +10,14 @@
   <body>
     <div id="root"></div>
     <script>window.global = window.globalThis;</script>
+    <script>
+      // Auto-configure sandbox demo key on first visit so the dashboard
+      // works immediately without requiring manual Settings configuration.
+      if (!localStorage.getItem('fg_api_key')) {
+        localStorage.setItem('fg_api_url', '');
+        localStorage.setItem('fg_api_key', 'sb_live_demo');
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
