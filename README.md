@@ -184,7 +184,7 @@ Every FiGuard budget has four layers. You only need Layer 1 to get started. Add 
 | **3. Intent and identity** | `intent_context` for audit readability, `external_reference` for idempotent restart | No, but recommended |
 | **4. Safety controls** | `authorization_expiry_seconds`, `anomaly_detection_enabled`, `entity_dedup_enabled`, `max_transaction_quantity` | No |
 
-→ [Full configuration reference](docs/budget-configuration.md)
+→ [Pick your pattern](docs/pick-your-pattern.md) · [Full configuration reference](docs/budget-configuration.md)
 
 ---
 
@@ -220,7 +220,8 @@ None of this is architecturally exotic. It's the same set of problems that payme
 
 ## Docs
 
-- [Budget Configuration](docs/budget-configuration.md) — the four layers: measurement, category rules, intent, safety controls
+- [Pick Your Pattern](docs/pick-your-pattern.md) — decision tree: find your scenario, get the exact create + authorize calls
+- [Budget Configuration](docs/budget-configuration.md) — full parameter reference for all four configuration layers
 - [Framework Integrations](docs/integrations.md) — LangChain, CrewAI, OpenAI Agents SDK, Anthropic
 - [Fleet Agents & Delegation Tokens](docs/fleet-agents.md)
 - [Enforcement Features](docs/enforcement.md) — denial codes, anomaly detection, allocation modes
