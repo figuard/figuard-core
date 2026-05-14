@@ -2,13 +2,16 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
+  // Replace `global` references inside npm packages at bundle time.
+  // Some packages (e.g. recharts transitive deps) reference the Node.js
+  // `global` variable which does not exist in browsers.
+  define: {
+    global: "globalThis",
+  },
   plugins: [react()],
   server: {
     port: 5173,
     proxy: {
-      // Proxy /api calls to the FiGuard server so the browser sees same-origin
-      // requests and no CORS preflight is needed during local development.
-      // The target defaults to localhost:8080 — override with VITE_API_TARGET env var.
       "/api": {
         target: process.env.VITE_API_TARGET ?? "http://localhost:8080",
         changeOrigin: true,

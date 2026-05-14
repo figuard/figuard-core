@@ -2,8 +2,10 @@ package com.figuard.api;
 
 import com.figuard.api.dto.request.CreateBudgetRequest;
 import com.figuard.api.dto.request.ExtendBudgetRequest;
+import com.figuard.api.dto.request.FundBudgetRequest;
 import com.figuard.api.dto.request.ResumeBudgetRequest;
 import com.figuard.api.dto.request.UpdateBudgetRequest;
+import com.figuard.api.dto.response.BudgetFundingResponse;
 import com.figuard.api.dto.response.BudgetResponse;
 import com.figuard.api.dto.response.SpendEventResponse;
 import com.figuard.api.dto.response.SpendTreeResponse;
@@ -101,6 +103,18 @@ public class BudgetController {
             @PathVariable UUID id,
             @Valid @RequestBody ExtendBudgetRequest request) {
         BudgetResponse response = budgetService.extendBudget(id, request.getExpiresAt(), TenantContext.get());
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Adjust a budget's totalLimit in-place. Supports CREDIT / DEBIT / RESET / RESET_SPENT.
+     * Returns the previous and updated limit alongside the full funding response.
+     */
+    @PostMapping("/{id}/fund")
+    public ResponseEntity<BudgetFundingResponse> fundBudget(
+            @PathVariable UUID id,
+            @Valid @RequestBody FundBudgetRequest request) {
+        BudgetFundingResponse response = budgetService.fundBudget(id, request, TenantContext.get());
         return ResponseEntity.ok(response);
     }
 

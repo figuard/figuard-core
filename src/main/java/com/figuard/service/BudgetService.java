@@ -2,9 +2,14 @@ package com.figuard.service;
 
 import com.figuard.api.dto.request.AllocationRequest;
 import com.figuard.api.dto.request.CreateBudgetRequest;
+import com.figuard.api.dto.request.FundBudgetRequest;
+import com.figuard.api.dto.request.FundBudgetRequest.FundingOperation;
 import com.figuard.api.dto.request.ResumeBudgetRequest;
 import com.figuard.api.dto.request.UpdateBudgetRequest;
+import com.figuard.api.dto.response.BudgetFundingResponse;
 import com.figuard.api.dto.response.BudgetResponse;
+import com.figuard.security.TraceIdFilter;
+import org.slf4j.MDC;
 import com.figuard.domain.enums.BudgetStatus;
 import com.figuard.domain.enums.WebhookEventType;
 import com.figuard.api.mapper.BudgetMapper;
@@ -354,6 +359,85 @@ public class BudgetService {
         log.info("Token rotated: budgetId={} newPrefix={}", budgetId, budget.getSessionTokenPrefix());
 
         return newRawToken;
+    }
+
+    /**
+     * Adjust a budget's totalLimit (and optionally quantitySpent) without re-creating it.
+     *
+     * CREDIT       — top up: totalLimit += amount
+     * DEBIT        — reduce: totalLimit -= amount; rejected if result < quantitySpent
+     * RESET        — set totalLimit to exactly amount; rejected if amount < quantitySpent
+     * RESET_SPENT  — new billing period: quantitySpent = 0, totalLimit = amount
+     *                quantityReserved is kept so in-flight authorizations still count.
+     *
+     * All operations use PESSIMISTIC_WRITE to prevent concurrent funding races.
+     */
+    @Transactional
+    public BudgetFundingResponse fundBudget(UUID id, FundBudgetRequest request, Tenant tenant) {
+        AgentBudget budget = budgetRepository.findByIdWithLock(id)
+            .orElseThrow(() -> new BudgetNotFoundException(id));
+
+        if (!budget.getTenant().getId().equals(tenant.getId())) {
+            throw new BudgetNotFoundException(id);
+        }
+
+        if (budget.getStatus() == BudgetStatus.CANCELLED
+                || budget.getStatus() == BudgetStatus.EXHAUSTED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Cannot fund a budget in terminal state: " + budget.getStatus());
+        }
+
+        BigDecimal previousTotalLimit = budget.getTotalLimit();
+        FundingOperation op = request.getOperation();
+        BigDecimal amount = request.getAmount();
+
+        switch (op) {
+            case CREDIT -> budget.setTotalLimit(budget.getTotalLimit().add(amount));
+            case DEBIT -> {
+                BigDecimal newLimit = budget.getTotalLimit().subtract(amount);
+                if (newLimit.compareTo(budget.getQuantitySpent()) < 0) {
+                    throw new IllegalArgumentException(
+                        "DEBIT of " + amount + " would set totalLimit to " + newLimit
+                        + " which is below quantitySpent (" + budget.getQuantitySpent() + ")");
+                }
+                budget.setTotalLimit(newLimit);
+            }
+            case RESET -> {
+                if (amount.compareTo(budget.getQuantitySpent()) < 0) {
+                    throw new IllegalArgumentException(
+                        "RESET amount " + amount + " is below quantitySpent ("
+                        + budget.getQuantitySpent() + ")");
+                }
+                budget.setTotalLimit(amount);
+            }
+            case RESET_SPENT -> {
+                budget.setQuantitySpent(BigDecimal.ZERO);
+                budget.setTotalLimit(amount);
+                // Reactivate an EXHAUSTED budget if there's headroom again
+                if (budget.getStatus() == BudgetStatus.EXHAUSTED) {
+                    budget.setStatus(BudgetStatus.ACTIVE);
+                }
+            }
+        }
+
+        AgentBudget saved = budgetRepository.save(budget);
+        log.info("Budget funded: id={} tenant={} op={} amount={} newLimit={}",
+            id, tenant.getId(), op, amount, saved.getTotalLimit());
+
+        return BudgetFundingResponse.builder()
+            .budgetId(saved.getId())
+            .operation(op)
+            .amount(amount)
+            .reason(request.getReason())
+            .previousTotalLimit(previousTotalLimit)
+            .totalLimit(saved.getTotalLimit())
+            .quantitySpent(saved.getQuantitySpent())
+            .quantityReserved(saved.getQuantityReserved())
+            .availableQuantity(saved.availableQuantity())
+            .status(saved.getStatus())
+            .updatedAt(java.time.OffsetDateTime.now())
+            .traceId(MDC.get(TraceIdFilter.TRACE_ID_KEY))
+            .build();
     }
 
     // -------------------------------------------------------------------------

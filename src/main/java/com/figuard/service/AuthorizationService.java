@@ -21,9 +21,11 @@ import com.figuard.domain.repository.BudgetAnomalyBaselineRepository;
 import com.figuard.domain.repository.DelegatedTokenAllocationRepository;
 import com.figuard.domain.repository.DelegatedTokenRepository;
 import com.figuard.domain.repository.SpendEventRepository;
+import com.figuard.security.TraceIdFilter;
 import com.figuard.service.model.MatchResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -684,6 +686,7 @@ public class AuthorizationService {
             .allocationSnapshot(allocationSnapshot)
             .originalEventId(originalEventId)
             .budgetSnapshot(budgetSnapshot)
+            .traceId(MDC.get(TraceIdFilter.TRACE_ID_KEY))
             .build();
     }
 }

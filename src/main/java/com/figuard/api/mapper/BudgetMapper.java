@@ -8,6 +8,8 @@ import com.figuard.domain.entity.BudgetAllocation;
 import com.figuard.domain.entity.SpendEvent;
 import com.figuard.domain.entity.Tenant;
 import com.figuard.domain.enums.DenialCode;
+import com.figuard.security.TraceIdFilter;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
@@ -61,6 +63,7 @@ public class BudgetMapper {
             .cancelledAt(budget.getCancelledAt())
             .createdAt(budget.getCreatedAt())
             .metadata(budget.getMetadata())
+            .traceId(MDC.get(TraceIdFilter.TRACE_ID_KEY))
             .build();
     }
 

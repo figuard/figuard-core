@@ -153,7 +153,38 @@ client.confirm_event(auth.event_id, confirmed_amount=267.00)
 git clone https://github.com/figuard/figuard-core
 cd figuard-core && make run
 # Ready at http://localhost:8080
+# Dashboard at http://localhost:5173
 ```
+
+Verify it's working in one line:
+
+```bash
+curl -s -H "X-Agent-Budget-Key: ab_live_demo" \
+  http://localhost:8080/api/v1/budgets
+# {"content":[],"totalElements":0,...}
+```
+
+Run the example scenarios:
+
+```bash
+pip install figuard
+python examples/rogue_agent_scenarios.py
+```
+
+---
+
+## Budget Configuration
+
+Every FiGuard budget has four layers. You only need Layer 1 to get started. Add the others as your use case requires.
+
+| Layer | What it controls | Required? |
+|---|---|---|
+| **1. What you're measuring** | `currency="USD"` for money, `unit="tokens"` for everything else | Yes |
+| **2. Category rules** | `allocations` with `enforcement_mode` — OPEN, CATEGORY_CONSTRAINED, or STRICT | Only if you add allocations |
+| **3. Intent and identity** | `intent_context` for audit readability, `external_reference` for idempotent restart | No, but recommended |
+| **4. Safety controls** | `authorization_expiry_seconds`, `anomaly_detection_enabled`, `entity_dedup_enabled`, `max_transaction_quantity` | No |
+
+→ [Full configuration reference](docs/budget-configuration.md)
 
 ---
 
@@ -189,6 +220,7 @@ None of this is architecturally exotic. It's the same set of problems that payme
 
 ## Docs
 
+- [Budget Configuration](docs/budget-configuration.md) — the four layers: measurement, category rules, intent, safety controls
 - [Framework Integrations](docs/integrations.md) — LangChain, CrewAI, OpenAI Agents SDK, Anthropic
 - [Fleet Agents & Delegation Tokens](docs/fleet-agents.md)
 - [Enforcement Features](docs/enforcement.md) — denial codes, anomaly detection, allocation modes
@@ -200,7 +232,7 @@ None of this is architecturally exotic. It's the same set of problems that payme
 
 ## Examples
 
-- [`examples/enforcement_cookbook.py`](examples/enforcement_cookbook.py) — every enforcement capability in one runnable script
+- [`examples/rogue_agent_scenarios.py`](examples/rogue_agent_scenarios.py) — three incident post-mortems showing what goes wrong without enforcement, and the exact FiGuard config that stops each one
 - [`examples/langchain-shopping-agent/`](examples/langchain-shopping-agent/)
 - [`examples/crewai-research-fleet/`](examples/crewai-research-fleet/)
 

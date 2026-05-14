@@ -4,6 +4,7 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
+import { useEffect } from "react";
 import { isConfigured } from "./api/client";
 
 function navItem(isActive: boolean) {
@@ -40,6 +41,13 @@ function BudgetSubNav({ budgetId }: { budgetId: string }) {
 export function App() {
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Redirect to Settings on first visit if no API key is configured
+  useEffect(() => {
+    if (!isConfigured() && location.pathname !== "/settings") {
+      navigate("/settings", { replace: true });
+    }
+  }, []);
 
   // Extract budget ID from URL when viewing a specific budget
   const budgetMatch = location.pathname.match(/^\/budgets\/([^/]+)/);

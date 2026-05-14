@@ -33,4 +33,7 @@ public class AuthorizationResponse {
 
     // Always present
     private BudgetSnapshot budgetSnapshot;
+
+    // Request trace ID — correlates with X-Trace-Id response header and server logs
+    private String traceId;
 }

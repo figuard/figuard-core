@@ -5,6 +5,7 @@ import { BudgetStatusBar } from "../components/BudgetStatusBar";
 import { ExpiryBadge } from "../components/ExpiryBadge";
 import { BUDGET_STATUS_BADGE } from "../lib/colors";
 import { formatAmount, formatDateTime, shortId } from "../lib/format";
+import { ApiError } from "../api/client";
 import type { BudgetStatus, BudgetResponse } from "../lib/types";
 import type { ListBudgetsParams } from "../api/budgets";
 
@@ -127,10 +128,26 @@ export function BudgetList() {
       </div>
 
       {isError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          Failed to load budgets.{" "}
-          {error instanceof Error ? error.message : "Unknown error."}
-        </div>
+        error instanceof ApiError && error.status === 401 ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-8 text-center shadow-sm">
+            <p className="text-2xl mb-2">🔑</p>
+            <p className="text-sm font-semibold text-amber-900 mb-1">API key not configured</p>
+            <p className="text-sm text-amber-700 mb-4">
+              Add your API key in Settings to connect to your FiGuard server.
+            </p>
+            <button
+              onClick={() => navigate("/settings")}
+              className="inline-flex items-center rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 transition-colors"
+            >
+              Go to Settings →
+            </button>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            Failed to load budgets.{" "}
+            {error instanceof Error ? error.message : "Unknown error."}
+          </div>
+        )
       )}
 
       {isLoading && (

@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+// traceId is included NON_NULL — absent on responses where MDC was not populated
+
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Getter
 @Builder
@@ -44,4 +46,5 @@ public class BudgetResponse {
     private OffsetDateTime cancelledAt;
     private OffsetDateTime createdAt;
     private Map<String, Object> metadata;
+    private String traceId;
 }

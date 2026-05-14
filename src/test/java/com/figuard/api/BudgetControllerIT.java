@@ -55,7 +55,7 @@ class BudgetControllerIT extends IntegrationTestBase {
     }
 
     @Test
-    void createBudget_returns400_whenAllocationSumMismatch() throws Exception {
+    void createBudget_returns400_whenAllocationSumExceedsLimit() throws Exception {
         Map<String, Object> body = Map.of(
             "userId", "user_test",
             "totalLimit", 100.00,
@@ -64,10 +64,10 @@ class BudgetControllerIT extends IntegrationTestBase {
             "allocations", List.of(
                 Map.of("category", "flight",
                     "allowedCategories", List.of("flight"),
-                    "limit", 60.00),
+                    "limit", 80.00),
                 Map.of("category", "hotel",
                     "allowedCategories", List.of("hotel"),
-                    "limit", 30.00)   // sum = 90, not 100
+                    "limit", 60.00)   // sum = 140 > totalLimit 100
             )
         );
 
