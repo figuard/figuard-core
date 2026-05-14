@@ -67,7 +67,7 @@ class GlobalExceptionHandlerIT extends IntegrationTestBase {
 
     @Test
     void illegalArgument_returns400_withINVALID_REQUEST_code() throws Exception {
-        // Allocation sum mismatch triggers IllegalArgumentException in BudgetService
+        // Allocation sum exceeds totalLimit → IllegalArgumentException in BudgetService
         mockMvc.perform(post("/api/v1/budgets")
                 .header("X-Agent-Budget-Key", TEST_API_KEY)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -80,8 +80,8 @@ class GlobalExceptionHandlerIT extends IntegrationTestBase {
                     "allocations", java.util.List.of(
                         Map.of("category", "flight",
                             "allowedCategories", java.util.List.of("flight"),
-                            "limit", 60.00)
-                        // sum = 60, not 100 → IllegalArgumentException
+                            "limit", 120.00)
+                        // sum = 120 > totalLimit 100 → IllegalArgumentException
                     )
                 ))))
             .andExpect(status().isBadRequest())

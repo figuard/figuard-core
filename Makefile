@@ -10,8 +10,17 @@ run:
 	@echo ""
 	@echo "========================================="
 	@echo "[FiGuard] Ready at http://localhost:8080"
+	@echo "[FiGuard] Dashboard: http://localhost:5173"
 	@echo "[FiGuard] Demo API key: ab_live_demo"
 	@echo "[FiGuard] Header: X-Agent-Budget-Key: ab_live_demo"
+	@echo ""
+	@echo "[FiGuard] Smoke test:"
+	@echo "  curl -s -H 'X-Agent-Budget-Key: ab_live_demo' \\"
+	@echo "    http://localhost:8080/api/v1/budgets | head -c 200"
+	@echo ""
+	@echo "[FiGuard] Run examples:"
+	@echo "  pip install figuard"
+	@echo "  python examples/rogue_agent_scenarios.py"
 	@echo "========================================="
 
 stop:

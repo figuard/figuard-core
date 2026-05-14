@@ -102,6 +102,57 @@ class TraceIdIT extends IntegrationTestBase {
     }
 
     // -------------------------------------------------------------------------
+    // traceId field in response body (not just header)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void createBudget_responseBody_containsTraceId_matchingHeader() throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/v1/budgets")
+                .header("X-Agent-Budget-Key", TEST_API_KEY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(budgetJson()))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.traceId").isNotEmpty())
+            .andReturn();
+
+        String headerTraceId = result.getResponse().getHeader("X-Trace-Id");
+        String bodyTraceId = objectMapper.readTree(
+            result.getResponse().getContentAsString()).get("traceId").asText();
+
+        assertThat(bodyTraceId).isEqualTo(headerTraceId);
+    }
+
+    @Test
+    void authorize_responseBody_containsTraceId_matchingHeader() throws Exception {
+        Budget budget = createBudget();
+
+        MvcResult result = mockMvc.perform(post("/api/v1/authorize")
+                .header("X-Session-Token", budget.sessionToken())
+                .header("X-Agent-Budget-Key", TEST_API_KEY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(authorizeJson("50.00")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.traceId").isNotEmpty())
+            .andReturn();
+
+        String headerTraceId = result.getResponse().getHeader("X-Trace-Id");
+        String bodyTraceId = objectMapper.readTree(
+            result.getResponse().getContentAsString()).get("traceId").asText();
+
+        assertThat(bodyTraceId).isEqualTo(headerTraceId);
+    }
+
+    @Test
+    void getBudget_responseBody_containsTraceId() throws Exception {
+        Budget budget = createBudget();
+
+        mockMvc.perform(get("/api/v1/budgets/{id}", budget.id())
+                .header("X-Agent-Budget-Key", TEST_API_KEY))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.traceId").isNotEmpty());
+    }
+
+    // -------------------------------------------------------------------------
     // Token safety: session token and key hash must not appear in responses
     // -------------------------------------------------------------------------
 

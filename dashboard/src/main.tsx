@@ -26,7 +26,7 @@ if (!root) throw new Error("Root element not found");
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter basename="/ui">
+      <BrowserRouter basename={import.meta.env.BASE_URL?.replace(/\/$/, "") || ""}>
         <Routes>
           <Route path="/" element={<App />}>
             <Route index element={<Navigate to="/budgets" replace />} />
