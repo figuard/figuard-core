@@ -468,3 +468,87 @@ class TestFiGuardCallbackHandlerExtended:
         )
 
         assert client.authorize.call_args.kwargs["requested_quantity"] == 189.0
+
+
+class TestCostExtractor:
+    """Tests for FiGuardCallbackHandler cost_extractor parameter."""
+
+    def _make_handler(self, authorize_result, **kwargs):
+        client = _mock_client(authorize_result)
+        handler = FiGuardCallbackHandler(
+            client=client,
+            session_token=SESSION_TOKEN,
+            agent_id=AGENT_ID,
+            **kwargs,
+        )
+        return handler, client
+
+    def test_cost_extractor_used_when_provided(self):
+        """When cost_extractor returns a valid amount, confirm uses it instead of authorized amount."""
+        handler, client = self._make_handler(
+            _authorized("evt_001", 300.0),
+            cost_extractor=lambda out: 267.0,
+        )
+        run_id = uuid4()
+        handler.on_tool_start({"name": "book_flight"}, '{"amount": 300.0}', run_id=run_id)
+        handler.on_tool_end("Flight booked for $267", run_id=run_id)
+
+        client.confirm_event.assert_called_once_with("evt_001", confirmed_quantity=267.0)
+
+    def test_no_cost_extractor_confirms_authorized_amount(self):
+        """Without cost_extractor, confirm uses the authorized amount (existing behaviour)."""
+        handler, client = self._make_handler(_authorized("evt_001", 300.0))
+        run_id = uuid4()
+        handler.on_tool_start({"name": "book_flight"}, '{"amount": 300.0}', run_id=run_id)
+        handler.on_tool_end("Flight booked", run_id=run_id)
+
+        client.confirm_event.assert_called_once_with("evt_001", confirmed_quantity=300.0)
+
+    def test_cost_extractor_fallback_on_exception(self):
+        """If cost_extractor raises, confirm falls back to authorized amount."""
+        handler, client = self._make_handler(
+            _authorized("evt_001", 300.0),
+            cost_extractor=lambda out: (_ for _ in ()).throw(ValueError("bad output")),
+        )
+        run_id = uuid4()
+        handler.on_tool_start({"name": "book_flight"}, '{"amount": 300.0}', run_id=run_id)
+        handler.on_tool_end("unparseable output", run_id=run_id)
+
+        client.confirm_event.assert_called_once_with("evt_001", confirmed_quantity=300.0)
+
+    def test_cost_extractor_fallback_on_zero(self):
+        """If cost_extractor returns zero, confirm falls back to authorized amount."""
+        handler, client = self._make_handler(
+            _authorized("evt_001", 300.0),
+            cost_extractor=lambda out: 0.0,
+        )
+        run_id = uuid4()
+        handler.on_tool_start({"name": "book_flight"}, '{"amount": 300.0}', run_id=run_id)
+        handler.on_tool_end("", run_id=run_id)
+
+        client.confirm_event.assert_called_once_with("evt_001", confirmed_quantity=300.0)
+
+    def test_cost_extractor_fallback_on_negative(self):
+        """If cost_extractor returns negative, confirm falls back to authorized amount."""
+        handler, client = self._make_handler(
+            _authorized("evt_001", 300.0),
+            cost_extractor=lambda out: -50.0,
+        )
+        run_id = uuid4()
+        handler.on_tool_start({"name": "book_flight"}, '{"amount": 300.0}', run_id=run_id)
+        handler.on_tool_end("refund?", run_id=run_id)
+
+        client.confirm_event.assert_called_once_with("evt_001", confirmed_quantity=300.0)
+
+    def test_cost_extractor_parses_json_output(self):
+        """Realistic use: cost_extractor reads charged_amount from JSON tool output."""
+        import json
+        handler, client = self._make_handler(
+            _authorized("evt_001", 300.0),
+            cost_extractor=lambda out: json.loads(out)["charged_amount"],
+        )
+        run_id = uuid4()
+        handler.on_tool_start({"name": "book_flight"}, '{"amount": 300.0}', run_id=run_id)
+        handler.on_tool_end('{"status": "booked", "charged_amount": 267.50}', run_id=run_id)
+
+        client.confirm_event.assert_called_once_with("evt_001", confirmed_quantity=267.5)
