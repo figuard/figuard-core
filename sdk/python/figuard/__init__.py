@@ -28,7 +28,7 @@ Quick start::
         print(f"Spend denied: {e.denial_reason}")
 """
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 from .client import FiGuardClient
 from .exceptions import FiGuardApiError, FiGuardConnectionError, FiGuardDeniedException, FiGuardError
