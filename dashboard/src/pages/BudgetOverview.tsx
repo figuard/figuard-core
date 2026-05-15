@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -13,22 +14,23 @@ import { useLedger } from "../hooks/useLedger";
 import { BudgetStatusBar } from "../components/BudgetStatusBar";
 import { AllocationRings } from "../components/AllocationRings";
 import { ExpiryBadge } from "../components/ExpiryBadge";
+import { AddFundsModal } from "../components/AddFundsModal";
 import { BUDGET_STATUS_BADGE } from "../lib/colors";
 import { formatDateTime, formatAmount, shortId } from "../lib/format";
 import { resumeBudget } from "../api/budgets";
 
-// Build 7-day daily spend buckets from ledger events.
+// Build 24-hour hourly spend buckets from ledger events.
 function buildSparkline(
   events: { createdAt: string; requestedQuantity: number; decision: string }[],
 ) {
   const now = Date.now();
-  const DAY_MS = 86_400_000;
-  const buckets: { day: string; spend: number }[] = Array.from(
-    { length: 7 },
+  const HOUR_MS = 3_600_000;
+  const buckets: { hour: string; spend: number }[] = Array.from(
+    { length: 24 },
     (_, i) => {
-      const d = new Date(now - (6 - i) * DAY_MS);
+      const d = new Date(now - (23 - i) * HOUR_MS);
       return {
-        day: d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }),
+        hour: d.toLocaleTimeString(undefined, { hour: "numeric", hour12: true }),
         spend: 0,
       };
     },
@@ -37,9 +39,9 @@ function buildSparkline(
   for (const ev of events) {
     if (ev.decision !== "CONFIRMED" && ev.decision !== "AUTHORIZED") continue;
     const age = now - new Date(ev.createdAt).getTime();
-    if (age > 7 * DAY_MS) continue;
-    const bucketIdx = 6 - Math.floor(age / DAY_MS);
-    if (bucketIdx >= 0 && bucketIdx < 7) {
+    if (age > 24 * HOUR_MS) continue;
+    const bucketIdx = 23 - Math.floor(age / HOUR_MS);
+    if (bucketIdx >= 0 && bucketIdx < 24) {
       buckets[bucketIdx].spend += ev.requestedQuantity;
     }
   }
@@ -53,6 +55,7 @@ export function BudgetOverview() {
   const { data: ledgerPage } = useLedger(id, { page: 0, size: 500 });
 
   // Hooks must come before any early returns
+  const [addFundsOpen, setAddFundsOpen] = useState(false);
   const queryClient = useQueryClient();
   const resumeMutation = useMutation({
     mutationFn: () => resumeBudget(id!),
@@ -104,6 +107,12 @@ export function BudgetOverview() {
               : "OPEN"}
           </span>
           <ExpiryBadge expiresAt={budget.expiresAt} createdAt={budget.createdAt} budgetStatus={budget.status} />
+          <button
+            onClick={() => setAddFundsOpen(true)}
+            className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+          >
+            Add Funds
+          </button>
         </div>
       </div>
 
@@ -158,7 +167,7 @@ export function BudgetOverview() {
       {/* 7-day sparkline — hidden when empty */}
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <h2 className="mb-4 text-sm font-semibold text-gray-700">
-          Spend — last 7 days
+          Spend — last 24 hours
         </h2>
         {hasSpend ? (
           <ResponsiveContainer width="100%" height={140}>
@@ -170,7 +179,7 @@ export function BudgetOverview() {
                 </linearGradient>
               </defs>
               <XAxis
-                dataKey="day"
+                dataKey="hour"
                 tick={{ fontSize: 10, fill: "#9ca3af" }}
                 tickLine={false}
                 axisLine={false}
@@ -205,7 +214,7 @@ export function BudgetOverview() {
           </ResponsiveContainer>
         ) : (
           <div className="flex items-center justify-center h-[140px] text-sm text-gray-400">
-            No spend activity in the last 7 days
+            No spend activity in the last 24 hours
           </div>
         )}
       </div>
@@ -247,6 +256,10 @@ export function BudgetOverview() {
             </>
           )}
         </div>
+      )}
+
+      {addFundsOpen && (
+        <AddFundsModal budget={budget} onClose={() => setAddFundsOpen(false)} />
       )}
     </div>
   );
