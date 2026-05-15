@@ -253,9 +253,9 @@ class WebhookIT extends IntegrationTestBase {
 
         // Both BUDGET_PAUSED and ANOMALY_DETECTED webhooks must have fired
         await().atMost(5, TimeUnit.SECONDS).untilAsserted(() -> {
-            wireMock.verify(atLeast(1), postRequestedFor(urlEqualTo("/webhook"))
+            wireMock.verify(1, postRequestedFor(urlEqualTo("/webhook"))
                 .withRequestBody(containing("\"eventType\":\"BUDGET_PAUSED\"")));
-            wireMock.verify(atLeast(1), postRequestedFor(urlEqualTo("/webhook"))
+            wireMock.verify(1, postRequestedFor(urlEqualTo("/webhook"))
                 .withRequestBody(containing("\"eventType\":\"ANOMALY_DETECTED\"")));
         });
     }

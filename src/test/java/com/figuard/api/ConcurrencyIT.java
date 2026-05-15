@@ -185,9 +185,10 @@ class ConcurrencyIT extends IntegrationTestBase {
 
         // 3. Final state: quantityReserved must not exceed totalLimit (50)
         AgentBudget budget = budgetRepository.findById(budgetId).orElseThrow();
-        assertThat(budget.getQuantityReserved().add(budget.getQuantitySpent()))
+        assertThat(budget.getQuantityReserved().add(budget.getQuantitySpent())
+                .compareTo(budget.getTotalLimit()))
             .as("reserved + spent must never exceed totalLimit after concurrent reset")
-            .isLessThanOrEqualByComparingTo(budget.getTotalLimit());
+            .isLessThanOrEqualTo(0);
         assertThat(authOk.get())
             .as("authorizations must not exceed 5 ($50 / $10) even with RESET_SPENT racing")
             .isLessThanOrEqualTo(5);
