@@ -1,12 +1,17 @@
 """
-Scenario 3 — The Concurrent Fleet Overspend (WITH FiGuard)
+Scenario 3 — The Concurrent Fleet Overspend
 
+THE INCIDENT
+A LangGraph supervisor spawned 10 research sub-agents simultaneously.
+Each read the same $1,000 available balance. All 10 saw enough funds.
+All 10 were approved. Total spend: $2,000. Budget exceeded by $1,000.
+
+THE FIX
 FiGuard uses SERIALIZABLE isolation on every authorize() write.
-10 agents fire simultaneously. Each sees the same available balance,
-but FiGuard's pessimistic write lock means exactly 5 are authorized
-and 5 are denied. The budget is never exceeded.
+A pessimistic write lock on the budget row means each agent's read-modify-write
+is atomic. Exactly 5 are authorized ($1,000), 5 are denied. Budget never exceeded.
 
-Run against the sandbox — no local setup required:
+Run:
     pip install figuard
     python scenario_3_concurrent_overspend.py
 """
@@ -47,9 +52,7 @@ def agent_spend(agent_id: int) -> None:
         print(f"Agent {agent_id:2d}: {status}  $200.00  {reason}")
 
 
-print(f"Budget limit:  ${budget.total_limit:.2f}")
-print(f"Agents:        10  (each requests $200.00)")
-print(f"Total asked:   $2,000.00")
+print(f"Budget: ${budget.total_limit:.2f}  |  10 agents × $200 = $2,000 requested")
 print()
 
 threads = [threading.Thread(target=agent_spend, args=(i,)) for i in range(10)]
@@ -59,11 +62,8 @@ for t in threads:
     t.join()
 
 authorized = [r for r in results if r[1] == "AUTHORIZED"]
-denied = [r for r in results if r[1] != "AUTHORIZED"]
-total_authorized = len(authorized) * 200.00
+total = len(authorized) * 200.0
 
 print()
-print(f"Authorized: {len(authorized)} agents  (${total_authorized:.2f})")
-print(f"Denied:     {len(denied)} agents")
-print(f"Budget used: ${total_authorized:.2f} of ${budget.total_limit:.2f}")
-print(f"Never exceeded: {total_authorized <= budget.total_limit}")
+print(f"✓ Authorized: {len(authorized)}/10 agents  (${total:.2f} of ${budget.total_limit:.2f})")
+print(f"  Budget never exceeded: {total <= budget.total_limit}")
