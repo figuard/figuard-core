@@ -153,6 +153,9 @@ client.confirm_event(auth.event_id, confirmed_quantity=267.00)
 git clone https://github.com/figuard/figuard-core
 cd figuard-core && make run
 # Ready at http://localhost:8080
+
+# Optional: run the dashboard in a separate terminal
+make dashboard
 # Dashboard at http://localhost:5173
 ```
 

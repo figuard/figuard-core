@@ -93,9 +93,37 @@ python demo.py
 | Area | What to build |
 |---|---|
 | New framework integration | [LlamaIndex](https://www.llamaindex.ai/), [Vercel AI SDK](https://sdk.vercel.ai/), [DSPy](https://dspy.ai/) — follow the pattern in `sdk/python/figuard/integrations/` |
-| TypeScript SDK | Core `FiGuardClient` with `authorize`, `confirm_event`, `fail_event`, `void_event` |
-| Go SDK | Same scope as TypeScript SDK |
+| Go SDK | Client with `authorize`, `confirm_event`, `fail_event`, `void_event` — same scope as the TypeScript SDK |
+| Java SDK on Maven Central | `sdk/java/` exists at 0.3.0 but is not yet published — set up OSSRH + GPG signing in `pom.xml` |
 | Example agents | Add to `examples/` — must be self-contained and runnable |
+
+---
+
+## Running the TypeScript SDK tests
+
+```bash
+cd sdk/typescript
+npm install
+npm test
+```
+
+## Running the MCP server tests
+
+```bash
+cd packages/mcp
+npm install
+npm test
+```
+
+## Running the dashboard locally
+
+```bash
+cd dashboard
+npm install
+npm run dev
+# Opens at http://localhost:5173
+# Point it at your running FiGuard instance (default: http://localhost:8080)
+```
 
 ---
 
@@ -105,15 +133,24 @@ python demo.py
 figuard-core/
 ├── src/                     # Java Spring Boot service
 │   └── main/
-│       ├── java/com/figuard/
+│       ├── java/io/figuard/
 │       └── resources/
 ├── sdk/
-│   └── python/
-│       ├── figuard/         # SDK source
-│       │   └── integrations/
-│       └── tests/
-│           ├── integrations/
-│           └── live/
+│   ├── python/
+│   │   ├── figuard/         # SDK source
+│   │   │   └── integrations/    # LangChain, CrewAI, OpenAI Agents, OpenAI, Anthropic
+│   │   └── tests/
+│   │       ├── integrations/
+│   │       └── live/
+│   ├── typescript/          # TypeScript SDK (npm: figuard)
+│   │   └── src/
+│   └── java/                # Java SDK (Maven, 0.3.0)
+│       └── src/
+├── packages/
+│   └── mcp/                 # MCP server (npm: figuard-mcp, npx figuard-mcp)
+│       └── src/
+├── dashboard/               # React operator dashboard (Vite)
+│   └── src/
 ├── demo/                    # Standalone demo script
 ├── examples/                # Runnable examples
 ├── Makefile

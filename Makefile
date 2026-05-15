@@ -1,4 +1,4 @@
-.PHONY: run stop reset logs test test-live publish
+.PHONY: run stop reset logs test test-ts test-mcp test-all test-live dashboard publish
 
 run:
 	docker compose up --build -d
@@ -10,7 +10,7 @@ run:
 	@echo ""
 	@echo "========================================="
 	@echo "[FiGuard] Ready at http://localhost:8080"
-	@echo "[FiGuard] Dashboard: http://localhost:5173"
+	@echo "[FiGuard] Dashboard: run 'make dashboard' in a separate terminal"
 	@echo "[FiGuard] Demo API key: ab_live_demo"
 	@echo "[FiGuard] Header: X-Agent-Budget-Key: ab_live_demo"
 	@echo ""
@@ -38,14 +38,34 @@ logs:
 test:
 	@echo "[FiGuard] Running Python SDK unit tests..."
 	@cd sdk/python && python -m pytest tests/ --ignore=tests/live -q --tb=short
-	@echo "[FiGuard] Unit tests passed."
+	@echo "[FiGuard] Python SDK tests passed."
+
+test-ts:
+	@echo "[FiGuard] Running TypeScript SDK tests..."
+	@cd sdk/typescript && npm install --silent && npm test
+	@echo "[FiGuard] TypeScript SDK tests passed."
+
+test-mcp:
+	@echo "[FiGuard] Running MCP server tests..."
+	@cd packages/mcp && npm install --silent && npm test
+	@echo "[FiGuard] MCP server tests passed."
+
+test-all: test test-ts test-mcp
+	@echo "[FiGuard] All test suites passed."
 
 test-live: test
 	@echo "[FiGuard] Running live integration tests (container must be running)..."
 	@cd sdk/python && python -m pytest tests/live/ -v --tb=short
 	@echo "[FiGuard] Live tests passed."
 
-publish: test-live
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+
+dashboard:
+	@echo "[FiGuard] Starting dashboard at http://localhost:5173"
+	@echo "[FiGuard] Point it at your running FiGuard instance (default: http://localhost:8080)"
+	@cd dashboard && npm install --silent && npm run dev
+
+publish: test-all
 	@echo "[FiGuard] Building wheel..."
 	@cd sdk/python && python -m build
 	@echo "[FiGuard] Publishing to PyPI..."
