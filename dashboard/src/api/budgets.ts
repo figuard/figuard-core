@@ -1,5 +1,12 @@
 import { apiFetch } from "./client";
-import type { BudgetResponse, BudgetStatus, Page } from "../lib/types";
+import type {
+  BudgetResponse,
+  BudgetFundingResponse,
+  BudgetStatus,
+  CreateBudgetRequest,
+  FundBudgetRequest,
+  Page,
+} from "../lib/types";
 
 export async function getBudget(id: string): Promise<BudgetResponse> {
   return apiFetch<BudgetResponse>(`/api/v1/budgets/${id}`);
@@ -23,4 +30,23 @@ export async function listBudgets(
   qs.set("size", String(params.size ?? 20));
   if (params.status) qs.set("status", params.status);
   return apiFetch<Page<BudgetResponse>>(`/api/v1/budgets?${qs}`);
+}
+
+export async function createBudget(
+  payload: CreateBudgetRequest,
+): Promise<BudgetResponse> {
+  return apiFetch<BudgetResponse>("/api/v1/budgets", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fundBudget(
+  id: string,
+  payload: FundBudgetRequest,
+): Promise<BudgetFundingResponse> {
+  return apiFetch<BudgetFundingResponse>(`/api/v1/budgets/${id}/fund`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }

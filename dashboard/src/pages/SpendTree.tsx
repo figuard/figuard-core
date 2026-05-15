@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { useBudget } from "../hooks/useBudget";
 import { useSpendTree } from "../hooks/useSpendTree";
 import { SpendTreeNode } from "../components/SpendTreeNode";
-import { formatAmount } from "../lib/format";
+import { formatAmount, shortId } from "../lib/format";
 import type { SpendTreeResponse } from "../lib/types";
 
 const TREE_EVENT_LIMIT = 25;
@@ -18,15 +18,18 @@ function ZoomableTree({
   tree,
   currency,
   unit,
+  budgetId,
 }: {
   tree: SpendTreeResponse;
   currency: string;
   unit?: string | null;
+  budgetId?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const treeRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const [naturalHeight, setNaturalHeight] = useState(0);
+  const [exporting, setExporting] = useState(false);
   // null = auto-fit was never computed yet; used to suppress the initial scale flash
   const [ready, setReady] = useState(false);
 
@@ -57,6 +60,30 @@ function ZoomableTree({
   const changeZoom = (delta: number) => {
     setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z + delta).toFixed(2))));
   };
+
+  const exportPng = useCallback(async () => {
+    if (!treeRef.current || exporting) return;
+    setExporting(true);
+    try {
+      const { default: html2canvas } = await import("html2canvas");
+      // Temporarily reset zoom so we capture at native resolution
+      const prevTransform = treeRef.current.style.transform;
+      treeRef.current.style.transform = "scale(1)";
+      const canvas = await html2canvas(treeRef.current, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+      treeRef.current.style.transform = prevTransform;
+      const link = document.createElement("a");
+      link.download = `spend-tree-${budgetId ? shortId(budgetId) : "export"}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } finally {
+      setExporting(false);
+    }
+  }, [exporting, budgetId]);
 
   // Container height tracks scaled content to avoid blank space below tree
   const containerHeight =
@@ -109,6 +136,17 @@ function ZoomableTree({
             className="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-200 transition-colors"
           >
             Fit
+          </button>
+
+          <div className="w-px h-4 bg-gray-200 mx-1" />
+
+          <button
+            onClick={exportPng}
+            disabled={exporting}
+            title="Export as PNG"
+            className="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {exporting ? "Exporting…" : "Export PNG"}
           </button>
         </div>
       </div>
@@ -240,6 +278,7 @@ export function SpendTree() {
                 tree={tree}
                 currency={budget?.currency ?? "USD"}
                 unit={budget?.unit}
+                budgetId={id}
               />
             </>
           )}

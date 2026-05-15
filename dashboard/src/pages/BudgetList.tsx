@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useBudgets } from "../hooks/useBudgets";
 import { BudgetStatusBar } from "../components/BudgetStatusBar";
 import { ExpiryBadge } from "../components/ExpiryBadge";
+import { HealthBadge } from "../components/HealthBadge";
+import { NewBudgetModal } from "../components/NewBudgetModal";
 import { BUDGET_STATUS_BADGE } from "../lib/colors";
 import { formatAmount, formatDateTime, shortId } from "../lib/format";
 import { ApiError } from "../api/client";
@@ -50,6 +52,7 @@ export function BudgetList() {
   });
   const [userIdSearch, setUserIdSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("newest");
+  const [newBudgetOpen, setNewBudgetOpen] = useState(false);
   const { data, isLoading, isFetching, isError, error } = useBudgets(params);
 
   const filteredBudgets = useMemo(() => {
@@ -86,6 +89,13 @@ export function BudgetList() {
               Refreshing…
             </span>
           )}
+          {/* New Budget */}
+          <button
+            onClick={() => setNewBudgetOpen(true)}
+            className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+          >
+            + New Budget
+          </button>
           {/* User ID search */}
           <input
             type="text"
@@ -204,6 +214,7 @@ export function BudgetList() {
                       >
                         {budget.status}
                       </span>
+                      <HealthBadge budget={budget} />
                       <ExpiryBadge
                         expiresAt={budget.expiresAt}
                         createdAt={budget.createdAt}
@@ -262,6 +273,10 @@ export function BudgetList() {
             </div>
           )}
         </>
+      )}
+
+      {newBudgetOpen && (
+        <NewBudgetModal onClose={() => setNewBudgetOpen(false)} />
       )}
     </div>
   );

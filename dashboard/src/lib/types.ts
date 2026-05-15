@@ -273,6 +273,46 @@ export interface CounterfactualReplayResponse {
 }
 
 // ------------------------------------------------------------
+// Fund budget types
+// ------------------------------------------------------------
+
+export type FundingOperation = "CREDIT" | "DEBIT" | "RESET" | "RESET_SPENT";
+
+export interface FundBudgetRequest {
+  operation: FundingOperation;
+  amount: number;
+  reason?: string;
+}
+
+export interface BudgetFundingResponse {
+  budgetId: string;
+  operation: FundingOperation;
+  amount: number;
+  reason: string | null;
+  previousTotalLimit: number;
+  totalLimit: number;
+  quantitySpent: number;
+  quantityReserved: number;
+  availableQuantity: number;
+  status: BudgetStatus;
+  updatedAt: string;
+  traceId: string | null;
+}
+
+// ------------------------------------------------------------
+// Create budget types
+// ------------------------------------------------------------
+
+export interface CreateBudgetRequest {
+  userId: string;
+  totalLimit: string;
+  currency: string;
+  intentContext?: string;
+  maxTransactionQuantity?: string;
+  expiresAt?: string;
+}
+
+// ------------------------------------------------------------
 // App-level types
 // ------------------------------------------------------------
 
