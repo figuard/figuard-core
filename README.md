@@ -173,18 +173,13 @@ python examples/rogue_agent_scenarios.py
 
 ---
 
-## Budget Configuration
+## Create Your First Policy
 
-Every FiGuard budget has four layers. You only need Layer 1 to get started. Add the others as your use case requires.
+Pick your scenario in the interactive wizard — monetary vs non-monetary budget, single agent vs fleet, per-category limits, safety controls — and get the exact `create_budget` + `authorize` calls ready to paste.
 
-| Layer | What it controls | Required? |
-|---|---|---|
-| **1. What you're measuring** | `currency="USD"` for money, `unit="tokens"` for everything else | Yes |
-| **2. Category rules** | `allocations` with `enforcement_mode` — OPEN, CATEGORY_CONSTRAINED, or STRICT | Only if you add allocations |
-| **3. Intent and identity** | `intent_context` for audit readability, `external_reference` for idempotent restart | No, but recommended |
-| **4. Safety controls** | `authorization_expiry_seconds`, `anomaly_detection_enabled`, `entity_dedup_enabled`, `max_transaction_quantity` | No |
+**[→ Open the code wizard](https://figuard.io/#get-started)**
 
-→ [Pick your pattern](docs/pick-your-pattern.md) · [Full configuration reference](docs/budget-configuration.md)
+Or follow the decision tree in [Pick your pattern](docs/pick-your-pattern.md) if you prefer plain docs. Full parameter reference in [Budget configuration](docs/budget-configuration.md).
 
 ---
 
