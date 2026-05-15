@@ -231,7 +231,7 @@ None of this is architecturally exotic. It's the same set of problems that payme
 
 ## Examples
 
-- [`examples/rogue_agent_scenarios.py`](examples/rogue_agent_scenarios.py) — three incident post-mortems showing what goes wrong without enforcement, and the exact FiGuard config that stops each one
+- [`examples/rogue_agent_scenarios/`](examples/rogue_agent_scenarios/) — five failure modes with runnable before/after code: infinite loops, duplicate payments, concurrent overspend, rogue fleet agents, and category violations
 
 ## SDKs
 
