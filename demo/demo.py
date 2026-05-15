@@ -120,13 +120,13 @@ class _RawClient:
             body["allocations"] = allocations
         return self.post("/api/v1/budgets", json=body)
 
-    def authorize(self, *, session_token, agent_id, description, requested_amount,
+    def authorize(self, *, session_token, agent_id, description, requested_quantity,
                   claimed_category=None, parent_event_id=None):
         body = {
             "agentId": agent_id,
             "actionType": "PURCHASE",
             "description": description,
-            "requestedQuantity": requested_amount,
+            "requestedQuantity": requested_quantity,
             "idempotencyKey": str(uuid.uuid4()),
         }
         if claimed_category:
@@ -136,9 +136,9 @@ class _RawClient:
         return self.post("/api/v1/authorize", json=body,
                          extra_headers={"X-Session-Token": session_token})
 
-    def confirm(self, event_id, confirmed_amount):
+    def confirm(self, event_id, confirmed_quantity):
         return self.post(f"/api/v1/events/{event_id}/confirm",
-                         json={"confirmedQuantity": confirmed_amount})
+                         json={"confirmedQuantity": confirmed_quantity})
 
     def get_budget(self, budget_id):
         return self.get(f"/api/v1/budgets/{budget_id}")
@@ -224,14 +224,14 @@ def scenario_travel(client: _RawClient, state: dict) -> None:
     # Orchestrator: try premium flight first — denied (exceeds $150 allocation)
     r = client.authorize(session_token=tok, agent_id="orchestrator_v1",
                          description="Premium flight — JFK business class",
-                         requested_amount=280.00, claimed_category="flight")
+                         requested_quantity=280.00, claimed_category="flight")
     d, premium_id, reason = _auth_result(r)
     _print_decision("orchestrator → Premium flight — JFK business class", d, 280.00, reason)
 
     # Orchestrator: fall back to economy — authorized (this becomes the ROOT event)
     r = client.authorize(session_token=tok, agent_id="orchestrator_v1",
                          description="Economy flight — JFK round-trip",
-                         requested_amount=149.00, claimed_category="flight")
+                         requested_quantity=149.00, claimed_category="flight")
     d, flight_id, reason = _auth_result(r)
     _print_decision("orchestrator → Economy flight — JFK round-trip", d, 149.00, reason)
     if d == "AUTHORIZED":
@@ -240,7 +240,7 @@ def scenario_travel(client: _RawClient, state: dict) -> None:
     # hotel_agent: spawned by orchestrator — cites flight event as parent
     r = client.authorize(session_token=tok, agent_id="hotel_agent_v1",
                          description="Hotel — 2 nights Manhattan",
-                         requested_amount=260.00, claimed_category="hotel",
+                         requested_quantity=260.00, claimed_category="hotel",
                          parent_event_id=flight_id)
     d, hotel_id, reason = _auth_result(r)
     _print_decision("  hotel_agent → Hotel — 2 nights Manhattan", d, 260.00, reason, indent=1)
@@ -250,7 +250,7 @@ def scenario_travel(client: _RawClient, state: dict) -> None:
     # transport_agent: spawned by orchestrator — cites flight event as parent
     r = client.authorize(session_token=tok, agent_id="transport_agent_v1",
                          description="Rental car — 3 days",
-                         requested_amount=95.00, claimed_category="car_rental",
+                         requested_quantity=95.00, claimed_category="car_rental",
                          parent_event_id=flight_id)
     d, transport_id, reason = _auth_result(r)
     _print_decision("  transport_agent → Rental car — 3 days (over $50 cap)", d, 95.00, reason, indent=1)
@@ -295,7 +295,7 @@ def scenario_refund(client: _RawClient, state: dict) -> None:
 
         r = client.authorize(session_token=tok, agent_id="support_agent_v1",
                              description=f"Refund for: {issue}",
-                             requested_amount=refund_amount)
+                             requested_quantity=refund_amount)
         decision, event_id, denial_code = _auth_result(r)
 
         _print_decision(f"{customer_id}: {issue}", decision, refund_amount, denial_code)
@@ -347,7 +347,7 @@ def scenario_campaign(client: _RawClient, state: dict) -> None:
 
     def auth(agent_id, description, amount, category, parent=None, indent=0):
         r = client.authorize(session_token=tok, agent_id=agent_id,
-                             description=description, requested_amount=amount,
+                             description=description, requested_quantity=amount,
                              claimed_category=category, parent_event_id=parent)
         d, eid, reason = _auth_result(r)
         _print_decision(f"{'  ' * indent}{agent_id} → {description}", d, amount, reason)
