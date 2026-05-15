@@ -94,6 +94,21 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
     **Non-spending tools:**
     Pass tool names to ``ignore_tools`` to skip authorization for search,
     retrieval, or other read-only operations.
+
+    **Exact cost confirmation:**
+    By default the handler confirms with the same amount that was authorized.
+    If your tool returns the actual settled cost, provide a ``cost_extractor``
+    to confirm with the real amount and release any unused reservation::
+
+        handler = FiGuardCallbackHandler(
+            client=client,
+            session_token=budget.session_token,
+            cost_extractor=lambda output: json.loads(output)["charged_amount"],
+        )
+
+    The ``output`` argument is the raw string the tool returns to the LLM.
+    If the extractor raises or returns a non-positive value, the handler falls
+    back to confirming with the authorized amount and logs a warning.
     """
 
     raise_error: bool = True  # propagate ToolException so denials block execution
@@ -108,6 +123,7 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
         tool_category_map: Optional[Dict[str, str]] = None,
         ignore_tools: Optional[Set[str]] = None,
         amount_extractor: Optional[Callable[[Dict[str, Any]], float]] = None,
+        cost_extractor: Optional[Callable[[Any], float]] = None,
         debug: bool = False,
     ) -> None:
         """
@@ -125,6 +141,14 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
                                   Use when the spend amount lives under a non-standard
                                   key or must be computed from multiple fields.
                                   Example: ``amount_extractor=lambda d: d.get("price") or d.get("cost", 0)``
+        :param cost_extractor:    Optional callable ``(tool_output: Any) -> float``.
+                                  Called in ``on_tool_end`` to extract the actual settled
+                                  cost from the tool's return value. When provided, the
+                                  handler confirms with the real cost instead of the
+                                  authorized amount, releasing any unused reservation.
+                                  Falls back to the authorized amount if the extractor
+                                  raises or returns a non-positive value.
+                                  Example: ``cost_extractor=lambda out: json.loads(out)["charged_amount"]``
         :param debug:             When ``True``, logs the category and amount being sent
                                   to FiGuard for each tool call. Useful during integration.
         """
@@ -136,6 +160,7 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
         self._tool_category_map: Dict[str, str] = tool_category_map or {}
         self._ignore_tools: Set[str] = ignore_tools or set()
         self._amount_extractor = amount_extractor
+        self._cost_extractor = cost_extractor
         self._debug = debug
         # run_id → (event_id, amount) — populated on authorize, consumed on confirm/fail
         self._pending: Dict[str, tuple[str, float]] = {}
@@ -206,10 +231,38 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
         if pending is None:
             return  # tool was ignored or denied — nothing to confirm
 
-        event_id, amount = pending
+        event_id, authorized_amount = pending
+        confirmed_amount = authorized_amount
+
+        if self._cost_extractor is not None:
+            try:
+                extracted = float(self._cost_extractor(output))
+                if extracted > 0:
+                    confirmed_amount = extracted
+                    if self._debug:
+                        logger.info(
+                            "figuard debug: cost_extractor returned %.4f (authorized=%.4f)",
+                            extracted, authorized_amount,
+                        )
+                else:
+                    logger.warning(
+                        "figuard: cost_extractor returned non-positive value %.4f "
+                        "for event_id=%s — confirming with authorized amount %.4f",
+                        extracted, event_id, authorized_amount,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "figuard: cost_extractor raised %s for event_id=%s "
+                    "— confirming with authorized amount %.4f",
+                    exc, event_id, authorized_amount,
+                )
+
         try:
-            self._client.confirm_event(event_id, confirmed_quantity=amount)
-            logger.debug("figuard: CONFIRMED event_id=%s", event_id)
+            self._client.confirm_event(event_id, confirmed_quantity=confirmed_amount)
+            logger.debug(
+                "figuard: CONFIRMED event_id=%s confirmed=%.4f authorized=%.4f",
+                event_id, confirmed_amount, authorized_amount,
+            )
         except Exception as exc:
             logger.warning("figuard: confirm failed event_id=%s: %s", event_id, exc)
 
