@@ -237,11 +237,11 @@ Five real failure modes — each a runnable Python file plus an interactive Cola
 
 | # | Scenario | Colab |
 |---|----------|-------|
-| 1 | **Infinite quality loop** — 847 iterations, $16.94, no alert | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/get-figuard/figuard-notebooks/blob/main/agent-incidents/01_infinite_loop.ipynb) |
-| 2 | **Duplicate invoice payment** — timeout + retry = double charge | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/get-figuard/figuard-notebooks/blob/main/agent-incidents/02_duplicate_payment.ipynb) |
-| 3 | **Concurrent fleet overspend** — 10 agents, 1 budget, $2k spent | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/get-figuard/figuard-notebooks/blob/main/agent-incidents/03_concurrent_overspend.ipynb) |
-| 4 | **Rogue sub-agent** — one hallucinating agent drains the whole fleet | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/get-figuard/figuard-notebooks/blob/main/agent-incidents/04_rogue_subagent_fleet.ipynb) |
-| 5 | **Category violation** — hotel charged to flight budget, found at month-end | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/get-figuard/figuard-notebooks/blob/main/agent-incidents/05_category_violation.ipynb) |
+| 1 | **Infinite quality loop** — 847 iterations, $16.94, no alert | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/01_infinite_loop.ipynb) |
+| 2 | **Duplicate invoice payment** — timeout + retry = double charge | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/02_duplicate_payment.ipynb) |
+| 3 | **Concurrent fleet overspend** — 10 agents, 1 budget, $2k spent | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/03_concurrent_overspend.ipynb) |
+| 4 | **Rogue sub-agent** — one hallucinating agent drains the whole fleet | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/04_rogue_subagent_fleet.ipynb) |
+| 5 | **Category violation** — hotel charged to flight budget, found at month-end | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/05_category_violation.ipynb) |
 
 Source: [`examples/rogue_agent_scenarios/`](examples/rogue_agent_scenarios/)
 
