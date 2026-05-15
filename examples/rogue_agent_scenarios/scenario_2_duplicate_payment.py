@@ -1,11 +1,17 @@
 """
-Scenario 2 — The Duplicate Invoice Payment (WITH FiGuard)
+Scenario 2 — The Duplicate Invoice Payment
 
-FiGuard's idempotency key deduplicates retries at the authorization layer.
-A retry with the same key returns the original authorization event —
-same event_id, same decision. The payment processor is only called once.
+THE INCIDENT
+An AP agent processed an invoice. Network timeout on the first attempt.
+The agent retried. The same invoice was paid twice — $1,500 charged twice.
+Finance found the duplicate three weeks later during reconciliation.
 
-Run against the sandbox — no local setup required:
+THE FIX
+An idempotency key tied to the invoice ID. A retry with the same key returns
+the original authorization event — same event_id, same decision. The payment
+processor is only called once regardless of how many retries occur.
+
+Run:
     pip install figuard
     python scenario_2_duplicate_payment.py
 """
@@ -31,7 +37,7 @@ amount = 1500.00
 print(f"Processing invoice {invoice_id} for ${amount:.2f}")
 print()
 
-# Attempt 1 — authorized, but response is lost in transit (simulated timeout)
+# Attempt 1 — authorized, response lost in transit
 print("Attempt 1: authorizing...")
 auth1 = figuard.authorize(
     session_token=budget.session_token,
@@ -41,33 +47,29 @@ auth1 = figuard.authorize(
     requested_quantity=amount,
     idempotency_key=f"invoice-{invoice_id}",
 )
-print(f"Attempt 1: {auth1.decision} — event {auth1.event_id}")
-print("           ← network timeout: agent never received this response")
+print(f"  {auth1.decision} — event {auth1.event_id}")
+print("  ← network timeout: agent never received this response")
 print()
 
-# Agent retries with the same idempotency key
-print("Network timeout. Retrying...")
-print()
+# Retry — same idempotency key returns original event
+print("Network timeout. Retrying with same idempotency key...")
 auth2 = figuard.authorize(
     session_token=budget.session_token,
     agent_id="ap_agent",
     action_type="PAYMENT",
     description=f"Vendor payment {invoice_id}",
     requested_quantity=amount,
-    idempotency_key=f"invoice-{invoice_id}",  # same key → same event returned
+    idempotency_key=f"invoice-{invoice_id}",
 )
-print(f"Attempt 2: {auth2.decision} — event {auth2.event_id}")
+print(f"  {auth2.decision} — event {auth2.event_id}")
 print()
 
 print(f"Same event returned: {auth1.event_id == auth2.event_id}")
 print(f"Amount authorized:   ${amount:.2f}  (not ${amount * 2:.2f})")
-print()
 
 if auth1.is_authorized:
-    # Confirm once — the retry didn't create a second reservation
     figuard.confirm_event(auth1.event_id, confirmed_quantity=amount)
-    print(f"Confirmed: ${amount:.2f} against event {auth1.event_id}")
-    print()
+    print(f"Confirmed once:      ${amount:.2f}")
 
-print("Duplicate prevented at authorization time.")
-print("Payment processor called once. Finance reconciliation is clean.")
+print()
+print("✓ Duplicate prevented. Payment processor called once.")
