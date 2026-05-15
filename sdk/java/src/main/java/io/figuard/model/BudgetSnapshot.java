@@ -4,8 +4,8 @@ import java.math.BigDecimal;
 
 public record BudgetSnapshot(
         BigDecimal totalLimit,
-        BigDecimal amountSpent,
-        BigDecimal amountReserved,
-        BigDecimal availableAmount,
+        BigDecimal quantitySpent,
+        BigDecimal quantityReserved,
+        BigDecimal availableQuantity,
         String status
 ) {}

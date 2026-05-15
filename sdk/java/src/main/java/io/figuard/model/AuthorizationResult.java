@@ -11,13 +11,13 @@ import java.math.BigDecimal;
  * for exception-driven control flow:
  * <pre>{@code
  * AuthorizationResult result = client.authorize(request).raiseIfDenied();
- * client.confirmEvent(result.eventId(), confirmedAmount);
+ * client.confirmEvent(result.eventId(), new BigDecimal("299.00"));
  * }</pre>
  */
 public record AuthorizationResult(
         String eventId,
         String decision,
-        BigDecimal approvedAmount,
+        BigDecimal approvedQuantity,
         String authorizedAt,
         BudgetSnapshot budgetSnapshot,
         AllocationSnapshot allocationSnapshot,
@@ -25,7 +25,8 @@ public record AuthorizationResult(
         String denialMessage,
         /** Set when denialReason is ENTITY_ALREADY_AUTHORIZED. */
         String originalEventId,
-        String originalEventStatus
+        String originalEventStatus,
+        String traceId
 ) {
     /** True when the decision is AUTHORIZED. */
     public boolean isAuthorized() {

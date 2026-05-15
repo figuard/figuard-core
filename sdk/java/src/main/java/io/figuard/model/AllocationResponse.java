@@ -8,9 +8,9 @@ public record AllocationResponse(
         String category,
         List<String> allowedCategories,
         BigDecimal limit,
-        BigDecimal amountSpent,
-        BigDecimal amountReserved,
-        BigDecimal availableAmount,
+        BigDecimal quantitySpent,
+        BigDecimal quantityReserved,
+        BigDecimal availableQuantity,
         String status,
         String enforcementMode,
         List<String> forbiddenItemTypes

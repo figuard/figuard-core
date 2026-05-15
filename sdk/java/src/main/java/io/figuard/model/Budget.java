@@ -2,6 +2,7 @@ package io.figuard.model;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Represents an agent budget returned by the FiGuard API.
@@ -13,15 +14,27 @@ public record Budget(
         String id,
         String userId,
         BigDecimal totalLimit,
+        /** ISO 4217 currency code. Null for resource budgets. */
         String currency,
-        BigDecimal amountSpent,
-        BigDecimal amountReserved,
-        BigDecimal availableAmount,
+        /** Resource unit label (e.g. "tokens", "api_calls"). Null for monetary budgets. */
+        String unit,
+        BigDecimal quantitySpent,
+        BigDecimal quantityReserved,
+        BigDecimal availableQuantity,
         String status,
         String expiresAt,
         String createdAt,
+        String cancelledAt,
         String sessionTokenPrefix,
+        String intentContext,
+        List<String> intentTags,
+        String externalReference,
+        BigDecimal softLimit,
+        BigDecimal maxTransactionQuantity,
+        Integer authorizationExpirySeconds,
         List<AllocationResponse> allocations,
+        Map<String, Object> metadata,
+        String traceId,
         /** Only present on createBudget() response. Null on all subsequent reads. */
         String sessionToken
 ) {
@@ -33,5 +46,10 @@ public record Budget(
     /** True when status is PAUSED (anomaly detected, awaiting manual resume). */
     public boolean isPaused() {
         return "PAUSED".equals(status);
+    }
+
+    /** True for currency-based budgets; false for resource budgets. */
+    public boolean isMonetary() {
+        return currency != null && !currency.isBlank();
     }
 }

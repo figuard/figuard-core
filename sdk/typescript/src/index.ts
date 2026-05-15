@@ -32,7 +32,7 @@
  *   }
  */
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.3.0";
 
 // Client
 export { FiGuardClient, resolveExpiresAt, buildAllocationsFromPercentages } from "./client";
