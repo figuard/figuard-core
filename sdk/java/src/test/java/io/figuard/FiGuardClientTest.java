@@ -53,9 +53,9 @@ class FiGuardClientTest {
               "userId": "user-42",
               "totalLimit": 500.00,
               "currency": "USD",
-              "amountSpent": 0.00,
-              "amountReserved": 0.00,
-              "availableAmount": 500.00,
+              "quantitySpent": 0.00,
+              "quantityReserved": 0.00,
+              "availableQuantity": 500.00,
               "status": "ACTIVE",
               "expiresAt": "2024-12-31T23:59:59Z",
               "createdAt": "2024-01-01T00:00:00Z",
@@ -71,9 +71,9 @@ class FiGuardClientTest {
               "userId": "user-9",
               "totalLimit": 300.00,
               "currency": "USD",
-              "amountSpent": 0.00,
-              "amountReserved": 0.00,
-              "availableAmount": 300.00,
+              "quantitySpent": 0.00,
+              "quantityReserved": 0.00,
+              "availableQuantity": 300.00,
               "status": "ACTIVE",
               "expiresAt": "2025-06-01T00:00:00Z",
               "createdAt": "2024-01-01T00:00:00Z",
@@ -102,19 +102,77 @@ class FiGuardClientTest {
         void create_budget_returns_budget_with_session_token() throws Exception {
             server.enqueue(json(BUDGET_ACTIVE));
 
-            Budget budget = client.createBudget("user-42", new BigDecimal("500.00"),
-                    "2024-12-31T23:59:59Z");
+            Budget budget = client.createBudget(CreateBudgetRequest.builder()
+                    .userId("user-42")
+                    .totalLimit(new BigDecimal("500.00"))
+                    .currency("USD")
+                    .expiresAt("2024-12-31T23:59:59Z")
+                    .build());
 
             assertThat(budget.id()).isEqualTo("bud-1");
             assertThat(budget.sessionToken()).isEqualTo("ab_sess_1234567890abcdef");
             assertThat(budget.totalLimit()).isEqualByComparingTo("500.00");
             assertThat(budget.isActive()).isTrue();
             assertThat(budget.isPaused()).isFalse();
+            assertThat(budget.isMonetary()).isTrue();
 
             RecordedRequest req = server.takeRequest();
             assertThat(req.getMethod()).isEqualTo("POST");
             assertThat(req.getPath()).isEqualTo("/api/v1/budgets");
             assertThat(req.getHeader("X-Agent-Budget-Key")).isEqualTo(API_KEY);
+        }
+
+        @Test
+        void create_budget_with_expires_in() throws Exception {
+            server.enqueue(json(BUDGET_ACTIVE));
+
+            Budget budget = client.createBudget(CreateBudgetRequest.builder()
+                    .userId("user-42")
+                    .totalLimit(new BigDecimal("500.00"))
+                    .currency("USD")
+                    .expiresIn("24h")
+                    .intentContext("travel booking")
+                    .build());
+
+            assertThat(budget.id()).isEqualTo("bud-1");
+
+            RecordedRequest req = server.takeRequest();
+            String body = req.getBody().readUtf8();
+            assertThat(body).contains("\"expiresIn\":\"24h\"");
+            assertThat(body).contains("\"intentContext\":\"travel booking\"");
+        }
+
+        @Test
+        void create_token_budget_sends_unit_field() throws Exception {
+            server.enqueue(json("""
+                    {
+                      "id": "bud-token-1",
+                      "userId": "user-42",
+                      "totalLimit": 100000,
+                      "unit": "tokens",
+                      "quantitySpent": 0,
+                      "quantityReserved": 0,
+                      "availableQuantity": 100000,
+                      "status": "ACTIVE",
+                      "expiresAt": "2024-12-31T23:59:59Z",
+                      "sessionTokenPrefix": "ab_sess_t",
+                      "sessionToken": "ab_sess_token1234",
+                      "allocations": []
+                    }
+                    """));
+
+            Budget budget = client.createBudget(CreateBudgetRequest.builder()
+                    .userId("user-42")
+                    .totalLimit(new BigDecimal("100000"))
+                    .unit("tokens")
+                    .expiresIn("24h")
+                    .build());
+
+            assertThat(budget.unit()).isEqualTo("tokens");
+            assertThat(budget.isMonetary()).isFalse();
+
+            RecordedRequest req = server.takeRequest();
+            assertThat(req.getBody().readUtf8()).contains("\"unit\":\"tokens\"");
         }
 
         @Test
@@ -125,9 +183,9 @@ class FiGuardClientTest {
                       "userId": "user-5",
                       "totalLimit": 1000.00,
                       "currency": "USD",
-                      "amountSpent": 250.00,
-                      "amountReserved": 100.00,
-                      "availableAmount": 650.00,
+                      "quantitySpent": 250.00,
+                      "quantityReserved": 100.00,
+                      "availableQuantity": 650.00,
                       "status": "ACTIVE",
                       "expiresAt": "2025-01-01T00:00:00Z",
                       "createdAt": "2024-06-01T00:00:00Z",
@@ -138,8 +196,8 @@ class FiGuardClientTest {
             Budget budget = client.getBudget("bud-2");
 
             assertThat(budget.id()).isEqualTo("bud-2");
-            assertThat(budget.amountSpent()).isEqualByComparingTo("250.00");
-            assertThat(budget.availableAmount()).isEqualByComparingTo("650.00");
+            assertThat(budget.quantitySpent()).isEqualByComparingTo("250.00");
+            assertThat(budget.availableQuantity()).isEqualByComparingTo("650.00");
 
             RecordedRequest req = server.takeRequest();
             assertThat(req.getMethod()).isEqualTo("GET");
@@ -182,7 +240,7 @@ class FiGuardClientTest {
                     .agentId("agent-007")
                     .actionType("PURCHASE")
                     .description("Cloud GPU credits")
-                    .requestedAmount(new BigDecimal("49.99"))
+                    .requestedQuantity(new BigDecimal("49.99"))
                     .idempotencyKey(UUID.randomUUID().toString())
                     .sessionToken("ab_sess_abcdef1234567890")
                     .build();
@@ -193,7 +251,7 @@ class FiGuardClientTest {
             AuthorizeRequest req = AuthorizeRequest.builder()
                     .agentId("agent-007")
                     .actionType("PURCHASE")
-                    .requestedAmount(new BigDecimal("10.00"))
+                    .requestedQuantity(new BigDecimal("10.00"))
                     .sessionToken("ab_sess_xyz")
                     .build(); // idempotencyKey defaults to null
 
@@ -207,7 +265,7 @@ class FiGuardClientTest {
             AuthorizeRequest req = AuthorizeRequest.builder()
                     .agentId("agent-007")
                     .actionType("PURCHASE")
-                    .requestedAmount(new BigDecimal("10.00"))
+                    .requestedQuantity(new BigDecimal("10.00"))
                     .idempotencyKey("   ")
                     .sessionToken("ab_sess_xyz")
                     .build();
@@ -222,7 +280,7 @@ class FiGuardClientTest {
                     {
                       "eventId": "evt-001",
                       "decision": "AUTHORIZED",
-                      "approvedAmount": 49.99,
+                      "approvedQuantity": 49.99,
                       "authorizedAt": "2024-06-01T10:00:00Z"
                     }
                     """));
@@ -231,11 +289,12 @@ class FiGuardClientTest {
 
             assertThat(result.isAuthorized()).isTrue();
             assertThat(result.eventId()).isEqualTo("evt-001");
-            assertThat(result.approvedAmount()).isEqualByComparingTo("49.99");
+            assertThat(result.approvedQuantity()).isEqualByComparingTo("49.99");
 
             RecordedRequest req = server.takeRequest();
             assertThat(req.getHeader("X-Session-Token")).isEqualTo("ab_sess_abcdef1234567890");
             assertThat(req.getPath()).isEqualTo("/api/v1/authorize");
+            assertThat(req.getBody().readUtf8()).contains("\"requestedQuantity\"");
         }
 
         @Test
@@ -244,7 +303,7 @@ class FiGuardClientTest {
                     {
                       "eventId": "evt-002",
                       "decision": "DENIED",
-                      "denialReason": "BUDGET_EXCEEDED",
+                      "denialReason": "BUDGET_EXHAUSTED",
                       "denialMessage": "Insufficient budget balance"
                     }
                     """));
@@ -252,7 +311,7 @@ class FiGuardClientTest {
             AuthorizationResult result = client.authorize(validRequest());
 
             assertThat(result.isAuthorized()).isFalse();
-            assertThat(result.denialReason()).isEqualTo("BUDGET_EXCEEDED");
+            assertThat(result.denialReason()).isEqualTo("BUDGET_EXHAUSTED");
         }
 
         @Test
@@ -281,7 +340,7 @@ class FiGuardClientTest {
                     {
                       "eventId": "evt-004",
                       "decision": "AUTHORIZED",
-                      "approvedAmount": 49.99
+                      "approvedQuantity": 49.99
                     }
                     """));
 
@@ -293,11 +352,11 @@ class FiGuardClientTest {
     }
 
     // -------------------------------------------------------------------------
-    // Payment lifecycle
+    // Event lifecycle
     // -------------------------------------------------------------------------
 
     @Nested
-    class PaymentLifecycle {
+    class EventLifecycle {
 
         MockWebServer server = new MockWebServer();
         FiGuardClient client;
@@ -315,8 +374,8 @@ class FiGuardClientTest {
                     {
                       "id": "evt-100",
                       "decision": "AUTHORIZED",
-                      "requestedAmount": 99.00,
-                      "confirmedAmount": 95.50,
+                      "requestedQuantity": 99.00,
+                      "confirmedQuantity": 95.50,
                       "currency": "USD"
                     }
                     """));
@@ -324,11 +383,11 @@ class FiGuardClientTest {
             SpendEventResponse event = client.confirmEvent("evt-100", new BigDecimal("95.50"));
 
             assertThat(event.id()).isEqualTo("evt-100");
-            assertThat(event.confirmedAmount()).isEqualByComparingTo("95.50");
+            assertThat(event.confirmedQuantity()).isEqualByComparingTo("95.50");
 
             RecordedRequest req = server.takeRequest();
             assertThat(req.getPath()).isEqualTo("/api/v1/events/evt-100/confirm");
-            assertThat(req.getBody().readUtf8()).contains("confirmedAmount");
+            assertThat(req.getBody().readUtf8()).contains("confirmedQuantity");
         }
 
         @Test
@@ -337,7 +396,7 @@ class FiGuardClientTest {
                     {
                       "id": "evt-101",
                       "decision": "AUTHORIZED",
-                      "requestedAmount": 50.00,
+                      "requestedQuantity": 50.00,
                       "failureReason": "PAYMENT_GATEWAY_ERROR"
                     }
                     """));
@@ -357,7 +416,7 @@ class FiGuardClientTest {
                     {
                       "id": "evt-102",
                       "decision": "VOIDED",
-                      "requestedAmount": 30.00
+                      "requestedQuantity": 30.00
                     }
                     """));
 
@@ -393,8 +452,12 @@ class FiGuardClientTest {
             server.enqueue(new MockResponse().setResponseCode(500).setBody("{\"error\":\"oops\"}"));
             server.enqueue(json(BUDGET_ACTIVE));
 
-            Budget budget = client.createBudget("user-42", new BigDecimal("500.00"),
-                    "2024-12-31T23:59:59Z");
+            Budget budget = client.createBudget(CreateBudgetRequest.builder()
+                    .userId("user-42")
+                    .totalLimit(new BigDecimal("500.00"))
+                    .currency("USD")
+                    .expiresAt("2024-12-31T23:59:59Z")
+                    .build());
 
             assertThat(budget.id()).isEqualTo("bud-1");
             assertThat(server.getRequestCount()).isEqualTo(2);
@@ -410,7 +473,6 @@ class FiGuardClientTest {
                     .isInstanceOf(FiGuardApiException.class)
                     .satisfies(ex -> assertThat(((FiGuardApiException) ex).getStatusCode()).isEqualTo(403));
 
-            // Only one request — no retry on 4xx
             assertThat(server.getRequestCount()).isEqualTo(1);
         }
 
@@ -450,8 +512,8 @@ class FiGuardClientTest {
             server.enqueue(json("""
                     {
                       "content": [
-                        {"id": "evt-200", "decision": "AUTHORIZED", "requestedAmount": 10.00, "currency": "USD"},
-                        {"id": "evt-201", "decision": "VOIDED",     "requestedAmount":  5.00, "currency": "USD"}
+                        {"id": "evt-200", "decision": "AUTHORIZED", "requestedQuantity": 10.00, "currency": "USD"},
+                        {"id": "evt-201", "decision": "VOIDED",     "requestedQuantity":  5.00, "currency": "USD"}
                       ],
                       "totalElements": 2,
                       "totalPages": 1,
@@ -535,7 +597,7 @@ class FiGuardClientTest {
             assertThatThrownBy(() ->
                     AuthorizeRequest.builder()
                             .actionType("PURCHASE")
-                            .requestedAmount(new BigDecimal("10.00"))
+                            .requestedQuantity(new BigDecimal("10.00"))
                             .build()
             ).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("agentId");
         }
@@ -545,30 +607,19 @@ class FiGuardClientTest {
             assertThatThrownBy(() ->
                     AuthorizeRequest.builder()
                             .agentId("agent-1")
-                            .requestedAmount(new BigDecimal("10.00"))
+                            .requestedQuantity(new BigDecimal("10.00"))
                             .build()
             ).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("actionType");
         }
 
         @Test
-        void throws_when_requested_amount_missing() {
+        void throws_when_requested_quantity_missing() {
             assertThatThrownBy(() ->
                     AuthorizeRequest.builder()
                             .agentId("agent-1")
                             .actionType("PURCHASE")
                             .build()
-            ).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("requestedAmount");
-        }
-
-        @Test
-        void defaults_currency_to_usd() {
-            AuthorizeRequest req = AuthorizeRequest.builder()
-                    .agentId("agent-1")
-                    .actionType("PURCHASE")
-                    .requestedAmount(new BigDecimal("10.00"))
-                    .build();
-
-            assertThat(req.currency()).isEqualTo("USD");
+            ).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("requestedQuantity");
         }
 
         @Test
@@ -576,13 +627,68 @@ class FiGuardClientTest {
             AuthorizeRequest req = AuthorizeRequest.builder()
                     .agentId("agent-1")
                     .actionType("PURCHASE")
-                    .requestedAmount(new BigDecimal("10.00"))
+                    .requestedQuantity(new BigDecimal("10.00"))
                     .build();
 
             assertThat(req.sessionToken()).isNull();
             assertThat(req.entityId()).isNull();
             assertThat(req.intentContext()).isNull();
             assertThat(req.parentEventId()).isNull();
+            assertThat(req.currency()).isNull();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // CreateBudgetRequest builder validation
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class CreateBudgetRequestBuilderValidation {
+
+        @Test
+        void throws_when_user_id_missing() {
+            assertThatThrownBy(() ->
+                    CreateBudgetRequest.builder()
+                            .totalLimit(new BigDecimal("500"))
+                            .currency("USD")
+                            .expiresIn("24h")
+                            .build()
+            ).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("userId");
+        }
+
+        @Test
+        void throws_when_neither_currency_nor_unit() {
+            assertThatThrownBy(() ->
+                    CreateBudgetRequest.builder()
+                            .userId("u1")
+                            .totalLimit(new BigDecimal("500"))
+                            .expiresIn("24h")
+                            .build()
+            ).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("currency");
+        }
+
+        @Test
+        void throws_when_both_currency_and_unit() {
+            assertThatThrownBy(() ->
+                    CreateBudgetRequest.builder()
+                            .userId("u1")
+                            .totalLimit(new BigDecimal("500"))
+                            .currency("USD")
+                            .unit("tokens")
+                            .expiresIn("24h")
+                            .build()
+            ).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("mutually exclusive");
+        }
+
+        @Test
+        void throws_when_neither_expires_at_nor_expires_in() {
+            assertThatThrownBy(() ->
+                    CreateBudgetRequest.builder()
+                            .userId("u1")
+                            .totalLimit(new BigDecimal("500"))
+                            .currency("USD")
+                            .build()
+            ).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("expiresAt");
         }
     }
 }

@@ -5,8 +5,8 @@ import java.math.BigDecimal;
 public record AllocationSnapshot(
         String category,
         BigDecimal limit,
-        BigDecimal amountSpent,
-        BigDecimal amountReserved,
-        BigDecimal availableAmount,
+        BigDecimal quantitySpent,
+        BigDecimal quantityReserved,
+        BigDecimal availableQuantity,
         String status
 ) {}

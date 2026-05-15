@@ -24,17 +24,23 @@ import java.util.logging.Logger;
  * <pre>{@code
  * FiGuardClient client = FiGuardClient.builder()
  *     .apiKey("ab_live_...")
+ *     .baseUrl("https://sandbox.figuard.io")
  *     .build();
  *
- * Budget budget = client.createBudget("user_123", new BigDecimal("500.00"),
- *     "2024-12-31T23:59:59Z");
+ * Budget budget = client.createBudget(CreateBudgetRequest.builder()
+ *     .userId("user_123")
+ *     .totalLimit(new BigDecimal("500.00"))
+ *     .currency("USD")
+ *     .expiresIn("24h")
+ *     .intentContext("travel booking session")
+ *     .build());
  *
  * AuthorizationResult result = client.authorize(AuthorizeRequest.builder()
  *     .sessionToken(budget.sessionToken())
  *     .agentId("agent_001")
  *     .actionType("PURCHASE")
  *     .description("NYC flight")
- *     .requestedAmount(new BigDecimal("299.00"))
+ *     .requestedQuantity(new BigDecimal("299.00"))
  *     .idempotencyKey("txn-abc-001")
  *     .build()).raiseIfDenied();
  *
@@ -54,10 +60,10 @@ public final class FiGuardClient {
     private final ObjectMapper mapper;
 
     private FiGuardClient(Builder builder) {
-        this.apiKey = builder.apiKey;
+        this.apiKey  = builder.apiKey;
         this.baseUrl = builder.baseUrl.replaceAll("/$", "");
-        this.http = builder.httpClient != null ? builder.httpClient : new OkHttpClient();
-        this.mapper = new ObjectMapper()
+        this.http    = builder.httpClient != null ? builder.httpClient : new OkHttpClient();
+        this.mapper  = new ObjectMapper()
                 .registerModule(new JavaTimeModule())
                 .setPropertyNamingStrategy(PropertyNamingStrategies.LOWER_CAMEL_CASE)
                 .setSerializationInclusion(JsonInclude.Include.NON_NULL)
@@ -68,9 +74,7 @@ public final class FiGuardClient {
     // Builder
     // -------------------------------------------------------------------------
 
-    public static Builder builder() {
-        return new Builder();
-    }
+    public static Builder builder() { return new Builder(); }
 
     public static final class Builder {
         private String apiKey;
@@ -109,17 +113,25 @@ public final class FiGuardClient {
      * @return {@link Budget} with {@code sessionToken} populated — store it securely.
      *         It is never returned again.
      */
-    public Budget createBudget(String userId, BigDecimal totalLimit, String expiresAt) {
-        return createBudget(userId, totalLimit, expiresAt, new HashMap<>());
-    }
-
-    public Budget createBudget(String userId, BigDecimal totalLimit, String expiresAt,
-                               Map<String, Object> extras) {
-        Map<String, Object> body = new LinkedHashMap<>(extras);
-        body.put("userId", userId);
-        body.put("totalLimit", totalLimit);
-        body.put("expiresAt", expiresAt);
-        body.putIfAbsent("currency", "USD");
+    public Budget createBudget(CreateBudgetRequest req) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("userId", req.userId());
+        body.put("totalLimit", req.totalLimit());
+        if (req.expiresAt() != null) body.put("expiresAt", req.expiresAt());
+        if (req.expiresIn() != null) body.put("expiresIn", req.expiresIn());
+        if (req.currency() != null)  body.put("currency", req.currency());
+        if (req.unit() != null)      body.put("unit", req.unit());
+        if (req.intentContext() != null)           body.put("intentContext", req.intentContext());
+        if (req.intentTags() != null)              body.put("intentTags", req.intentTags());
+        if (req.externalReference() != null)       body.put("externalReference", req.externalReference());
+        if (req.softLimit() != null)               body.put("softLimit", req.softLimit());
+        if (req.maxTransactionQuantity() != null)  body.put("maxTransactionQuantity", req.maxTransactionQuantity());
+        if (req.authorizationExpirySeconds() != null) body.put("authorizationExpirySeconds", req.authorizationExpirySeconds());
+        if (req.anomalyDetectionEnabled())         body.put("anomalyDetectionEnabled", true);
+        if (req.autoPauseOnAnomaly())              body.put("autoPauseOnAnomaly", true);
+        if (req.entityDedupEnabled())              body.put("entityDedupEnabled", true);
+        if (req.allocations() != null)             body.put("allocations", req.allocations());
+        if (req.metadata() != null)                body.put("metadata", req.metadata());
 
         Map<String, Object> data = request("POST", "/api/v1/budgets", body, null, null, true);
         return parseBudget(data);
@@ -151,6 +163,32 @@ public final class FiGuardClient {
         return parseBudget(data);
     }
 
+    /** Cancel a budget. Cancellation is permanent — confirmed spend is preserved. */
+    public Budget cancelBudget(String budgetId) {
+        Map<String, Object> data = request("POST", "/api/v1/budgets/" + budgetId + "/cancel",
+                null, null, null, true);
+        return parseBudget(data);
+    }
+
+    /**
+     * Fund operations: CREDIT, DEBIT, RESET, or RESET_SPENT.
+     *
+     * @param operation One of {@code "CREDIT"}, {@code "DEBIT"}, {@code "RESET"}, {@code "RESET_SPENT"}.
+     * @param amount    Amount for the operation.
+     * @param reason    Optional human-readable reason for the audit log.
+     */
+    public BudgetFundingResponse fundBudget(String budgetId, String operation,
+                                             BigDecimal amount, String reason) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("operation", operation);
+        body.put("amount", amount);
+        if (reason != null) body.put("reason", reason);
+
+        Map<String, Object> data = request("POST", "/api/v1/budgets/" + budgetId + "/fund",
+                body, null, null, true);
+        return parseBudgetFundingResponse(data);
+    }
+
     /**
      * Issue a new session token. The old token remains valid for a short grace period
      * so in-flight agents finish cleanly.
@@ -167,7 +205,6 @@ public final class FiGuardClient {
     /**
      * Get a shareable public receipt URL for a budget session.
      * The URL requires no authentication and is valid for 90 days.
-     * Calling this method multiple times for the same budget returns the same URL.
      */
     public String getReceiptUrl(String budgetId) {
         Map<String, Object> data = request("GET",
@@ -177,16 +214,54 @@ public final class FiGuardClient {
     }
 
     // -------------------------------------------------------------------------
+    // Delegation tokens
+    // -------------------------------------------------------------------------
+
+    /**
+     * Issue a scoped delegation token for a sub-agent in a fleet.
+     * The {@code sessionToken} in the response is returned once only — hand it to the sub-agent.
+     */
+    public DelegationToken createDelegationToken(CreateDelegationTokenRequest req) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("budgetId", req.budgetId());
+        body.put("label", req.label());
+        body.put("caps", req.caps());
+        if (req.expiresIn() != null) body.put("expiresIn", req.expiresIn());
+        if (req.expiresAt() != null) body.put("expiresAt", req.expiresAt());
+
+        Map<String, String> headers = Map.of("X-Session-Token", req.sessionToken());
+        Map<String, Object> data = request("POST", "/api/v1/delegation-tokens",
+                body, headers, null, true);
+        return parseDelegationToken(data);
+    }
+
+    /** Fetch the current state of a delegation token. */
+    public DelegationToken getDelegationToken(String tokenId) {
+        Map<String, Object> data = request("GET", "/api/v1/delegation-tokens/" + tokenId,
+                null, null, null, true);
+        return parseDelegationToken(data);
+    }
+
+    /** Revoke a delegation token. Any in-flight authorizations using it will be denied. */
+    public DelegationToken revokeDelegationToken(String tokenId, String reason) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (reason != null) body.put("reason", reason);
+
+        Map<String, Object> data = request("POST",
+                "/api/v1/delegation-tokens/" + tokenId + "/revoke",
+                body, null, null, true);
+        return parseDelegationToken(data);
+    }
+
+    // -------------------------------------------------------------------------
     // Authorization
     // -------------------------------------------------------------------------
 
     /**
      * Pre-flight spend authorization.
      *
-     * @param request Authorization parameters. {@code idempotencyKey} is required —
-     *                 throws {@link IllegalArgumentException} if omitted or blank.
-     * @return {@link AuthorizationResult} — call {@code .raiseIfDenied()} for
-     *         exception-driven flow.
+     * @param request Authorization parameters. {@code idempotencyKey} is required.
+     * @return {@link AuthorizationResult} — call {@code .raiseIfDenied()} for exception-driven flow.
      */
     public AuthorizationResult authorize(AuthorizeRequest request) {
         if (request.idempotencyKey() == null || request.idempotencyKey().isBlank()) {
@@ -199,42 +274,42 @@ public final class FiGuardClient {
         body.put("agentId", request.agentId());
         body.put("actionType", request.actionType());
         body.put("description", request.description());
-        body.put("requestedAmount", request.requestedAmount());
-        body.put("currency", request.currency() != null ? request.currency() : "USD");
+        body.put("requestedQuantity", request.requestedQuantity());
         body.put("idempotencyKey", request.idempotencyKey());
-        if (request.agentType() != null)      body.put("agentType", request.agentType());
-        if (request.intentContext() != null)  body.put("intentContext", request.intentContext());
-        if (request.entityId() != null)       body.put("entityId", request.entityId());
+        if (request.currency() != null)        body.put("currency", request.currency());
+        if (request.agentType() != null)       body.put("agentType", request.agentType());
+        if (request.intentContext() != null)   body.put("intentContext", request.intentContext());
+        if (request.entityId() != null)        body.put("entityId", request.entityId());
         if (request.claimedCategory() != null) body.put("claimedCategory", request.claimedCategory());
         if (request.claimedItemType() != null) body.put("claimedItemType", request.claimedItemType());
-        if (request.parentEventId() != null)  body.put("parentEventId", request.parentEventId());
+        if (request.parentEventId() != null)   body.put("parentEventId", request.parentEventId());
 
-        String token = request.sessionToken();
+        String token  = request.sessionToken();
         String prefix = token.length() >= 8 ? token.substring(0, 8) : "???";
         log.fine(() -> "authorize: agentId=" + request.agentId()
-                + " amount=" + request.requestedAmount()
+                + " quantity=" + request.requestedQuantity()
                 + " key=" + request.idempotencyKey()
                 + " token_prefix=" + prefix);
 
         Map<String, String> headers = Map.of("X-Session-Token", token);
-        Map<String, Object> data = request("POST", "/api/v1/authorize",
+        Map<String, Object> data    = request("POST", "/api/v1/authorize",
                 body, headers, null, true);
         return parseAuthorizationResult(data);
     }
 
     // -------------------------------------------------------------------------
-    // Payment lifecycle
+    // Event lifecycle
     // -------------------------------------------------------------------------
 
     /** Confirm a previously authorized event — finalizes the spend. */
-    public SpendEventResponse confirmEvent(String eventId, BigDecimal confirmedAmount) {
-        return confirmEvent(eventId, confirmedAmount, null);
+    public SpendEventResponse confirmEvent(String eventId, BigDecimal confirmedQuantity) {
+        return confirmEvent(eventId, confirmedQuantity, null);
     }
 
-    public SpendEventResponse confirmEvent(String eventId, BigDecimal confirmedAmount,
+    public SpendEventResponse confirmEvent(String eventId, BigDecimal confirmedQuantity,
                                            String externalTransactionId) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("confirmedAmount", confirmedAmount);
+        body.put("confirmedQuantity", confirmedQuantity);
         if (externalTransactionId != null) body.put("externalTransactionId", externalTransactionId);
 
         Map<String, Object> data = request("POST", "/api/v1/events/" + eventId + "/confirm",
@@ -292,7 +367,8 @@ public final class FiGuardClient {
                 null, null, params, true);
 
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> content = (List<Map<String, Object>>) data.getOrDefault("content", List.of());
+        List<Map<String, Object>> content =
+                (List<Map<String, Object>>) data.getOrDefault("content", List.of());
         List<SpendEventResponse> events = content.stream().map(this::parseSpendEvent).toList();
 
         return new LedgerPage(
@@ -302,6 +378,14 @@ public final class FiGuardClient {
                 toInt(data.getOrDefault("number", page)),
                 toInt(data.getOrDefault("size", size))
         );
+    }
+
+    /** Full spend tree showing parent–child event relationships. */
+    public SpendTree getSpendTree(String budgetId) {
+        Map<String, Object> data = request("GET",
+                "/api/v1/budgets/" + budgetId + "/spend-tree",
+                null, null, null, true);
+        return parseSpendTree(data);
     }
 
     // -------------------------------------------------------------------------
@@ -315,18 +399,14 @@ public final class FiGuardClient {
                                          Map<String, String> queryParams,
                                          boolean retryable) {
         HttpUrl.Builder urlBuilder = HttpUrl.parse(baseUrl + path).newBuilder();
-        if (queryParams != null) {
-            queryParams.forEach(urlBuilder::addQueryParameter);
-        }
+        if (queryParams != null) queryParams.forEach(urlBuilder::addQueryParameter);
 
         Request.Builder reqBuilder = new Request.Builder()
                 .url(urlBuilder.build())
                 .header("X-Agent-Budget-Key", apiKey)
                 .header("Accept", "application/json");
 
-        if (extraHeaders != null) {
-            extraHeaders.forEach(reqBuilder::header);
-        }
+        if (extraHeaders != null) extraHeaders.forEach(reqBuilder::header);
 
         RequestBody body = null;
         if (jsonBody != null) {
@@ -338,21 +418,21 @@ public final class FiGuardClient {
         }
 
         switch (method) {
-            case "GET"  -> reqBuilder.get();
-            case "POST" -> reqBuilder.post(body != null ? body : RequestBody.create(new byte[0], null));
+            case "GET"   -> reqBuilder.get();
+            case "POST"  -> reqBuilder.post(body != null ? body : RequestBody.create(new byte[0], null));
             case "PATCH" -> reqBuilder.patch(body != null ? body : RequestBody.create(new byte[0], null));
-            default -> throw new IllegalArgumentException("Unsupported method: " + method);
+            default      -> throw new IllegalArgumentException("Unsupported method: " + method);
         }
 
-        Request req = reqBuilder.build();
-        int attempts = retryable ? MAX_RETRIES : 1;
-        Exception lastException = null;
+        Request req      = reqBuilder.build();
+        int attempts     = retryable ? MAX_RETRIES : 1;
+        Exception lastEx = null;
 
         for (int attempt = 0; attempt < attempts; attempt++) {
             if (attempt > 0) {
-                long delay = RETRY_BACKOFF_BASE_MS * (1L << (attempt - 1)); // 1s, 2s, 4s
-                final int attemptCapture = attempt;
-                log.fine(() -> "Retry " + attemptCapture + "/" + (attempts - 1)
+                long delay = RETRY_BACKOFF_BASE_MS * (1L << (attempt - 1));
+                final int a = attempt;
+                log.fine(() -> "Retry " + a + "/" + (attempts - 1)
                         + " for " + method + " " + path + " in " + delay + "ms");
                 try { Thread.sleep(delay); } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
@@ -362,24 +442,20 @@ public final class FiGuardClient {
 
             try (Response resp = http.newCall(req).execute()) {
                 if (resp.code() >= 500 && attempt < attempts - 1) {
-                    log.warning("Server error " + resp.code()
-                            + " on " + method + " " + path
+                    log.warning("Server error " + resp.code() + " on " + method + " " + path
                             + " (attempt " + (attempt + 1) + "), will retry");
-                    lastException = null;
                     continue;
                 }
                 return handleResponse(resp);
-
             } catch (IOException e) {
-                lastException = e;
+                lastEx = e;
                 log.warning("Connection error on " + method + " " + path
                         + " (attempt " + (attempt + 1) + "): " + e.getMessage());
             }
         }
 
         throw new FiGuardConnectionException(
-                "All " + attempts + " attempts failed for " + method + " " + path,
-                lastException);
+                "All " + attempts + " attempts failed for " + method + " " + path, lastEx);
     }
 
     @SuppressWarnings("unchecked")
@@ -391,15 +467,12 @@ public final class FiGuardClient {
             String message = bodyStr;
             try {
                 raw = mapper.readValue(bodyStr, Map.class);
-                message = (String) raw.getOrDefault("message",
-                          raw.getOrDefault("error", bodyStr));
+                message = (String) raw.getOrDefault("message", raw.getOrDefault("error", bodyStr));
             } catch (Exception ignored) {}
             throw new FiGuardApiException(resp.code(), message, raw);
         }
 
-        if (resp.code() == 204 || bodyStr.isBlank()) {
-            return Map.of();
-        }
+        if (resp.code() == 204 || bodyStr.isBlank()) return Map.of();
 
         try {
             return mapper.readValue(bodyStr, Map.class);
@@ -414,18 +487,18 @@ public final class FiGuardClient {
 
     @SuppressWarnings("unchecked")
     private Budget parseBudget(Map<String, Object> d) {
-        List<Map<String, Object>> rawAllocations =
+        List<Map<String, Object>> rawAllocs =
                 (List<Map<String, Object>>) d.getOrDefault("allocations", List.of());
 
-        List<AllocationResponse> allocations = rawAllocations.stream()
+        List<AllocationResponse> allocations = rawAllocs.stream()
                 .map(a -> new AllocationResponse(
                         str(a.get("id")),
                         str(a.get("category")),
                         (List<String>) a.getOrDefault("allowedCategories", List.of()),
                         decimal(a.get("limit")),
-                        decimal(a.get("amountSpent")),
-                        decimal(a.get("amountReserved")),
-                        decimal(a.get("availableAmount")),
+                        decimal(a.get("quantitySpent")),
+                        decimal(a.get("quantityReserved")),
+                        decimal(a.get("availableQuantity")),
                         str(a.get("status")),
                         str(a.getOrDefault("enforcementMode", "CATEGORY_CONSTRAINED")),
                         (List<String>) a.get("forbiddenItemTypes")
@@ -437,14 +510,25 @@ public final class FiGuardClient {
                 str(d.get("userId")),
                 decimal(d.get("totalLimit")),
                 str(d.get("currency")),
-                decimal(d.get("amountSpent")),
-                decimal(d.get("amountReserved")),
-                decimal(d.get("availableAmount")),
+                str(d.get("unit")),
+                decimal(d.get("quantitySpent")),
+                decimal(d.get("quantityReserved")),
+                decimal(d.get("availableQuantity")),
                 str(d.get("status")),
                 str(d.get("expiresAt")),
                 str(d.get("createdAt")),
+                str(d.get("cancelledAt")),
                 str(d.get("sessionTokenPrefix")),
+                str(d.get("intentContext")),
+                (List<String>) d.get("intentTags"),
+                str(d.get("externalReference")),
+                decimal(d.get("softLimit")),
+                decimal(d.get("maxTransactionQuantity")),
+                d.get("authorizationExpirySeconds") != null
+                        ? toInt(d.get("authorizationExpirySeconds")) : null,
                 allocations,
+                (Map<String, Object>) d.get("metadata"),
+                str(d.get("traceId")),
                 str(d.get("sessionToken"))
         );
     }
@@ -456,9 +540,9 @@ public final class FiGuardClient {
         if (bs != null) {
             budgetSnapshot = new BudgetSnapshot(
                     decimal(bs.get("totalLimit")),
-                    decimal(bs.get("amountSpent")),
-                    decimal(bs.get("amountReserved")),
-                    decimal(bs.get("availableAmount")),
+                    decimal(bs.get("quantitySpent")),
+                    decimal(bs.get("quantityReserved")),
+                    decimal(bs.get("availableQuantity")),
                     str(bs.get("status"))
             );
         }
@@ -469,9 +553,9 @@ public final class FiGuardClient {
             allocSnapshot = new AllocationSnapshot(
                     str(as.get("category")),
                     decimal(as.get("limit")),
-                    decimal(as.get("amountSpent")),
-                    decimal(as.get("amountReserved")),
-                    decimal(as.get("availableAmount")),
+                    decimal(as.get("quantitySpent")),
+                    decimal(as.get("quantityReserved")),
+                    decimal(as.get("availableQuantity")),
                     str(as.get("status"))
             );
         }
@@ -479,36 +563,102 @@ public final class FiGuardClient {
         return new AuthorizationResult(
                 str(d.get("eventId")),
                 str(d.get("decision")),
-                decimal(d.get("approvedAmount")),
+                decimal(d.get("approvedQuantity")),
                 str(d.get("authorizedAt")),
                 budgetSnapshot,
                 allocSnapshot,
                 str(d.get("denialReason")),
                 str(d.get("denialMessage")),
                 str(d.get("originalEventId")),
-                str(d.get("originalEventStatus"))
+                str(d.get("originalEventStatus")),
+                str(d.get("traceId"))
         );
     }
 
+    @SuppressWarnings("unchecked")
     private SpendEventResponse parseSpendEvent(Map<String, Object> d) {
         return new SpendEventResponse(
                 str(d.get("id")),
                 str(d.get("decision")),
-                decimal(d.get("requestedAmount")),
+                decimal(d.get("requestedQuantity")),
                 str(d.get("currency")),
                 str(d.get("createdAt")),
                 str(d.get("agentId")),
                 str(d.get("agentType")),
                 str(d.get("actionType")),
                 str(d.get("description")),
-                decimal(d.get("confirmedAmount")),
+                decimal(d.get("confirmedQuantity")),
                 str(d.get("entityId")),
                 str(d.get("claimedCategory")),
                 str(d.get("claimedItemType")),
+                str(d.get("intentContext")),
                 str(d.get("idempotencyKey")),
                 str(d.get("denialReason")),
                 str(d.get("failureReason")),
-                str(d.get("parentEventId"))
+                str(d.get("parentEventId")),
+                str(d.get("traceId")),
+                (Map<String, Object>) d.get("metadata")
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private DelegationToken parseDelegationToken(Map<String, Object> d) {
+        List<Map<String, Object>> rawCaps =
+                (List<Map<String, Object>>) d.getOrDefault("caps", List.of());
+
+        List<DelegationTokenCap> caps = rawCaps.stream()
+                .map(c -> new DelegationTokenCap(
+                        str(c.get("id")),
+                        str(c.get("category")),
+                        decimal(c.get("totalLimit")),
+                        decimal(c.get("quantitySpent")),
+                        decimal(c.get("quantityReserved")),
+                        decimal(c.get("availableQuantity"))
+                ))
+                .toList();
+
+        return new DelegationToken(
+                str(d.get("id")),
+                str(d.get("parentBudgetId")),
+                str(d.get("label")),
+                str(d.get("status")),
+                str(d.get("sessionTokenPrefix")),
+                caps,
+                str(d.get("revokedAt")),
+                str(d.get("createdAt")),
+                str(d.get("sessionToken"))
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private SpendTree parseSpendTree(Map<String, Object> d) {
+        List<Map<String, Object>> rawRoots =
+                (List<Map<String, Object>>) d.getOrDefault("roots", List.of());
+        List<SpendTreeNode> roots = rawRoots.stream().map(this::parseSpendTreeNode).toList();
+        return new SpendTree(str(d.get("budgetId")), roots, toInt(d.getOrDefault("totalEvents", 0)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private SpendTreeNode parseSpendTreeNode(Map<String, Object> d) {
+        SpendEventResponse event = parseSpendEvent(
+                (Map<String, Object>) d.getOrDefault("event", d));
+        List<Map<String, Object>> rawChildren =
+                (List<Map<String, Object>>) d.getOrDefault("children", List.of());
+        List<SpendTreeNode> children = rawChildren.stream().map(this::parseSpendTreeNode).toList();
+        return new SpendTreeNode(event, children);
+    }
+
+    private BudgetFundingResponse parseBudgetFundingResponse(Map<String, Object> d) {
+        return new BudgetFundingResponse(
+                str(d.get("budgetId")),
+                str(d.get("operation")),
+                decimal(d.get("previousTotalLimit")),
+                decimal(d.get("newTotalLimit")),
+                decimal(d.get("quantitySpent")),
+                decimal(d.get("quantityReserved")),
+                decimal(d.get("availableQuantity")),
+                str(d.get("status")),
+                str(d.get("traceId"))
         );
     }
 
