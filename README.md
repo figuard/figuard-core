@@ -26,13 +26,13 @@ for item in purchases:
         agent_id="travel_agent",
         action_type="PURCHASE",
         description=item["description"],
-        requested_amount=item["amount"],
+        requested_quantity=item["amount"],
         claimed_category=item["category"],
         idempotency_key=item["key"],
     )
     if auth.is_authorized:
-        stripe.charge(auth.approved_amount)
-        client.confirm_event(auth.event_id, confirmed_amount=auth.approved_amount)
+        stripe.charge(auth.approved_quantity)
+        client.confirm_event(auth.event_id, confirmed_quantity=auth.approved_quantity)
     else:
         log.warning("Blocked: %s — %s", item["description"], auth.denial_reason)
 
@@ -136,15 +136,15 @@ auth = client.authorize(
     agent_id="travel_agent",
     action_type="PURCHASE",
     description="JetBlue SFO→JFK roundtrip",
-    requested_amount=270.00,
+    requested_quantity=270.00,
     idempotency_key="booking-001",
 )
 
-print(auth.decision)        # AUTHORIZED
-print(auth.approved_amount) # 270.0
+print(auth.decision)          # AUTHORIZED
+print(auth.approved_quantity) # 270.0
 
 # Confirm with actual charged amount after the transaction succeeds
-client.confirm_event(auth.event_id, confirmed_amount=267.00)
+client.confirm_event(auth.event_id, confirmed_quantity=267.00)
 ```
 
 **3. Self-host** — [see self-hosting docs](docs/self-hosting.md)
@@ -229,8 +229,6 @@ None of this is architecturally exotic. It's the same set of problems that payme
 ## Examples
 
 - [`examples/rogue_agent_scenarios.py`](examples/rogue_agent_scenarios.py) — three incident post-mortems showing what goes wrong without enforcement, and the exact FiGuard config that stops each one
-- [`examples/langchain-shopping-agent/`](examples/langchain-shopping-agent/)
-- [`examples/crewai-research-fleet/`](examples/crewai-research-fleet/)
 
 ## SDKs
 

@@ -88,6 +88,111 @@ class ConcurrencyIT extends IntegrationTestBase {
         assertThat(budget.getQuantityReserved()).isEqualByComparingTo("50.00");
     }
 
+    /**
+     * RESET_SPENT racing against concurrent authorize calls.
+     *
+     * Setup: exhaust a $50 budget, then concurrently issue a RESET_SPENT
+     * and 20 authorize($10) calls. After everything settles the budget must
+     * not have authorized more than its totalLimit ($50).
+     *
+     * The PESSIMISTIC_WRITE lock in fundBudget must prevent authorizations
+     * from reading a stale EXHAUSTED state mid-reset and also prevent
+     * over-authorization once the budget is active again.
+     */
+    @RepeatedTest(5)
+    void concurrentResetSpentAndAuthorize_shouldNotExceedLimit() throws Exception {
+        // 1. Create a $50 budget and exhaust it via confirm
+        String[] info = createFlatBudget(50.00);
+        String sessionToken = info[0];
+        UUID   budgetId     = UUID.fromString(info[1]);
+
+        // Authorize and confirm the full amount so quantitySpent = 50, status = EXHAUSTED
+        MvcResult authResult = mockMvc.perform(post("/api/v1/authorize")
+                .header("X-Agent-Budget-Key", TEST_API_KEY)
+                .header("X-Session-Token", sessionToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                    "agentId",           "setup_agent",
+                    "actionType",        "PURCHASE",
+                    "description",       "Exhaust budget",
+                    "requestedQuantity", new java.math.BigDecimal("50.00"),
+                    "idempotencyKey",    UUID.randomUUID().toString()
+                ))))
+            .andReturn();
+
+        String eventId = objectMapper.readTree(
+            authResult.getResponse().getContentAsString()).get("eventId").asText();
+
+        mockMvc.perform(post("/api/v1/events/{id}/confirm", eventId)
+                .header("X-Agent-Budget-Key", TEST_API_KEY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("confirmedQuantity", 50.00))))
+            .andReturn();
+
+        // 2. Concurrently: 1 RESET_SPENT + 20 authorize($10)
+        ExecutorService executor = Executors.newFixedThreadPool(21);
+        CountDownLatch ready     = new CountDownLatch(21);
+        CountDownLatch start     = new CountDownLatch(1);
+        AtomicInteger  authOk   = new AtomicInteger(0);
+
+        List<Future<?>> futures = new ArrayList<>();
+
+        // Thread 0 — RESET_SPENT
+        futures.add(executor.submit(() -> {
+            try {
+                ready.countDown();
+                start.await();
+                mockMvc.perform(post("/api/v1/budgets/{id}/fund", budgetId)
+                        .header("X-Agent-Budget-Key", TEST_API_KEY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                            "operation", "RESET_SPENT",
+                            "amount",    50.00
+                        ))))
+                    .andReturn();
+            } catch (Exception e) { /* ignore — we check final state */ }
+        }));
+
+        // Threads 1-20 — concurrent authorize($10)
+        for (int i = 1; i <= 20; i++) {
+            futures.add(executor.submit(() -> {
+                try {
+                    ready.countDown();
+                    start.await();
+                    MvcResult r = mockMvc.perform(post("/api/v1/authorize")
+                            .header("X-Agent-Budget-Key", TEST_API_KEY)
+                            .header("X-Session-Token", sessionToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                "agentId",           "concurrent_agent",
+                                "actionType",        "PURCHASE",
+                                "description",       "Concurrent authorize",
+                                "requestedQuantity", new java.math.BigDecimal("10.00"),
+                                "idempotencyKey",    UUID.randomUUID().toString()
+                            ))))
+                        .andReturn();
+                    String decision = objectMapper.readTree(
+                        r.getResponse().getContentAsString()).get("decision").asText();
+                    if ("AUTHORIZED".equals(decision)) authOk.incrementAndGet();
+                } catch (Exception ignored) {}
+            }));
+        }
+
+        ready.await();
+        start.countDown();
+        for (Future<?> f : futures) f.get();
+        executor.shutdown();
+
+        // 3. Final state: quantityReserved must not exceed totalLimit (50)
+        AgentBudget budget = budgetRepository.findById(budgetId).orElseThrow();
+        assertThat(budget.getQuantityReserved().add(budget.getQuantitySpent()))
+            .as("reserved + spent must never exceed totalLimit after concurrent reset")
+            .isLessThanOrEqualByComparingTo(budget.getTotalLimit());
+        assertThat(authOk.get())
+            .as("authorizations must not exceed 5 ($50 / $10) even with RESET_SPENT racing")
+            .isLessThanOrEqualTo(5);
+    }
+
     // -------------------------------------------------------------------------
 
     private void runConcurrent(int threads,

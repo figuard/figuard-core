@@ -200,6 +200,67 @@ class WebhookIT extends IntegrationTestBase {
     }
 
     @Test
+    void webhook_fires_anomalyDetected_andBudgetPaused_onAutoPause() throws Exception {
+        // Register for both event types that fire on auto-pause anomaly
+        WebhookConfig anomalyConfig = new WebhookConfig();
+        anomalyConfig.setTenant(tenant);
+        anomalyConfig.setUrl("http://localhost:" + wireMock.port() + "/webhook");
+        anomalyConfig.setSecret("test-webhook-secret");
+        anomalyConfig.setActive(true);
+        anomalyConfig.setEvents(new String[]{"ANOMALY_DETECTED", "BUDGET_PAUSED"});
+        webhookConfigRepository.save(anomalyConfig);
+
+        // Create a budget with anomaly detection + auto-pause enabled
+        String response = mockMvc.perform(post("/api/v1/budgets")
+                .header("X-Agent-Budget-Key", TEST_API_KEY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                    "userId",                    "user_anomaly_webhook_test",
+                    "intentContext",             "anomaly webhook test",
+                    "totalLimit",                2000.00,
+                    "currency",                  "USD",
+                    "anomalyDetectionEnabled",   true,
+                    "autoPauseOnAnomaly",        true,
+                    "expiresAt",                 expiresAt()
+                ))))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+
+        var json = objectMapper.readTree(response);
+        String sessionToken = json.get("sessionToken").asText();
+
+        // Establish a baseline with several small authorizations
+        for (int i = 0; i < 5; i++) {
+            doAuthorize(sessionToken, "10.00");
+        }
+
+        // Fire a request that is anomalously large vs the $10 baseline
+        mockMvc.perform(post("/api/v1/authorize")
+                .header("X-Session-Token", sessionToken)
+                .header("X-Agent-Budget-Key", TEST_API_KEY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                    "agentId",           "anomaly_agent",
+                    "actionType",        "PURCHASE",
+                    "description",       "anomalously large purchase",
+                    "requestedQuantity", 500.00,
+                    "currency",          "USD",
+                    "idempotencyKey",    UUID.randomUUID().toString()
+                ))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.decision").value("DENIED"))
+            .andExpect(jsonPath("$.denialCode").value("ANOMALY_DETECTED"));
+
+        // Both BUDGET_PAUSED and ANOMALY_DETECTED webhooks must have fired
+        await().atMost(5, TimeUnit.SECONDS).untilAsserted(() -> {
+            wireMock.verify(atLeast(1), postRequestedFor(urlEqualTo("/webhook"))
+                .withRequestBody(containing("\"eventType\":\"BUDGET_PAUSED\"")));
+            wireMock.verify(atLeast(1), postRequestedFor(urlEqualTo("/webhook"))
+                .withRequestBody(containing("\"eventType\":\"ANOMALY_DETECTED\"")));
+        });
+    }
+
+    @Test
     void webhook_doesNotFire_whenConfigSubscribesToDifferentEvent() throws Exception {
         // Config only subscribes to BUDGET_90_PCT — SPEND_DENIED should NOT trigger it
         registerWebhookConfig("BUDGET_90_PCT");

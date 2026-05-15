@@ -57,7 +57,7 @@ def run(base_url: str, api_key: str) -> None:
             agent_id="agent_travel_bot_v2",
             action_type="PURCHASE",
             description=description,
-            requested_amount=amount,
+            requested_quantity=amount,
             currency="USD",
             idempotency_key=key,
         )
@@ -75,13 +75,13 @@ def run(base_url: str, api_key: str) -> None:
     # ── 3. Confirm the flight ─────────────────────────────────────────────────
     section("3. Confirm flight at final price")
     if event_flight:
-        evt = client.confirm_event(event_flight, confirmed_amount=285.50)
+        evt = client.confirm_event(event_flight, confirmed_quantity=285.50)
         print(f"  Confirmed  eventId={evt.id}  amount=$285.50")
 
     # ── 4. Confirm the hotel ──────────────────────────────────────────────────
     section("4. Confirm hotel at final price")
     if event_hotel:
-        evt = client.confirm_event(event_hotel, confirmed_amount=210.00)
+        evt = client.confirm_event(event_hotel, confirmed_quantity=210.00)
         print(f"  Confirmed  eventId={evt.id}  amount=$210.00")
 
     # ── 5. Fail the taxi (payment gateway error) ──────────────────────────────
@@ -103,7 +103,7 @@ def run(base_url: str, api_key: str) -> None:
     page = client.get_ledger(budget_id, page=0, size=10)
     print(f"  Total events : {page.total_elements}")
     for e in page.events:
-        print(f"  {e.decision:12s}  ${str(e.requested_amount):>10s}  {e.description[:40]}")
+        print(f"  {e.decision:12s}  ${str(e.requested_quantity):>10s}  {e.description[:40]}")
 
     # ── 8. Budget state ───────────────────────────────────────────────────────
     section("8. Budget state after scenario")
