@@ -3,10 +3,38 @@ FiGuard integration for LangChain and LangGraph.
 
 Two integration patterns:
 
-**FiGuardCallbackHandler** — attach to any AgentExecutor as a callback.
-Every tool call is pre-authorized. Requires ``handle_tool_error=True`` on the
-AgentExecutor so the LLM receives the structured denial reason rather than
+**FiGuardCallbackHandler** — attach to any AgentExecutor or LangGraph graph as
+a callback. Every tool call is pre-authorized. Requires ``handle_tool_error=True``
+on the AgentExecutor so the LLM receives the structured denial reason rather than
 the run crashing.
+
+Supports two token modes:
+
+- **Single agent** — pass ``session_token`` directly::
+
+    handler = FiGuardCallbackHandler(
+        client=client,
+        session_token=budget.session_token,
+    )
+
+- **Fleet / LangGraph supervisor** — pass a ``token_resolver`` callable that
+  maps an agent ID to the right delegation token at runtime. One handler wired
+  to the whole graph; the resolver picks the correct scoped token per node::
+
+    handler = FiGuardCallbackHandler(
+        client=client,
+        token_resolver=lambda agent_id: delegation_tokens[agent_id],
+    )
+
+    graph = supervisor_graph.compile(callbacks=[handler])
+
+  Each LangGraph node must pass ``agent_id`` through the run config::
+
+    def researcher_node(state, config):
+        return llm.invoke(
+            state["messages"],
+            config={"metadata": {"agent_id": "researcher"}},
+        )
 
 **FiGuardToolGuard** — wraps an individual tool in-place.
 Guaranteed hard enforcement regardless of AgentExecutor settings. Use when
@@ -16,25 +44,6 @@ some tools should be guarded.
 Installation::
 
     pip install figuard[langchain]
-
-Quick start::
-
-    from figuard import FiGuardClient
-    from figuard.integrations.langchain import FiGuardCallbackHandler
-
-    client = FiGuardClient(api_key="ab_live_demo")
-    budget = client.create_budget(user_id="user_123", total_limit=500.00, ...)
-
-    executor = AgentExecutor(
-        agent=agent,
-        tools=tools,
-        handle_tool_error=True,
-        callbacks=[FiGuardCallbackHandler(
-            client=client,
-            session_token=budget.session_token,
-            tool_category_map={"book_flight": "flight", "book_hotel": "hotel"},
-        )],
-    )
 """
 
 from __future__ import annotations
@@ -64,51 +73,56 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
     """
     LangChain callback handler that pre-authorizes every tool call via FiGuard.
 
-    Attach to an ``AgentExecutor`` via its ``callbacks`` parameter::
+    **Single agent** — pass ``session_token``::
 
         executor = AgentExecutor(
             agent=agent,
             tools=tools,
-            handle_tool_error=True,       # required — sends denial to LLM
+            handle_tool_error=True,
             callbacks=[FiGuardCallbackHandler(
                 client=client,
                 session_token=budget.session_token,
-                tool_category_map={
-                    "book_flight": "flight",
-                    "book_hotel":  "hotel",
-                },
+                tool_category_map={"book_flight": "flight"},
             )],
         )
+
+    **Fleet / LangGraph supervisor** — pass ``token_resolver`` instead.
+    One handler covers all sub-agents; the resolver maps each agent's ID to
+    its scoped delegation token at runtime::
+
+        handler = FiGuardCallbackHandler(
+            client=client,
+            token_resolver=lambda agent_id: delegation_tokens[agent_id],
+        )
+        graph = supervisor_graph.compile(callbacks=[handler])
+
+    Each LangGraph node must pass ``agent_id`` through its run config so the
+    handler knows which delegation token to use::
+
+        def researcher_node(state, config):
+            return llm.invoke(
+                state["messages"],
+                config={"metadata": {"agent_id": "researcher"}},
+            )
 
     **What happens on denial:**
     ``on_tool_start`` raises ``ToolException`` before the tool runs. With
     ``handle_tool_error=True``, the LLM receives the denial reason as the
-    tool result and can adjust its plan (e.g. try a cheaper option, escalate,
-    or stop). Without it, the run crashes — so always set it.
+    tool result and can adjust its plan. Without it the run crashes.
 
     **Amount extraction:**
     The handler looks for a key named ``amount_param`` (default ``"amount"``)
-    in the tool's JSON input. If your tool uses a different key (e.g. ``"price"``),
-    either set ``amount_param`` globally or use ``FiGuardToolGuard`` per tool.
-
-    **Non-spending tools:**
-    Pass tool names to ``ignore_tools`` to skip authorization for search,
-    retrieval, or other read-only operations.
+    in the tool's JSON input. Override with ``amount_extractor`` for complex cases.
 
     **Exact cost confirmation:**
-    By default the handler confirms with the same amount that was authorized.
-    If your tool returns the actual settled cost, provide a ``cost_extractor``
-    to confirm with the real amount and release any unused reservation::
+    Provide ``cost_extractor`` to confirm with the actual settled cost instead of
+    the authorized amount, releasing any unused reservation::
 
         handler = FiGuardCallbackHandler(
             client=client,
             session_token=budget.session_token,
             cost_extractor=lambda output: json.loads(output)["charged_amount"],
         )
-
-    The ``output`` argument is the raw string the tool returns to the LLM.
-    If the extractor raises or returns a non-positive value, the handler falls
-    back to confirming with the authorized amount and logs a warning.
     """
 
     raise_error: bool = True  # propagate ToolException so denials block execution
@@ -116,8 +130,9 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
     def __init__(
         self,
         client: FiGuardClient,
-        session_token: str,
+        session_token: Optional[str] = None,
         *,
+        token_resolver: Optional[Callable[[Optional[str]], str]] = None,
         agent_id: str = "langchain_agent",
         amount_param: str = "amount",
         tool_category_map: Optional[Dict[str, str]] = None,
@@ -128,33 +143,47 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
     ) -> None:
         """
         :param client:            FiGuardClient instance.
-        :param session_token:     Budget session token for this agent run.
-        :param agent_id:          Agent identifier written to the FiGuard audit ledger.
+        :param session_token:     Budget session token for single-agent use.
+                                  Mutually exclusive with ``token_resolver``.
+        :param token_resolver:    Fleet / LangGraph pattern. Callable
+                                  ``(agent_id: str | None) -> str`` that returns
+                                  the correct delegation token for each sub-agent.
+                                  The handler reads ``agent_id`` from the LangChain
+                                  run metadata (set via
+                                  ``config={"metadata": {"agent_id": "..."}}``)
+                                  and passes it to the resolver on every tool call.
+                                  Mutually exclusive with ``session_token``.
+        :param agent_id:          Default agent identifier written to the FiGuard
+                                  audit ledger. In fleet mode the per-call metadata
+                                  agent_id takes precedence when present.
         :param amount_param:      Tool input key that contains the spend amount.
-                                  Defaults to ``"amount"``. Ignored if ``amount_extractor`` is set.
-        :param tool_category_map: Maps tool name to FiGuard claimed category.
+                                  Defaults to ``"amount"``. Ignored if
+                                  ``amount_extractor`` is set.
+        :param tool_category_map: Maps tool name → FiGuard claimed category.
                                   Required for allocation budgets.
-                                  Example: ``{"book_flight": "flight"}``
-        :param ignore_tools:      Tool names to skip authorization entirely
-                                  (search tools, read-only lookups, etc.).
-        :param amount_extractor:  Optional callable ``(parsed_input: dict) -> float``.
-                                  Use when the spend amount lives under a non-standard
-                                  key or must be computed from multiple fields.
-                                  Example: ``amount_extractor=lambda d: d.get("price") or d.get("cost", 0)``
-        :param cost_extractor:    Optional callable ``(tool_output: Any) -> float``.
-                                  Called in ``on_tool_end`` to extract the actual settled
-                                  cost from the tool's return value. When provided, the
-                                  handler confirms with the real cost instead of the
-                                  authorized amount, releasing any unused reservation.
-                                  Falls back to the authorized amount if the extractor
-                                  raises or returns a non-positive value.
-                                  Example: ``cost_extractor=lambda out: json.loads(out)["charged_amount"]``
-        :param debug:             When ``True``, logs the category and amount being sent
-                                  to FiGuard for each tool call. Useful during integration.
+        :param ignore_tools:      Tool names to skip (read-only lookups, etc.).
+        :param amount_extractor:  ``(parsed_input: dict) -> float``. Use when the
+                                  amount lives under a non-standard key or must be
+                                  computed from multiple fields.
+        :param cost_extractor:    ``(tool_output: Any) -> float``. Called in
+                                  ``on_tool_end`` to extract the actual settled cost.
+                                  Falls back to the authorized amount if it raises or
+                                  returns a non-positive value.
+        :param debug:             Log category and amount for each tool call.
         """
+        if not session_token and not token_resolver:
+            raise ValueError(
+                "FiGuardCallbackHandler requires either session_token (single agent) "
+                "or token_resolver (fleet/LangGraph pattern)."
+            )
+        if session_token and token_resolver:
+            raise ValueError(
+                "Provide session_token or token_resolver, not both."
+            )
         super().__init__()
         self._client = client
         self._session_token = session_token
+        self._token_resolver = token_resolver
         self._agent_id = agent_id
         self._amount_param = amount_param
         self._tool_category_map: Dict[str, str] = tool_category_map or {}
@@ -165,6 +194,25 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
         # run_id → (event_id, amount) — populated on authorize, consumed on confirm/fail
         self._pending: Dict[str, tuple[str, float]] = {}
         self._lock = threading.Lock()
+
+    def _get_token(self, metadata_agent_id: Optional[str]) -> str:
+        """Return the session token to use for this tool call."""
+        if self._session_token:
+            return self._session_token
+        # Fleet mode — resolve per agent
+        if metadata_agent_id is None:
+            logger.warning(
+                "figuard: token_resolver is set but no agent_id found in run metadata. "
+                "Pass agent_id via config={'metadata': {'agent_id': '...'}} in your "
+                "LangGraph node. Calling resolver with None."
+            )
+        token = self._token_resolver(metadata_agent_id)  # type: ignore[misc]
+        if not token:
+            raise ValueError(
+                f"figuard: token_resolver returned empty token for "
+                f"agent_id={metadata_agent_id!r}"
+            )
+        return token
 
     # ------------------------------------------------------------------
     # Callback lifecycle
@@ -185,15 +233,23 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
             logger.debug("figuard: skipping %s (in ignore_tools)", tool_name)
             return
 
+        # In fleet/LangGraph mode the node passes agent_id through run metadata.
+        # For single-agent mode this is None and self._agent_id is used instead.
+        metadata = kwargs.get("metadata") or {}
+        metadata_agent_id: Optional[str] = metadata.get("agent_id") if isinstance(metadata, dict) else None
+        agent_id = metadata_agent_id or self._agent_id
+
+        token = self._get_token(metadata_agent_id)
+
         parsed = _parse_input(input_str)
         amount = _resolve_amount(parsed, self._amount_param, self._amount_extractor)
         category = self._tool_category_map.get(tool_name)
         if self._debug:
-            logger.info("figuard debug: tool=%s category=%s amount=%s", tool_name, category, amount)
+            logger.info("figuard debug: tool=%s agent=%s category=%s amount=%s", tool_name, agent_id, category, amount)
 
         auth = self._client.authorize(
-            session_token=self._session_token,
-            agent_id=self._agent_id,
+            session_token=token,
+            agent_id=agent_id,
             action_type="TOOL_CALL",
             description=f"{tool_name}: {input_str[:200]}",
             requested_quantity=amount,

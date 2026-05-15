@@ -470,6 +470,111 @@ class TestFiGuardCallbackHandlerExtended:
         assert client.authorize.call_args.kwargs["requested_quantity"] == 189.0
 
 
+class TestTokenResolver:
+    """Tests for FiGuardCallbackHandler token_resolver (fleet/LangGraph pattern)."""
+
+    def test_init_requires_session_token_or_resolver(self):
+        client = MagicMock()
+        with pytest.raises(ValueError, match="session_token"):
+            FiGuardCallbackHandler(client=client)
+
+    def test_init_rejects_both_token_and_resolver(self):
+        client = MagicMock()
+        with pytest.raises(ValueError, match="not both"):
+            FiGuardCallbackHandler(
+                client=client,
+                session_token="tok",
+                token_resolver=lambda _: "tok",
+            )
+
+    def test_resolver_called_with_metadata_agent_id(self):
+        """The resolver receives the agent_id from LangChain run metadata."""
+        resolver = MagicMock(return_value="delegation_tok_researcher")
+        client = _mock_client(_authorized("evt_001", 50.0))
+        handler = FiGuardCallbackHandler(client=client, token_resolver=resolver)
+        run_id = uuid4()
+
+        handler.on_tool_start(
+            {"name": "search_web"},
+            '{"amount": 50.0}',
+            run_id=run_id,
+            metadata={"agent_id": "researcher"},
+        )
+
+        resolver.assert_called_once_with("researcher")
+        assert client.authorize.call_args.kwargs["session_token"] == "delegation_tok_researcher"
+        assert client.authorize.call_args.kwargs["agent_id"] == "researcher"
+
+    def test_resolver_different_tokens_per_agent(self):
+        """Each sub-agent gets its own token via the resolver."""
+        tokens = {"researcher": "tok_r", "writer": "tok_w"}
+        client = _mock_client(_authorized())
+        client.authorize.side_effect = [
+            _authorized("evt_R", 10.0),
+            _authorized("evt_W", 20.0),
+        ]
+        handler = FiGuardCallbackHandler(
+            client=client,
+            token_resolver=lambda aid: tokens[aid],
+        )
+
+        handler.on_tool_start({"name": "search"}, '{"amount": 10.0}',
+                               run_id=uuid4(), metadata={"agent_id": "researcher"})
+        handler.on_tool_start({"name": "write"}, '{"amount": 20.0}',
+                               run_id=uuid4(), metadata={"agent_id": "writer"})
+
+        calls = client.authorize.call_args_list
+        assert calls[0].kwargs["session_token"] == "tok_r"
+        assert calls[1].kwargs["session_token"] == "tok_w"
+
+    def test_resolver_none_token_raises(self):
+        """Resolver returning empty string raises ValueError before authorize is called."""
+        client = _mock_client(_authorized())
+        handler = FiGuardCallbackHandler(
+            client=client,
+            token_resolver=lambda _: "",
+        )
+        with pytest.raises(ValueError, match="empty token"):
+            handler.on_tool_start(
+                {"name": "buy"}, '{"amount": 10.0}',
+                run_id=uuid4(), metadata={"agent_id": "researcher"},
+            )
+        client.authorize.assert_not_called()
+
+    def test_resolver_missing_agent_id_logs_warning(self, caplog):
+        """No agent_id in metadata: resolver called with None and a warning is logged."""
+        import logging
+        client = _mock_client(_authorized("evt_001", 10.0))
+        handler = FiGuardCallbackHandler(
+            client=client,
+            token_resolver=lambda _: "fallback_tok",
+        )
+        with caplog.at_level(logging.WARNING, logger="figuard.integrations.langchain"):
+            handler.on_tool_start(
+                {"name": "buy"}, '{"amount": 10.0}',
+                run_id=uuid4(),
+            )
+        assert "no agent_id" in caplog.text.lower() or "agent_id" in caplog.text
+
+    def test_session_token_ignores_metadata_agent_id(self):
+        """Single-agent mode: session_token always used, metadata agent_id not forwarded to token."""
+        client = _mock_client(_authorized("evt_001", 10.0))
+        handler = FiGuardCallbackHandler(
+            client=client,
+            session_token=SESSION_TOKEN,
+            agent_id=AGENT_ID,
+        )
+        handler.on_tool_start(
+            {"name": "buy"}, '{"amount": 10.0}',
+            run_id=uuid4(),
+            metadata={"agent_id": "some_other_agent"},
+        )
+        # Token must be the fixed session_token, not resolved from metadata
+        assert client.authorize.call_args.kwargs["session_token"] == SESSION_TOKEN
+        # agent_id from metadata still used for the audit log
+        assert client.authorize.call_args.kwargs["agent_id"] == "some_other_agent"
+
+
 class TestCostExtractor:
     """Tests for FiGuardCallbackHandler cost_extractor parameter."""
 
