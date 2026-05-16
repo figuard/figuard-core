@@ -50,7 +50,7 @@ print()
 
 # Correct: flight booked against flight allocation
 auth1 = figuard.authorize(
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     agent_id="travel_agent",
     action_type="PURCHASE",
     description="JetBlue SFO→JFK",
@@ -64,7 +64,7 @@ if auth1.is_authorized:
 
 # Wrong: hotel charged to flight allocation
 auth2 = figuard.authorize(
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     agent_id="travel_agent",
     action_type="PURCHASE",
     description="Marriott Times Square",
@@ -77,7 +77,7 @@ print(f"Hotel  → flight:  {auth2.decision}"
 
 # Correct: hotel charged to hotel allocation
 auth3 = figuard.authorize(
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     agent_id="travel_agent",
     action_type="PURCHASE",
     description="Marriott Times Square",

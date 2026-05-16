@@ -48,7 +48,7 @@ while True:
     iteration += 1
 
     auth = figuard.authorize(
-        session_token=budget.session_token,
+        session_token=budget.primary_token.session_token,
         agent_id="quality_checker",
         action_type="LLM_CALL",
         description=f"Claude quality evaluation iteration {iteration}",

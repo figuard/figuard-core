@@ -67,6 +67,18 @@ public class CreateBudgetRequest {
     @Positive(message = "authorizationExpirySeconds must be positive")
     private Integer authorizationExpirySeconds;
 
+    // Rolling-window velocity controls. All optional — null means no limit.
+    // Checked during authorization after expiry, before category matching.
+    @Positive(message = "velocityMaxPerMinute must be positive")
+    private Integer velocityMaxPerMinute;
+
+    @Positive(message = "velocityMaxAmountPerHour must be positive")
+    @Digits(integer = 15, fraction = 4)
+    private BigDecimal velocityMaxAmountPerHour;
+
+    @Positive(message = "velocityMaxPerDay must be positive")
+    private Integer velocityMaxPerDay;
+
     @NotNull(message = "expiresAt is required")
     @Future(message = "expiresAt must be in the future")
     private OffsetDateTime expiresAt;

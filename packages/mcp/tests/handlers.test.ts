@@ -49,8 +49,7 @@ const BUDGET_RESPONSE = {
   availableQuantity: 500,
   status: "ACTIVE",
   expiresAt: "2026-12-31T23:59:59Z",
-  sessionToken: "st_abc_secret",
-  sessionTokenPrefix: "st_abc",
+  tokens: [{ sessionToken: "st_abc_secret", sessionTokenPrefix: "st_abc", category: "default", unit: null, currency: "USD" }],
   allocations: [],
   isActive: true,
   isPaused: false,
@@ -147,6 +146,22 @@ describe("handleCreateBudget", () => {
     expect(result.allocations).toHaveLength(1);
     expect(result.allocations[0].category).toBe("flights");
     expect(result.allocations[0].limit).toBe(300);
+  });
+
+  it("passes velocity params to client when provided", async () => {
+    const client = makeClient({ createBudget: jest.fn().mockResolvedValue(BUDGET_RESPONSE) });
+    await handleCreateBudget(client, {
+      user_id: "user_1",
+      total_limit: 500,
+      velocity_max_per_minute: 5,
+      velocity_max_amount_per_hour: 200,
+      velocity_max_per_day: 50,
+    });
+
+    const callArgs = client.createBudget.mock.calls[0][0];
+    expect(callArgs.velocityMaxPerMinute).toBe(5);
+    expect(callArgs.velocityMaxAmountPerHour).toBe(200);
+    expect(callArgs.velocityMaxPerDay).toBe(50);
   });
 
   it("throws when user_id is missing", async () => {

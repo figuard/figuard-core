@@ -37,7 +37,7 @@ lock = threading.Lock()
 
 def agent_spend(agent_id: int) -> None:
     auth = figuard.authorize(
-        session_token=budget.session_token,
+        session_token=budget.primary_token.session_token,
         agent_id=f"research_agent_{agent_id}",
         action_type="COMPUTE",
         description=f"Research subtask {agent_id}",

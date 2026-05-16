@@ -37,6 +37,17 @@ public class BudgetMapper {
                 .toList();
         }
 
+        List<BudgetTokenResponse> tokens = null;
+        if (rawSessionToken != null) {
+            tokens = List.of(BudgetTokenResponse.builder()
+                .category("default")
+                .sessionToken(rawSessionToken)
+                .sessionTokenPrefix(budget.getSessionTokenPrefix())
+                .unit(budget.getUnit())
+                .currency(budget.getCurrency() != null ? budget.getCurrency().trim() : null)
+                .build());
+        }
+
         return BudgetResponse.builder()
             .id(budget.getId())
             .userId(budget.getUserId())
@@ -44,8 +55,7 @@ public class BudgetMapper {
             .intentContext(budget.getIntentContext())
             .intentTags(budget.getIntentTags() != null
                 ? Arrays.asList(budget.getIntentTags()) : null)
-            .sessionToken(rawSessionToken)
-            .sessionTokenPrefix(budget.getSessionTokenPrefix())
+            .tokens(tokens)
             .totalLimit(budget.getTotalLimit())
             .maxTransactionQuantity(budget.getMaxTransactionQuantity())
             .currency(budget.getCurrency() != null ? budget.getCurrency().trim() : null)
@@ -55,6 +65,9 @@ public class BudgetMapper {
             .availableQuantity(budget.availableQuantity())
             .softLimit(budget.getSoftLimit())
             .authorizationExpirySeconds(budget.getAuthorizationExpirySeconds())
+            .velocityMaxPerMinute(budget.getVelocityMaxPerMinute())
+            .velocityMaxAmountPerHour(budget.getVelocityMaxAmountPerHour())
+            .velocityMaxPerDay(budget.getVelocityMaxPerDay())
             .anomalyDetectionEnabled(budget.isAnomalyDetectionEnabled())
             .autoPauseOnAnomaly(budget.isAutoPauseOnAnomaly())
             .status(budget.getStatus())
@@ -155,6 +168,9 @@ public class BudgetMapper {
             budget.setAnomalyMinSampleSize(request.getAnomalyMinSampleSize());
         }
         budget.setAuthorizationExpirySeconds(request.getAuthorizationExpirySeconds());
+        budget.setVelocityMaxPerMinute(request.getVelocityMaxPerMinute());
+        budget.setVelocityMaxAmountPerHour(request.getVelocityMaxAmountPerHour());
+        budget.setVelocityMaxPerDay(request.getVelocityMaxPerDay());
         budget.setExpiresAt(request.getExpiresAt());
         budget.setMetadata(request.getMetadata());
         return budget;

@@ -39,9 +39,14 @@ fleet = client.create_budget(
 ## Issuing delegation tokens
 
 ```python
+# fleet.tokens is a list — one entry per dimension so agents have full context
+# on all spending dimensions. For simple fleet budgets there is one entry with
+# category="default". Use primary_token as a convenience accessor.
+fleet_session_token = fleet.primary_token.session_token
+
 refund_token = client.create_delegation_token(
     budget_id=fleet.id,
-    session_token=fleet.session_token,   # orchestrator authenticates with fleet token
+    session_token=fleet_session_token,   # orchestrator authenticates with fleet token
     label="refund-processor",
     caps=[{"category": "refund", "limit": 3_000.00}],
     expires_in="4h",
@@ -49,14 +54,14 @@ refund_token = client.create_delegation_token(
 
 compute_token = client.create_delegation_token(
     budget_id=fleet.id,
-    session_token=fleet.session_token,
+    session_token=fleet_session_token,
     label="compute-runner",
     caps=[{"category": "compute", "limit": 5_000.00}],
     expires_in="4h",
 )
 ```
 
-Pass `refund_token.session_token` to the refund agent. Never share `fleet.session_token` beyond the orchestrator.
+Pass `refund_token.session_token` to the refund agent. Never share `fleet_session_token` beyond the orchestrator.
 
 ---
 
@@ -100,7 +105,7 @@ A sub-agent is blocked at whichever limit it hits first — its own cap or the f
 client.revoke_delegation_token(
     budget_id=fleet.id,
     token_id=refund_token.id,
-    session_token=fleet.session_token,
+    session_token=fleet_session_token,
 )
 # Subsequent authorize calls with refund_token.session_token → 401
 ```

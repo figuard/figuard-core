@@ -51,7 +51,15 @@ def _budget_payload(session_token: bool = False) -> Dict[str, Any]:
         "allocations": [],
     }
     if session_token:
-        payload["sessionToken"] = SESSION_TOKEN
+        payload["tokens"] = [
+            {
+                "category": "default",
+                "sessionToken": SESSION_TOKEN,
+                "sessionTokenPrefix": "st_abcde",
+                "unit": None,
+                "currency": "USD",
+            }
+        ]
     return payload
 
 
@@ -130,7 +138,7 @@ class TestCreateBudget:
 
         assert isinstance(budget, Budget)
         assert budget.id == BUDGET_ID
-        assert budget.session_token == SESSION_TOKEN
+        assert budget.primary_token.session_token == SESSION_TOKEN
         assert budget.status == "ACTIVE"
         assert budget.available_quantity == 500.0
         assert budget.is_active is True
@@ -142,7 +150,7 @@ class TestCreateBudget:
                 m.get(f"{BASE}/api/v1/budgets/{BUDGET_ID}", payload=_budget_payload(), status=200)
                 budget = await client.get_budget(BUDGET_ID)
 
-        assert budget.session_token is None
+        assert budget.primary_token is None
 
     @pytest.mark.asyncio
     async def test_api_error_propagated(self) -> None:
@@ -159,6 +167,67 @@ class TestCreateBudget:
 
         assert exc_info.value.status_code == 400
         assert "expiresAt" in exc_info.value.message
+
+    @pytest.mark.asyncio
+    async def test_velocity_params_sent_in_request_body(self) -> None:
+        captured: dict = {}
+
+        async def fake_request(method: str, path: str, **kwargs: Any) -> Any:
+            if method == "POST" and path == "/api/v1/budgets":
+                captured.update(kwargs.get("json", {}))
+            return _budget_payload(session_token=True)
+
+        client = AsyncFiGuardClient(api_key=API_KEY, base_url=BASE)
+        with mock.patch.object(client, "_request", side_effect=fake_request):
+            await client.create_budget(
+                user_id="user_test",
+                total_limit=500.0,
+                expires_at="2025-12-31T23:59:59Z",
+                velocity_max_per_minute=10,
+                velocity_max_amount_per_hour=250.0,
+                velocity_max_per_day=50,
+            )
+
+        assert captured.get("velocityMaxPerMinute") == 10
+        assert captured.get("velocityMaxAmountPerHour") == 250.0
+        assert captured.get("velocityMaxPerDay") == 50
+
+    @pytest.mark.asyncio
+    async def test_parse_budget_extracts_velocity_fields(self) -> None:
+        payload = _budget_payload(session_token=True)
+        payload["velocityMaxPerMinute"] = 5
+        payload["velocityMaxAmountPerHour"] = 100.0
+        payload["velocityMaxPerDay"] = 20
+
+        async with AsyncFiGuardClient(api_key=API_KEY, base_url=BASE) as client:
+            with aioresponses_ctx() as m:
+                m.post(f"{BASE}/api/v1/budgets", payload=payload, status=201)
+
+                budget = await client.create_budget(
+                    user_id="user_test",
+                    total_limit=500.0,
+                    expires_at="2025-12-31T23:59:59Z",
+                )
+
+        assert budget.velocity_max_per_minute == 5
+        assert budget.velocity_max_amount_per_hour == 100.0
+        assert budget.velocity_max_per_day == 20
+
+    @pytest.mark.asyncio
+    async def test_velocity_fields_absent_when_not_set(self) -> None:
+        async with AsyncFiGuardClient(api_key=API_KEY, base_url=BASE) as client:
+            with aioresponses_ctx() as m:
+                m.post(f"{BASE}/api/v1/budgets", payload=_budget_payload(session_token=True), status=201)
+
+                budget = await client.create_budget(
+                    user_id="user_test",
+                    total_limit=500.0,
+                    expires_at="2025-12-31T23:59:59Z",
+                )
+
+        assert budget.velocity_max_per_minute is None
+        assert budget.velocity_max_amount_per_hour is None
+        assert budget.velocity_max_per_day is None
 
 
 # ---------------------------------------------------------------------------

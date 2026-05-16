@@ -16,5 +16,6 @@ public enum WebhookEventType {
     SPEND_PAYMENT_FAILED,        // payment failed — event moved AUTHORIZED → FAILED, reservation released
     LEDGER_INTEGRITY_VIOLATION,  // LedgerIntegrityService detected a balance invariant breach
     WEBHOOK_TEST,                // synthetic event fired by POST /webhooks/{id}/test
-    DELEGATION_TOKEN_REVOKED     // a delegation token was explicitly revoked via DELETE /delegation-tokens/{id}
+    DELEGATION_TOKEN_REVOKED,    // a delegation token was explicitly revoked via DELETE /delegation-tokens/{id}
+    VELOCITY_LIMIT_EXCEEDED      // a rolling-window rate limit was hit (first violation per window)
 }

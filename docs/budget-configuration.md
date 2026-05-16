@@ -125,6 +125,9 @@ budget = client.create_budget(
 | `auto_pause_on_anomaly` | `false` | Pauses the budget automatically on anomaly detection (requires `anomaly_detection_enabled=True`) |
 | `entity_dedup_enabled` | `false` | Blocks the same `entity_id` from being authorized twice — prevents duplicate payments |
 | `max_transaction_quantity` | none | Hard ceiling on any single authorization amount |
+| `velocity_max_per_minute` | none | Maximum number of authorize calls in any rolling 60-second window |
+| `velocity_max_amount_per_hour` | none | Maximum total `requested_quantity` in any rolling 60-minute window |
+| `velocity_max_per_day` | none | Maximum number of authorize calls in any rolling 24-hour window |
 
 ```python
 budget = client.create_budget(
@@ -136,6 +139,9 @@ budget = client.create_budget(
     auto_pause_on_anomaly=False,         # advisory only, don't auto-lock
     entity_dedup_enabled=True,           # prevent duplicate invoice payments
     max_transaction_quantity=2_000,      # no single transaction over $2k
+    velocity_max_per_minute=10,          # stop runaway retry loops
+    velocity_max_amount_per_hour=5_000,  # cap hourly requested spend
+    velocity_max_per_day=500,            # daily call ceiling
 )
 ```
 
@@ -144,6 +150,31 @@ Set this on every budget. The default is 300 seconds (5 minutes). If your agent 
 
 **`entity_dedup_enabled` guidance:**
 Use this when each real-world entity (invoice ID, booking reference, order number) should only be charged once, even if the agent retries. Pass the entity's ID as `entity_id` on the `authorize` call. If an authorization for that entity ID already exists and is AUTHORIZED or CONFIRMED, the second call returns `ENTITY_ALREADY_AUTHORIZED` with a pointer to the original event.
+
+### Velocity controls
+
+Velocity limits cap the rate or total requested quantity within a rolling window. They are independent of the total budget limit — a budget with $10k remaining but `velocity_max_per_minute=10` will deny the 11th call in 60 seconds even though funds are available.
+
+```python
+# Catch a runaway agent that retries in a loop
+budget = client.create_budget(
+    total_limit=10_000,
+    currency="USD",
+    expires_in="24h",
+    velocity_max_per_minute=10,           # max 10 calls per 60-second rolling window
+    velocity_max_amount_per_hour=5_000.0, # max $5k requested per 60-minute rolling window
+    velocity_max_per_day=500,             # max 500 calls per 24-hour rolling window
+)
+
+# Exceeding any limit → denial code VELOCITY_LIMIT_EXCEEDED
+# First violation writes a SpendEvent + fires VELOCITY_LIMIT_EXCEEDED webhook
+# Subsequent violations in the same window are silently denied (no new ledger entry)
+
+# Update limits after creation via PATCH — no need to recreate the budget:
+# PATCH /budgets/{id}  { "velocityMaxPerMinute": 20 }
+```
+
+All three fields count **every authorize attempt**, not just approved ones. This means a budget-exhausted agent that keeps retrying still increments the velocity counter and will be detected.
 
 ---
 

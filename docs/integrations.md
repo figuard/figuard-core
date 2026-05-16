@@ -28,7 +28,7 @@ budget = client.create_budget(
 
 handler = FiGuardCallbackHandler(
     client=client,
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     agent_id="langchain_agent",
 )
 
@@ -63,7 +63,7 @@ budget = client.create_budget(
 
 guard = FiGuardCrewGuard(
     client=client,
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
 )
 
 crew = Crew(agents=[...], tasks=[...])
@@ -100,7 +100,7 @@ budget = client.create_budget(
 @function_tool
 @guarded_function_tool(
     client=client,
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     category="flight",     # maps to claimed_category
     amount_key="price",    # which kwarg holds the spend amount
     agent_id="travel_agent",
@@ -147,7 +147,7 @@ budget = client.create_budget(
 
 guard = FiGuardAnthropicGuard(
     client=client,
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     agent_id="claude_agent",
 )
 

@@ -738,6 +738,281 @@ class AuthorizationServiceTest {
 
     // -------------------------------------------------------------------------
 
+    // -------------------------------------------------------------------------
+    // Velocity controls
+    // -------------------------------------------------------------------------
+
+    @Test
+    void authorize_denies_whenPerMinuteLimitReached() {
+        budget.setVelocityMaxPerMinute(2);
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any())).thenReturn(Optional.empty());
+        // Simulate 2 existing attempts in the last minute → at limit
+        when(spendEventRepository.countAttemptsAfter(eq(budget.getId()), any())).thenReturn(2L);
+        // No existing velocity denial in the window → first violation
+        when(spendEventRepository.findVelocityDenialAfter(eq(budget.getId()), any()))
+            .thenReturn(List.of());
+        when(webhookPayloadBuilder.buildVelocityLimitExceededPayload(any(), any(), anyString()))
+            .thenReturn(java.util.Map.of());
+
+        AuthorizationResponse response = service.authorize("st_token", validRequest(), tenant);
+
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.DENIED);
+        assertThat(response.getDenialReason()).isEqualTo(DenialCode.VELOCITY_LIMIT_EXCEEDED);
+        // Webhook must fire for first violation
+        verify(webhookDispatcher).dispatch(eq(tenant.getId()), eq(WebhookEventType.VELOCITY_LIMIT_EXCEEDED), any());
+        verify(spendEventRepository).save(any());
+    }
+
+    @Test
+    void authorize_denies_silently_onSubsequentViolation_inSameWindow() {
+        budget.setVelocityMaxPerMinute(1);
+
+        SpendEvent firstViolation = new SpendEvent();
+        ReflectionTestUtils.setField(firstViolation, "id", UUID.randomUUID());
+        firstViolation.setBudget(budget);
+        firstViolation.setDecision(SpendDecision.DENIED);
+        firstViolation.setDenialReason(DenialCode.VELOCITY_LIMIT_EXCEEDED.name());
+        firstViolation.setRequestedQuantity(new BigDecimal("100.00"));
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any())).thenReturn(Optional.empty());
+        // At-limit count
+        when(spendEventRepository.countAttemptsAfter(eq(budget.getId()), any())).thenReturn(1L);
+        // A prior VELOCITY_LIMIT_EXCEEDED event already exists in the window
+        when(spendEventRepository.findVelocityDenialAfter(eq(budget.getId()), any()))
+            .thenReturn(List.of(firstViolation));
+
+        AuthorizationResponse response = service.authorize("st_token", validRequest(), tenant);
+
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.DENIED);
+        assertThat(response.getDenialReason()).isEqualTo(DenialCode.VELOCITY_LIMIT_EXCEEDED);
+        // Dedup: no new save, no new webhook
+        verify(spendEventRepository, never()).save(any());
+        verify(webhookDispatcher, never()).dispatch(any(), eq(WebhookEventType.VELOCITY_LIMIT_EXCEEDED), any());
+    }
+
+    @Test
+    void authorize_dryRun_velocity_returnsDenial_withoutWrite() {
+        budget.setVelocityMaxPerMinute(1);
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.countAttemptsAfter(eq(budget.getId()), any())).thenReturn(1L);
+
+        AuthorizeSpendRequest req = validRequest();
+        req.setDryRun(true);
+
+        AuthorizationResponse response = service.authorize("st_token", req, tenant);
+
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.DENIED);
+        assertThat(response.getDenialReason()).isEqualTo(DenialCode.VELOCITY_LIMIT_EXCEEDED);
+        // Dry-run: nothing written, no webhook
+        verify(spendEventRepository, never()).save(any());
+        verify(webhookDispatcher, never()).dispatch(any(), any(), any());
+        // findVelocityDenialAfter must NOT be called (dry-run exits before dedup check)
+        verify(spendEventRepository, never()).findVelocityDenialAfter(any(), any());
+    }
+
+    @Test
+    void authorize_passesThrough_whenVelocityLimitsNotSet() {
+        // No velocity fields set — velocity check must be skipped entirely
+        budget.setVelocityMaxPerMinute(null);
+        budget.setVelocityMaxAmountPerHour(null);
+        budget.setVelocityMaxPerDay(null);
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any())).thenReturn(Optional.empty());
+        when(allocationRepository.findByParentBudgetIdOrderByCreatedAtAsc(any())).thenReturn(List.of());
+        when(budgetRepository.save(any())).thenReturn(budget);
+
+        AuthorizationResponse response = service.authorize("st_token", validRequest(), tenant);
+
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.AUTHORIZED);
+        // Velocity queries must never run when limits are null
+        verify(spendEventRepository, never()).countAttemptsAfter(any(), any());
+        verify(spendEventRepository, never()).sumAttemptedQuantityAfter(any(), any());
+        verify(spendEventRepository, never()).findVelocityDenialAfter(any(), any());
+    }
+
+    @Test
+    void authorize_denies_whenHourlyAmountExceeded() {
+        budget.setVelocityMaxAmountPerHour(new BigDecimal("200.00"));
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any())).thenReturn(Optional.empty());
+        // Hourly sum so far = $150; request is $100 → $250 > $200 limit
+        when(spendEventRepository.sumAttemptedQuantityAfter(eq(budget.getId()), any()))
+            .thenReturn(new BigDecimal("150.00"));
+        when(spendEventRepository.findVelocityDenialAfter(eq(budget.getId()), any()))
+            .thenReturn(List.of());
+        when(webhookPayloadBuilder.buildVelocityLimitExceededPayload(any(), any(), anyString()))
+            .thenReturn(java.util.Map.of());
+
+        AuthorizationResponse response = service.authorize("st_token", validRequest(), tenant);
+
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.DENIED);
+        assertThat(response.getDenialReason()).isEqualTo(DenialCode.VELOCITY_LIMIT_EXCEEDED);
+        verify(webhookDispatcher).dispatch(eq(tenant.getId()), eq(WebhookEventType.VELOCITY_LIMIT_EXCEEDED), any());
+    }
+
+    // -------------------------------------------------------------------------
+    // shouldBypassIdempotencyCache — idempotency TTL for transient denials
+    // -------------------------------------------------------------------------
+
+    @Test
+    void idempotency_bypasses_whenVelocityWindowElapsed() {
+        // Cached VELOCITY_LIMIT_EXCEEDED denial but the 1-minute window has since passed
+        budget.setVelocityMaxPerMinute(2);
+
+        SpendEvent cached = new SpendEvent();
+        ReflectionTestUtils.setField(cached, "id", UUID.randomUUID());
+        cached.setDecision(SpendDecision.DENIED);
+        cached.setDenialReason(DenialCode.VELOCITY_LIMIT_EXCEEDED.name());
+        cached.setRequestedQuantity(new BigDecimal("100.00"));
+        cached.setBudget(budget);
+        // createdAt is 2 minutes ago — beyond the 1-minute window
+        ReflectionTestUtils.setField(cached, "createdAt", OffsetDateTime.now().minusMinutes(2));
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any()))
+            .thenReturn(Optional.of(cached));
+        // Fresh evaluation — velocity count is now below limit
+        when(spendEventRepository.countAttemptsAfter(eq(budget.getId()), any())).thenReturn(0L);
+        when(allocationRepository.findByParentBudgetIdOrderByCreatedAtAsc(any())).thenReturn(List.of());
+        when(budgetRepository.save(any())).thenReturn(budget);
+
+        AuthorizationResponse response = service.authorize("st_token", validRequest(), tenant);
+
+        // Should bypass cache and re-evaluate — velocity is clear so AUTHORIZED
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.AUTHORIZED);
+    }
+
+    @Test
+    void idempotency_replays_whenVelocityWindowNotYetElapsed() {
+        // Cached VELOCITY_LIMIT_EXCEEDED denial and the window has NOT yet expired
+        budget.setVelocityMaxPerMinute(2);
+
+        SpendEvent cached = new SpendEvent();
+        ReflectionTestUtils.setField(cached, "id", UUID.randomUUID());
+        cached.setDecision(SpendDecision.DENIED);
+        cached.setDenialReason(DenialCode.VELOCITY_LIMIT_EXCEEDED.name());
+        cached.setRequestedQuantity(new BigDecimal("100.00"));
+        cached.setBudget(budget);
+        // createdAt is 20 seconds ago — still within the 1-minute window
+        ReflectionTestUtils.setField(cached, "createdAt", OffsetDateTime.now().minusSeconds(20));
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any()))
+            .thenReturn(Optional.of(cached));
+
+        AuthorizationResponse response = service.authorize("st_token", validRequest(), tenant);
+
+        // Window not yet elapsed — replay cached DENIED, no fresh evaluation
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.DENIED);
+        assertThat(response.getDenialReason()).isEqualTo(DenialCode.VELOCITY_LIMIT_EXCEEDED);
+        verify(spendEventRepository, never()).save(any());
+        verify(spendEventRepository, never()).countAttemptsAfter(any(), any());
+    }
+
+    @Test
+    void idempotency_bypasses_whenBudgetPausedDenial_andBudgetNowActive() {
+        // Cached BUDGET_PAUSED denial but the budget is now ACTIVE again
+        SpendEvent cached = new SpendEvent();
+        ReflectionTestUtils.setField(cached, "id", UUID.randomUUID());
+        cached.setDecision(SpendDecision.DENIED);
+        cached.setDenialReason(DenialCode.BUDGET_PAUSED.name());
+        cached.setRequestedQuantity(new BigDecimal("100.00"));
+        cached.setBudget(budget);
+
+        budget.setStatus(BudgetStatus.ACTIVE); // budget resumed
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any()))
+            .thenReturn(Optional.of(cached));
+        when(allocationRepository.findByParentBudgetIdOrderByCreatedAtAsc(any())).thenReturn(List.of());
+        when(budgetRepository.save(any())).thenReturn(budget);
+
+        AuthorizationResponse response = service.authorize("st_token", validRequest(), tenant);
+
+        // Budget is active — bypass cache and re-evaluate → AUTHORIZED
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.AUTHORIZED);
+    }
+
+    @Test
+    void idempotency_replays_whenBudgetPausedDenial_andBudgetStillPaused() {
+        // Cached BUDGET_PAUSED denial and budget is still PAUSED
+        SpendEvent cached = new SpendEvent();
+        ReflectionTestUtils.setField(cached, "id", UUID.randomUUID());
+        cached.setDecision(SpendDecision.DENIED);
+        cached.setDenialReason(DenialCode.BUDGET_PAUSED.name());
+        cached.setRequestedQuantity(new BigDecimal("100.00"));
+        cached.setBudget(budget);
+
+        budget.setStatus(BudgetStatus.PAUSED);
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any()))
+            .thenReturn(Optional.of(cached));
+
+        AuthorizationResponse response = service.authorize("st_token", validRequest(), tenant);
+
+        // Still paused — replay cached DENIED
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.DENIED);
+        assertThat(response.getDenialReason()).isEqualTo(DenialCode.BUDGET_PAUSED);
+        verify(spendEventRepository, never()).save(any());
+    }
+
+    @Test
+    void idempotency_bypasses_whenBudgetExhaustedDenial_andBudgetNowFunded() {
+        // Cached BUDGET_EXHAUSTED denial but the budget has since been topped up
+        SpendEvent cached = new SpendEvent();
+        ReflectionTestUtils.setField(cached, "id", UUID.randomUUID());
+        cached.setDecision(SpendDecision.DENIED);
+        cached.setDenialReason(DenialCode.BUDGET_EXHAUSTED.name());
+        cached.setRequestedQuantity(new BigDecimal("100.00"));
+        cached.setBudget(budget);
+
+        // Budget: totalLimit=500, spent=200, reserved=0 → available=300 > 0
+        budget.setTotalLimit(new BigDecimal("500.00"));
+        budget.setQuantitySpent(new BigDecimal("200.00"));
+        budget.setQuantityReserved(BigDecimal.ZERO);
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any()))
+            .thenReturn(Optional.of(cached));
+        when(allocationRepository.findByParentBudgetIdOrderByCreatedAtAsc(any())).thenReturn(List.of());
+        when(budgetRepository.save(any())).thenReturn(budget);
+
+        AuthorizationResponse response = service.authorize("st_token", validRequest(), tenant);
+
+        // Budget has funds now — bypass cache and re-evaluate → AUTHORIZED
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.AUTHORIZED);
+    }
+
+    @Test
+    void idempotency_replays_permanentDenial_noBypass() {
+        // NO_MATCHING_ALLOCATION is a permanent denial — must never bypass
+        SpendEvent cached = new SpendEvent();
+        ReflectionTestUtils.setField(cached, "id", UUID.randomUUID());
+        cached.setDecision(SpendDecision.DENIED);
+        cached.setDenialReason(DenialCode.NO_MATCHING_ALLOCATION.name());
+        cached.setRequestedQuantity(new BigDecimal("100.00"));
+        cached.setBudget(budget);
+
+        when(budgetRepository.findBySessionTokenHashOrPrevious(anyString(), any())).thenReturn(Optional.of(budget));
+        when(spendEventRepository.findByBudgetIdAndIdempotencyKey(any(), any()))
+            .thenReturn(Optional.of(cached));
+
+        AuthorizationResponse response = service.authorize("st_token", validRequest(), tenant);
+
+        // Permanent denial — always replay cached response, no fresh evaluation
+        assertThat(response.getDecision()).isEqualTo(SpendDecision.DENIED);
+        assertThat(response.getDenialReason()).isEqualTo(DenialCode.NO_MATCHING_ALLOCATION);
+        verify(spendEventRepository, never()).save(any());
+        verify(allocationRepository, never()).findByParentBudgetIdOrderByCreatedAtAsc(any());
+    }
+
     private AuthorizeSpendRequest validRequest() {
         AuthorizeSpendRequest req = new AuthorizeSpendRequest();
         req.setAgentId("agent_001");

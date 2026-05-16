@@ -69,6 +69,10 @@ export function App() {
 
           {/* Per-budget sub-nav when inside a budget */}
           {currentBudgetId && <BudgetSubNav budgetId={currentBudgetId} />}
+
+          <NavLink to="/users" className={({ isActive }) => navItem(isActive)}>
+            <span>👤</span> Users
+          </NavLink>
         </nav>
 
         <div className="border-t border-gray-100 px-3 py-3">

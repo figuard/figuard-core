@@ -30,7 +30,8 @@ export type DenialCode =
   | "EXCEEDS_QUANTITY_LIMIT"
   | "INTENT_SCOPE_VIOLATION"
   | "ANOMALY_DETECTED"
-  | "ENTITY_ALREADY_AUTHORIZED";
+  | "ENTITY_ALREADY_AUTHORIZED"
+  | "VELOCITY_LIMIT_EXCEEDED";
 
 export type BudgetStatus =
   | "ACTIVE"
@@ -60,14 +61,23 @@ export interface AllocationResponse {
   status: AllocationStatus;
 }
 
+export interface BudgetToken {
+  category: string;        // "default" for simple budgets
+  sessionToken: string | null;  // only on creation
+  sessionTokenPrefix: string | null;
+  unit: string | null;
+  currency: string | null;
+}
+
 export interface BudgetResponse {
   id: string;
   userId: string;
   externalReference: string | null;
   intentContext: string | null;
   intentTags: string[] | null;
-  sessionToken: string | null;
-  sessionTokenPrefix: string | null;
+  // Only populated on creation. Null on all subsequent reads.
+  // One entry per entitlement item; one entry with category="default" for simple budgets.
+  tokens: BudgetToken[] | null;
   totalLimit: number;
   maxTransactionQuantity: number | null;
   currency: string;
@@ -83,6 +93,9 @@ export interface BudgetResponse {
   cancelledAt: string | null;
   createdAt: string;
   metadata: Record<string, unknown> | null;
+  velocityMaxPerMinute: number | null;
+  velocityMaxAmountPerHour: number | null;
+  velocityMaxPerDay: number | null;
 }
 
 export interface SpendEventResponse {
@@ -270,6 +283,31 @@ export interface CounterfactualReplayResponse {
   actualPolicySummary: CounterfactualPolicySummary;
   hypotheticalPolicySummary: CounterfactualPolicySummary;
   deltaEvents: CounterfactualDelta[];
+}
+
+// ------------------------------------------------------------
+// Delegation token types
+// ------------------------------------------------------------
+
+export interface DelegationTokenAllocationResponse {
+  id: string;
+  category: string;
+  totalLimit: number;
+  quantitySpent: number;
+  quantityReserved: number;
+  availableQuantity: number;
+}
+
+export interface DelegationTokenResponse {
+  id: string;
+  parentBudgetId: string;
+  label: string | null;
+  status: string;
+  sessionToken: string | null;
+  sessionTokenPrefix: string | null;
+  caps: DelegationTokenAllocationResponse[] | null;
+  revokedAt: string | null;
+  createdAt: string;
 }
 
 // ------------------------------------------------------------

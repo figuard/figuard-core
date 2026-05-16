@@ -45,8 +45,11 @@ budget = client.create_budget(
 At runtime, the agent authorizes each spend:
 
 ```python
+# budget.tokens is a list — one entry per dimension so agents have full context
+# on all spending dimensions. For simple budgets: one entry with category="default".
+# Use primary_token as a convenience accessor.
 auth = client.authorize(
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     agent_id="travel_agent",
     action_type="PURCHASE",
     description="JetBlue SFO→JFK roundtrip",
@@ -95,9 +98,14 @@ budget = client.create_budget(
 At runtime, the agent declares `claimed_category` on every authorize call. Without it, the request is denied with `MISSING_CLAIMED_CATEGORY`.
 
 ```python
+# budget.tokens is a list — one entry per dimension so agents have full context
+# on all spending dimensions. For budgets with named allocations (flight, hotel),
+# build a map by category. For simple budgets, primary_token is the convenience accessor.
+tokens = {t.category: t.session_token for t in budget.tokens}
+
 # Flight spend
 auth = client.authorize(
-    session_token=budget.session_token,
+    session_token=tokens["flight"],
     agent_id="travel_agent",
     action_type="PURCHASE",
     description="JetBlue SFO→JFK roundtrip",
@@ -108,7 +116,7 @@ auth = client.authorize(
 
 # Hotel spend — uses the hotel allocation
 auth = client.authorize(
-    session_token=budget.session_token,
+    session_token=tokens["hotel"],
     agent_id="travel_agent",
     action_type="PURCHASE",
     description="Marriott Times Square 2 nights",
@@ -135,10 +143,14 @@ fleet = client.create_budget(
     expires_in="8h",
 )
 
+# fleet.tokens is a list — one entry per dimension so agents have full context
+# on all spending dimensions. For simple fleet budgets use primary_token.
+fleet_session_token = fleet.primary_token.session_token
+
 # Orchestrator issues a delegation token for each sub-agent
 refund_token = client.create_delegation_token(
     budget_id=fleet.id,
-    session_token=fleet.session_token,   # orchestrator authenticates
+    session_token=fleet_session_token,   # orchestrator authenticates
     label="refund-processor",
     caps=[{"category": "refund", "limit": 3_000.00}],
     expires_in="4h",
@@ -146,13 +158,13 @@ refund_token = client.create_delegation_token(
 
 compute_token = client.create_delegation_token(
     budget_id=fleet.id,
-    session_token=fleet.session_token,
+    session_token=fleet_session_token,
     label="compute-runner",
     caps=[{"category": "compute", "limit": 5_000.00}],
     expires_in="4h",
 )
 
-# Hand each token to its sub-agent — never share the parent session_token
+# Hand each token to its sub-agent — never share fleet_session_token beyond the orchestrator
 ```
 
 Each sub-agent authorizes using its own delegation token, not the fleet's session token:
@@ -196,7 +208,7 @@ At runtime, the agent authorizes before each LLM call with an estimated token co
 ```python
 # Before the LLM call — authorize with an estimate
 auth = client.authorize(
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     agent_id="research_agent",
     action_type="LLM_CALL",
     description="Summarize search results",
@@ -246,9 +258,12 @@ budget = client.create_budget(
 At runtime, declare which category each call belongs to:
 
 ```python
+# budget.tokens is a list — one entry per dimension. Build a map by category.
+tokens = {t.category: t.session_token for t in budget.tokens}
+
 # Inference call
 auth = client.authorize(
-    session_token=budget.session_token,
+    session_token=tokens["inference"],
     agent_id="research_agent",
     action_type="LLM_CALL",
     description="Generate report draft",
@@ -259,7 +274,7 @@ auth = client.authorize(
 
 # Embedding call
 auth = client.authorize(
-    session_token=budget.session_token,
+    session_token=tokens["embedding"],
     agent_id="research_agent",
     action_type="EMBEDDING",
     description="Embed document chunk",
@@ -288,7 +303,7 @@ At runtime, authorize before each external call. `requested_quantity=1` for a si
 
 ```python
 auth = client.authorize(
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     agent_id="outreach_agent",
     action_type="EXTERNAL_CALL",
     description="Send welcome email to user@example.com",
@@ -337,9 +352,12 @@ budget = client.create_budget(
 At runtime:
 
 ```python
+# budget.tokens is a list — one entry per dimension. Build a map by category.
+tokens = {t.category: t.session_token for t in budget.tokens}
+
 # Email call
 auth = client.authorize(
-    session_token=budget.session_token,
+    session_token=tokens["email"],
     agent_id="outreach_agent",
     action_type="EXTERNAL_CALL",
     description="Password reset email",
@@ -350,7 +368,7 @@ auth = client.authorize(
 
 # SMS call
 auth = client.authorize(
-    session_token=budget.session_token,
+    session_token=tokens["sms"],
     agent_id="outreach_agent",
     action_type="EXTERNAL_CALL",
     description="2FA SMS to +1-555-0100",

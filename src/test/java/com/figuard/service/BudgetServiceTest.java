@@ -125,8 +125,11 @@ class BudgetServiceTest {
         when(budgetRepository.save(any())).thenReturn(mockBudget);
         when(budgetMapper.toResponse(any(AgentBudget.class), eq(rawToken)))
             .thenReturn(BudgetResponse.builder()
-                .sessionToken(rawToken)
-                .sessionTokenPrefix(rawToken.substring(0, 12))
+                .tokens(List.of(com.figuard.api.dto.response.BudgetTokenResponse.builder()
+                    .category("default")
+                    .sessionToken(rawToken)
+                    .sessionTokenPrefix(rawToken.substring(0, 12))
+                    .build()))
                 .build());
 
         BudgetService.CreateBudgetResult result = budgetService.createBudget(request, tenant);
@@ -142,7 +145,8 @@ class BudgetServiceTest {
         assertThat(saved.getSessionTokenHash()).isNotEqualTo(rawToken);
 
         // Raw token IS in the response (returned once) but not in persisted entity
-        assertThat(response.getSessionToken()).isEqualTo(rawToken);
+        assertThat(response.getTokens()).isNotNull();
+        assertThat(response.getTokens().get(0).getSessionToken()).isEqualTo(rawToken);
     }
 
     @Test

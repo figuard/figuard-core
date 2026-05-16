@@ -152,10 +152,18 @@ public class BudgetService {
 
     @Transactional(readOnly = true)
     public Page<BudgetResponse> listBudgets(Tenant tenant, int page, int size, BudgetStatus status,
-                                             boolean includeCancelled) {
+                                             boolean includeCancelled, String userId) {
         PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         Page<AgentBudget> budgets;
-        if (status != null) {
+        if (userId != null && !userId.isBlank()) {
+            if (status != null) {
+                budgets = budgetRepository.findByTenantAndUserIdAndStatus(tenant, userId, status, pageable);
+            } else if (includeCancelled) {
+                budgets = budgetRepository.findByTenantAndUserId(tenant, userId, pageable);
+            } else {
+                budgets = budgetRepository.findByTenantAndUserIdAndStatusNot(tenant, userId, BudgetStatus.CANCELLED, pageable);
+            }
+        } else if (status != null) {
             // Explicit status filter: show exactly what was requested (including CANCELLED)
             budgets = budgetRepository.findByTenantAndStatus(tenant, status, pageable);
         } else if (includeCancelled) {
@@ -263,6 +271,16 @@ public class BudgetService {
         if (request.getExpiresAt() != null) {
             validateExpiresAt(request.getExpiresAt());
             budget.setExpiresAt(request.getExpiresAt());
+        }
+
+        if (request.getVelocityMaxPerMinute() != null) {
+            budget.setVelocityMaxPerMinute(request.getVelocityMaxPerMinute());
+        }
+        if (request.getVelocityMaxAmountPerHour() != null) {
+            budget.setVelocityMaxAmountPerHour(request.getVelocityMaxAmountPerHour());
+        }
+        if (request.getVelocityMaxPerDay() != null) {
+            budget.setVelocityMaxPerDay(request.getVelocityMaxPerDay());
         }
 
         AgentBudget saved = budgetRepository.save(budget);

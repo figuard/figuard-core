@@ -14,7 +14,7 @@
  *   });
  *
  *   const result = await client.authorize({
- *     sessionToken: budget.sessionToken!,
+ *     sessionToken: budget.tokens![0].sessionToken!,
  *     agentId: "agent_flight_booker",
  *     actionType: "PURCHASE",
  *     description: "Book NYC flight",
@@ -87,6 +87,9 @@ export interface CreateBudgetOptions {
   softLimit?: number;
   maxTransactionQuantity?: number;
   authorizationExpirySeconds?: number;
+  velocityMaxPerMinute?: number;
+  velocityMaxAmountPerHour?: number;
+  velocityMaxPerDay?: number;
   anomalyDetectionEnabled?: boolean;
   /**
    * When false, anomaly detection fires ANOMALY_DETECTED webhook and denies the
@@ -225,6 +228,9 @@ export class FiGuardClient {
     if (options.softLimit !== undefined) body["softLimit"] = options.softLimit;
     if (options.maxTransactionQuantity !== undefined) body["maxTransactionQuantity"] = options.maxTransactionQuantity;
     if (options.authorizationExpirySeconds !== undefined) body["authorizationExpirySeconds"] = options.authorizationExpirySeconds;
+    if (options.velocityMaxPerMinute !== undefined) body["velocityMaxPerMinute"] = options.velocityMaxPerMinute;
+    if (options.velocityMaxAmountPerHour !== undefined) body["velocityMaxAmountPerHour"] = options.velocityMaxAmountPerHour;
+    if (options.velocityMaxPerDay !== undefined) body["velocityMaxPerDay"] = options.velocityMaxPerDay;
     if (options.anomalyDetectionEnabled) body["anomalyDetectionEnabled"] = true;
     if (options.autoPauseOnAnomaly === false) body["autoPauseOnAnomaly"] = false;
     if (options.entityDedupEnabled) body["entityDedupEnabled"] = true;
@@ -406,7 +412,7 @@ export class FiGuardClient {
    *
    * @example
    * const auth = await client.authorizeTokens({
-   *   sessionToken: budget.sessionToken!,
+   *   sessionToken: budget.tokens![0].sessionToken!,
    *   agentId: "summarizer",
    *   estimatedTokens: 4_000,
    *   model: "gpt-4o",

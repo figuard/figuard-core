@@ -32,7 +32,7 @@ const budget = await client.createBudget({
 // 2. Pre-authorize every spend before it happens
 try {
   const result = (await client.authorize({
-    sessionToken: budget.sessionToken!,
+    sessionToken: budget.tokens![0].sessionToken!,
     agentId: "agent_flight_booker",
     actionType: "PURCHASE",
     description: "NYC to LAX flight",
@@ -84,7 +84,7 @@ const budget = await client.createBudget({
 
 // claimedCategory must match one of allowedCategories
 const result = await client.authorize({
-  sessionToken: budget.sessionToken!,
+  sessionToken: budget.tokens![0].sessionToken!,
   agentId: "travel_agent",
   actionType: "PURCHASE",
   description: "Flight to NYC",
@@ -217,7 +217,7 @@ Test your integration without writing to the ledger or firing webhooks:
 
 ```typescript
 const result = await client.authorize({
-  sessionToken: budget.sessionToken!,
+  sessionToken: budget.tokens![0].sessionToken!,
   agentId: "agent_1",
   actionType: "PURCHASE",
   description: "Test authorization",

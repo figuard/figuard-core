@@ -62,6 +62,18 @@ export const TOOLS = [
             "When false (advisory mode), the anomalous request is still denied and ANOMALY_DETECTED webhook fires, but the budget stays ACTIVE. " +
             "Use false for high-throughput agents where a single spike should not halt the entire fleet.",
         },
+        velocity_max_per_minute: {
+          type: "number",
+          description: "Max authorize attempts per rolling 1-minute window. Denied with VELOCITY_LIMIT_EXCEEDED when exceeded.",
+        },
+        velocity_max_amount_per_hour: {
+          type: "number",
+          description: "Max total requestedQuantity per rolling 1-hour window.",
+        },
+        velocity_max_per_day: {
+          type: "number",
+          description: "Max authorize attempts per rolling 24-hour window.",
+        },
         allocations: {
           type: "array",
           description: "Optional category-level budget caps. Use to split the total limit across categories (e.g. $300 for flights, $200 for hotels).",

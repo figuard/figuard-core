@@ -25,9 +25,10 @@ public class BudgetResponse {
     private List<String> intentTags;
 
     // Populated ONCE at creation time only. Null on all subsequent reads.
-    // The caller must store this immediately — it cannot be retrieved again.
-    private String sessionToken;
-    private String sessionTokenPrefix;
+    // For simple budgets: one entry with category="default".
+    // For entitlement-backed budgets: one entry per entitlement item.
+    // The caller must store tokens immediately — they cannot be retrieved again.
+    private List<BudgetTokenResponse> tokens;
 
     private BigDecimal totalLimit;
     private BigDecimal maxTransactionQuantity;
@@ -38,6 +39,9 @@ public class BudgetResponse {
     private BigDecimal availableQuantity;
     private BigDecimal softLimit;
     private Integer authorizationExpirySeconds;
+    private Integer velocityMaxPerMinute;
+    private BigDecimal velocityMaxAmountPerHour;
+    private Integer velocityMaxPerDay;
     private boolean anomalyDetectionEnabled;
     private boolean autoPauseOnAnomaly;
     private BudgetStatus status;

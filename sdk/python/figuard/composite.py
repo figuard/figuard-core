@@ -112,7 +112,7 @@ class CompositeGuard:
             qty = requested.get(resource.resource, 0.0)
             try:
                 result = resource.client.authorize(
-                    session_token=resource.session_token,
+                    session_token=resource.primary_token.session_token,
                     agent_id=agent_id,
                     action_type=action_type,
                     description=description,

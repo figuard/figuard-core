@@ -32,21 +32,21 @@ fleet = figuard.create_budget(
 
 researcher_token = figuard.create_delegation_token(
     budget_id=fleet.id,
-    session_token=fleet.session_token,
+    session_token=fleet.primary_token.session_token,
     label="researcher",
     caps=[{"category": "search_api", "limit": 200.00}],
     expires_in="2h",
 )
 analyst_token = figuard.create_delegation_token(
     budget_id=fleet.id,
-    session_token=fleet.session_token,
+    session_token=fleet.primary_token.session_token,
     label="analyst",
     caps=[{"category": "llm_calls", "limit": 300.00}],
     expires_in="2h",
 )
 writer_token = figuard.create_delegation_token(
     budget_id=fleet.id,
-    session_token=fleet.session_token,
+    session_token=fleet.primary_token.session_token,
     label="writer",
     caps=[{"category": "llm_calls", "limit": 200.00}],
     expires_in="2h",
@@ -59,7 +59,7 @@ print("Researcher goes rogue (tight search API loop)...")
 spent = 0.0
 for call in range(1, 1000):
     auth = figuard.authorize(
-        session_token=researcher_token.session_token,
+        session_token=researcher_token.primary_token.session_token,
         agent_id="researcher",
         action_type="TOOL_CALL",
         description=f"Search API call {call}",
@@ -78,7 +78,7 @@ for call in range(1, 1000):
 print()
 
 analyst_auth = figuard.authorize(
-    session_token=analyst_token.session_token,
+    session_token=analyst_token.primary_token.session_token,
     agent_id="analyst",
     action_type="LLM_CALL",
     description="Analyze findings",
@@ -89,7 +89,7 @@ analyst_auth = figuard.authorize(
 print(f"Analyst: {analyst_auth.decision} — $50.00")
 
 writer_auth = figuard.authorize(
-    session_token=writer_token.session_token,
+    session_token=writer_token.primary_token.session_token,
     agent_id="writer",
     action_type="LLM_CALL",
     description="Write report",

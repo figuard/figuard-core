@@ -34,9 +34,11 @@ LangChain, CrewAI, and OpenAI Agents integrations work with a single session tok
 
 ---
 
-## Session token is single-use per budget
+## Tokens are returned once at budget creation
 
-`budget.session_token` is returned once at creation and never again. If you lose it, you cannot recover it — hash is stored, raw token is not. Create a new budget or use `external_reference` for idempotent restart.
+`budget.tokens` is a list of session tokens returned once at creation and never again. Each token in the list has a `category` and a `session_token` field. If you lose them, you cannot recover them — hashes are stored, raw tokens are not. Create a new budget or use `external_reference` for idempotent restart.
+
+For simple budgets (no named allocations), there is one token with `category="default"`. Access it via `budget.primary_token.session_token`. For multi-dimension budgets, build a map: `tokens = {t.category: t.session_token for t in budget.tokens}`.
 
 ---
 
@@ -49,3 +51,16 @@ The dashboard at `http://localhost:5173` is served by the FiGuard container. It 
 ## No built-in multi-tenancy UI
 
 Tenant isolation is enforced at the API level — each API key belongs to one tenant and can only see that tenant's budgets. There is no admin UI for managing tenants. Provisioning is done by creating API keys via `POST /api/v1/api-keys`.
+
+---
+
+## Velocity window uses a live COUNT query
+
+The rolling velocity windows (`velocity_max_per_minute`, `velocity_max_amount_per_hour`, `velocity_max_per_day`) are currently evaluated by issuing a live `COUNT` or `SUM` query against the `spend_events` table for the relevant window. This works well at moderate throughput.
+
+At very high concurrency — roughly 1,000+ `authorize` calls per second on a single budget — this query can become a bottleneck. If you expect that volume, consider:
+
+- **Option B (V3 roadmap):** a dedicated counter table incremented atomically per budget per window, avoiding the full `spend_events` scan.
+- **Option C (V4 roadmap):** a Redis sliding-window counter using sorted sets, eliminating the database round-trip entirely.
+
+For most agent workloads (dozens to low hundreds of calls per minute) the current implementation is sufficient.

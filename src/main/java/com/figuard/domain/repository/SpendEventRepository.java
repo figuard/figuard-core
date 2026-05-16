@@ -86,4 +86,17 @@ public interface SpendEventRepository extends JpaRepository<SpendEvent, UUID> {
         @Param("budgetId") UUID budgetId,
         @Param("windowEnd") OffsetDateTime windowEnd
     );
+
+    // Velocity controls — count of ALL events (any decision) after cutoff, for rolling-window checks.
+    @Query("SELECT COUNT(e) FROM SpendEvent e WHERE e.budget.id = :budgetId AND e.createdAt > :cutoff")
+    long countAttemptsAfter(@Param("budgetId") UUID budgetId, @Param("cutoff") OffsetDateTime cutoff);
+
+    // Velocity controls — sum of requestedQuantity across ALL events after cutoff (hourly amount window).
+    @Query("SELECT COALESCE(SUM(e.requestedQuantity), 0) FROM SpendEvent e WHERE e.budget.id = :budgetId AND e.createdAt > :cutoff")
+    java.math.BigDecimal sumAttemptedQuantityAfter(@Param("budgetId") UUID budgetId, @Param("cutoff") OffsetDateTime cutoff);
+
+    // Velocity controls — find the first VELOCITY_LIMIT_EXCEEDED denial in the dedup window.
+    // Returns at most one result (newest first); caller takes get(0) when the list is non-empty.
+    @Query("SELECT e FROM SpendEvent e WHERE e.budget.id = :budgetId AND e.denialReason = 'VELOCITY_LIMIT_EXCEEDED' AND e.createdAt > :cutoff ORDER BY e.createdAt DESC")
+    List<SpendEvent> findVelocityDenialAfter(@Param("budgetId") UUID budgetId, @Param("cutoff") OffsetDateTime cutoff);
 }
