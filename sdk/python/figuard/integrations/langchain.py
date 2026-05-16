@@ -14,7 +14,7 @@ Supports two token modes:
 
     handler = FiGuardCallbackHandler(
         client=client,
-        session_token=budget.session_token,
+        session_token=budget.primary_token.session_token,
     )
 
 - **Fleet / LangGraph supervisor** — pass a ``token_resolver`` callable that
@@ -81,7 +81,7 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
             handle_tool_error=True,
             callbacks=[FiGuardCallbackHandler(
                 client=client,
-                session_token=budget.session_token,
+                session_token=budget.primary_token.session_token,
                 tool_category_map={"book_flight": "flight"},
             )],
         )
@@ -120,7 +120,7 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
 
         handler = FiGuardCallbackHandler(
             client=client,
-            session_token=budget.session_token,
+            session_token=budget.primary_token.session_token,
             cost_extractor=lambda output: json.loads(output)["charged_amount"],
         )
     """
@@ -366,7 +366,7 @@ class FiGuardToolGuard:
         FiGuardToolGuard(
             tool=book_flight_tool,
             client=client,
-            session_token=budget.session_token,
+            session_token=budget.primary_token.session_token,
             category="flight",
             amount_key="price",     # key in tool kwargs that holds the spend amount
         )

@@ -59,8 +59,15 @@ class FiGuardClientTest {
               "status": "ACTIVE",
               "expiresAt": "2024-12-31T23:59:59Z",
               "createdAt": "2024-01-01T00:00:00Z",
-              "sessionTokenPrefix": "ab_sess_1",
-              "sessionToken": "ab_sess_1234567890abcdef",
+              "tokens": [
+                {
+                  "category": "default",
+                  "sessionToken": "ab_sess_1234567890abcdef",
+                  "sessionTokenPrefix": "ab_sess_1",
+                  "unit": null,
+                  "currency": "USD"
+                }
+              ],
               "allocations": []
             }
             """;
@@ -110,7 +117,7 @@ class FiGuardClientTest {
                     .build());
 
             assertThat(budget.id()).isEqualTo("bud-1");
-            assertThat(budget.sessionToken()).isEqualTo("ab_sess_1234567890abcdef");
+            assertThat(budget.primaryToken().sessionToken()).isEqualTo("ab_sess_1234567890abcdef");
             assertThat(budget.totalLimit()).isEqualByComparingTo("500.00");
             assertThat(budget.isActive()).isTrue();
             assertThat(budget.isPaused()).isFalse();
@@ -155,8 +162,15 @@ class FiGuardClientTest {
                       "availableQuantity": 100000,
                       "status": "ACTIVE",
                       "expiresAt": "2024-12-31T23:59:59Z",
-                      "sessionTokenPrefix": "ab_sess_t",
-                      "sessionToken": "ab_sess_token1234",
+                      "tokens": [
+                        {
+                          "category": "default",
+                          "sessionToken": "ab_sess_token1234",
+                          "sessionTokenPrefix": "ab_sess_t",
+                          "unit": "tokens",
+                          "currency": null
+                        }
+                      ],
                       "allocations": []
                     }
                     """));

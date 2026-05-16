@@ -24,6 +24,23 @@ export interface AllocationResponse {
   readonly forbiddenItemTypes?: string[];
 }
 
+/**
+ * A single session token entry within the Budget.tokens list.
+ *
+ * For simple budgets, category is "default". For entitlement-backed budgets
+ * there is one entry per entitlement item (future).
+ *
+ * Convenience pattern for the common single-token case:
+ *   const token = budget.tokens?.[0];  // primaryToken equivalent
+ */
+export interface BudgetToken {
+  readonly category: string;
+  readonly sessionToken?: string;
+  readonly sessionTokenPrefix?: string;
+  readonly unit?: string;
+  readonly currency?: string;
+}
+
 export interface Budget {
   readonly id: string;
   readonly userId: string;
@@ -33,7 +50,6 @@ export interface Budget {
   readonly availableQuantity: number;
   readonly status: string;
   readonly expiresAt: string;
-  readonly sessionTokenPrefix: string;
   /** Set for monetary budgets (ISO 4217 currency code). */
   readonly currency?: string;
   /** Set for resource budgets (e.g. "tokens", "api_calls"). */
@@ -45,14 +61,20 @@ export interface Budget {
   readonly softLimit?: number;
   readonly maxTransactionQuantity?: number;
   readonly authorizationExpirySeconds?: number;
+  readonly velocityMaxPerMinute?: number;
+  readonly velocityMaxAmountPerHour?: number;
+  readonly velocityMaxPerDay?: number;
   readonly allocations: AllocationResponse[];
   readonly cancelledAt?: string;
   readonly metadata?: Record<string, unknown>;
   /**
-   * Only present immediately after createBudget(). Undefined on all subsequent reads.
-   * Store this securely — it is never returned again.
+   * Only present immediately after createBudget(). Null/undefined on all subsequent reads.
+   * For simple budgets: one entry with category="default".
+   * For entitlement-backed budgets: one entry per entitlement item (future).
+   *
+   * Use tokens?.[0] for the common single-token case (primaryToken pattern).
    */
-  readonly sessionToken?: string;
+  readonly tokens?: BudgetToken[];
   /** True when status === "ACTIVE". */
   readonly isActive: boolean;
   /** True when status === "PAUSED". */
@@ -225,6 +247,17 @@ export function makeBudget(data: Record<string, unknown>): Budget {
   const currency = (data["currency"] as string | undefined) ?? undefined;
   const status = data["status"] as string;
 
+  const rawTokens = data["tokens"] as Record<string, unknown>[] | undefined | null;
+  const tokens: BudgetToken[] | undefined = rawTokens
+    ? rawTokens.map((t) => ({
+        category: t["category"] as string,
+        sessionToken: (t["sessionToken"] as string | undefined) ?? undefined,
+        sessionTokenPrefix: (t["sessionTokenPrefix"] as string | undefined) ?? undefined,
+        unit: (t["unit"] as string | undefined) ?? undefined,
+        currency: (t["currency"] as string | undefined) ?? undefined,
+      }))
+    : undefined;
+
   return {
     id: data["id"] as string,
     userId: data["userId"] as string,
@@ -237,17 +270,19 @@ export function makeBudget(data: Record<string, unknown>): Budget {
     status,
     expiresAt: data["expiresAt"] as string,
     createdAt: (data["createdAt"] as string | undefined) ?? undefined,
-    sessionTokenPrefix: data["sessionTokenPrefix"] as string,
     intentContext: (data["intentContext"] as string | undefined) ?? undefined,
     intentTags: (data["intentTags"] as string[] | undefined) ?? undefined,
     externalReference: (data["externalReference"] as string | undefined) ?? undefined,
     softLimit: (data["softLimit"] as number | undefined) ?? undefined,
     maxTransactionQuantity: (data["maxTransactionQuantity"] as number | undefined) ?? undefined,
     authorizationExpirySeconds: (data["authorizationExpirySeconds"] as number | undefined) ?? undefined,
+    velocityMaxPerMinute: (data["velocityMaxPerMinute"] as number | undefined) ?? undefined,
+    velocityMaxAmountPerHour: (data["velocityMaxAmountPerHour"] as number | undefined) ?? undefined,
+    velocityMaxPerDay: (data["velocityMaxPerDay"] as number | undefined) ?? undefined,
     allocations,
     cancelledAt: (data["cancelledAt"] as string | undefined) ?? undefined,
     metadata: (data["metadata"] as Record<string, unknown> | undefined) ?? undefined,
-    sessionToken: (data["sessionToken"] as string | undefined) ?? undefined,
+    tokens,
     isActive: status === "ACTIVE",
     isPaused: status === "PAUSED",
     isMonetary: typeof currency === "string" && currency.trim().length > 0,

@@ -1,5 +1,5 @@
 """
-FiGuard Seed Script — 10 diverse scenarios showcasing the full product.
+FiGuard Seed Script — 11 diverse scenarios showcasing the full product.
 
 Scenarios:
   1.  Travel booking         — multi-agent spend tree, simple lifecycle
@@ -12,6 +12,7 @@ Scenarios:
   8.  Sales outreach         — intent tags, INTENT_SCOPE_VIOLATION
   9.  Research pipeline USD  — CompositeGuard pattern with void on denial
   10. Research pipeline tok  — paired token budget for same composite pattern
+  11. Velocity loop          — velocity_max_per_minute=3, 4th call returns VELOCITY_LIMIT_EXCEEDED
 
 Usage:
   python demo/seed.py [--base-url http://localhost:8080] [--api-key ab_live_demo]
@@ -340,7 +341,7 @@ def scenario_travel(client: _Client, state: dict) -> None:
         ],
     })
     bid = budget["id"]
-    tok = budget["sessionToken"]
+    tok = budget["tokens"][0]["sessionToken"]
     print(f"  Budget {bid[:8]}…  created\n")
 
     # Day 6 ago — orchestrator tries premium flight (denied)
@@ -413,7 +414,7 @@ def scenario_procurement(client: _Client, state: dict) -> None:
         ],
     })
     bid = budget["id"]
-    tok = budget["sessionToken"]
+    tok = budget["tokens"][0]["sessionToken"]
     print(f"  Budget {bid[:8]}…  created\n")
 
     # Day 7 — bulk laptop order
@@ -483,7 +484,7 @@ def scenario_legal(client: _Client, state: dict) -> None:
         "intentContext": "Contract analysis — due diligence batch",
     })
     bid_tok = tok_budget["id"]
-    tok_tok = tok_budget["sessionToken"]
+    tok_tok = tok_budget["tokens"][0]["sessionToken"]
 
     # Budget B: API calls (300 total, 20 per call ceiling)
     api_budget = client.create_budget({
@@ -496,7 +497,7 @@ def scenario_legal(client: _Client, state: dict) -> None:
         "intentContext": "Westlaw API queries — due diligence batch",
     })
     bid_api = api_budget["id"]
-    tok_api = api_budget["sessionToken"]
+    tok_api = api_budget["tokens"][0]["sessionToken"]
 
     print(f"  Token budget {bid_tok[:8]}…  (8M tokens, ceil 60k)")
     print(f"  API budget   {bid_api[:8]}…  (300 calls, ceil 20)\n")
@@ -556,7 +557,7 @@ def scenario_support(client: _Client, state: dict) -> None:
         "externalReference": "SUP-TIER1-MAY26",
     })
     bid = budget["id"]
-    tok = budget["sessionToken"]
+    tok = budget["tokens"][0]["sessionToken"]
     print(f"  Budget {bid[:8]}…  created\n")
 
     # Normal refunds — varied days
@@ -625,7 +626,7 @@ def scenario_marketing(client: _Client, state: dict) -> None:
         ],
     })
     bid = budget["id"]
-    tok = budget["sessionToken"]
+    tok = budget["tokens"][0]["sessionToken"]
     print(f"  Budget {bid[:8]}…  created\n")
 
     # Level 1: orchestrator coordination (root event)
@@ -725,7 +726,7 @@ def scenario_cloud(client: _Client, state: dict) -> None:
         "externalReference": "GPU-POOL-A100-01",
     })
     bid = budget["id"]
-    tok = budget["sessionToken"]
+    tok = budget["tokens"][0]["sessionToken"]
     print(f"  Budget {bid[:8]}…  created\n")
 
     # Establish baseline — 3 normal jobs (days 7, 6, 5)
@@ -808,7 +809,7 @@ def scenario_financial(client: _Client, state: dict) -> None:
         ],
     })
     bid = budget["id"]
-    tok = budget["sessionToken"]
+    tok = budget["tokens"][0]["sessionToken"]
     print(f"  Budget {bid[:8]}…  created\n")
 
     # Legitimate contractor payouts — days 7-4
@@ -872,7 +873,7 @@ def scenario_sales(client: _Client, state: dict) -> None:
         "intentTags": ["outreach", "crm", "email_sequence", "linkedin"],
     })
     bid = budget["id"]
-    tok = budget["sessionToken"]
+    tok = budget["tokens"][0]["sessionToken"]
     print(f"  Budget {bid[:8]}…  created\n")
 
     campaign_trace = str(uuid.uuid4())
@@ -934,7 +935,7 @@ def scenario_research(client: _Client, state: dict) -> None:
         "externalReference": "RESEARCH-USD-MAY26",
     })
     bid_usd = usd_budget["id"]
-    tok_usd = usd_budget["sessionToken"]
+    tok_usd = usd_budget["tokens"][0]["sessionToken"]
 
     # Token count budget (500k total, 100k ceiling per request)
     tok_budget = client.create_budget({
@@ -947,7 +948,7 @@ def scenario_research(client: _Client, state: dict) -> None:
         "externalReference": "RESEARCH-TOK-MAY26",
     })
     bid_tok = tok_budget["id"]
-    tok_tok = tok_budget["sessionToken"]
+    tok_tok = tok_budget["tokens"][0]["sessionToken"]
 
     print(f"  USD budget   {bid_usd[:8]}…  ($800)")
     print(f"  Token budget {bid_tok[:8]}…  (500k tok, ceil 100k)\n")
@@ -1005,6 +1006,54 @@ def scenario_research(client: _Client, state: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Scenario 11: Velocity Loop — velocity_max_per_minute enforcement
+# ---------------------------------------------------------------------------
+def scenario_velocity(client: _Client, state: dict) -> None:
+    _divider("11 · Velocity Loop  ($50 · velocity_max_per_minute=3 · 4 rapid calls)")
+    KEY = "velocity"
+    if KEY in state:
+        print(DIM(f"  skipped (budget {state[KEY][:8]}…)"))
+        return
+
+    print(DIM("  Creates a budget with velocity_max_per_minute=3."))
+    print(DIM("  First 3 calls succeed; 4th returns VELOCITY_LIMIT_EXCEEDED."))
+
+    budget = client.create_budget({
+        "userId": "data_processor_demo",
+        "totalLimit": 50.00,
+        "currency": "USD",
+        "expiresAt": _expires_at(hours=1),
+        "intentContext": "Velocity controls demo — runaway retry loop",
+        "externalReference": "seed-velocity-demo-v1",
+        "velocityMaxPerMinute": 3,
+    })
+    bid = budget["id"]
+    tok = budget["tokens"][0]["sessionToken"]
+    print(f"  Budget {bid[:8]}…  created  (velocity_max_per_minute=3)\n")
+
+    call_cost = 1.50
+
+    for i in range(1, 5):
+        d, eid, denial = _auth(
+            client,
+            session_token=tok,
+            agent_id="data_processor_demo",
+            description=f"Data processing API call — batch chunk {i}",
+            quantity=call_cost,
+            action_type="EXTERNAL_CALL",
+        )
+        if d == "AUTHORIZED":
+            client.confirm(eid, call_cost)
+
+    print()
+    print(DIM("  Calls 1-3: AUTHORIZED (within the 3/min velocity window)"))
+    print(DIM("  Call 4:    VELOCITY_LIMIT_EXCEEDED (window exhausted)"))
+
+    state[KEY] = bid
+    _save_state(state)
+
+
+# ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
 def _wait_for_service(base_url: str, max_wait: int = 30) -> None:
@@ -1040,7 +1089,7 @@ def main() -> None:
     args = parser.parse_args()
 
     print()
-    print(BOLD("  FiGuard — Comprehensive Seed  (10 scenarios)"))
+    print(BOLD("  FiGuard — Comprehensive Seed  (11 scenarios)"))
     print(DIM("  " + "─" * 50))
     print()
 
@@ -1080,6 +1129,8 @@ def main() -> None:
     print()
     scenario_research(client, state)
     print()
+    scenario_velocity(client, state)
+    print()
 
     # -----------------------------------------------------------------------
     # Phase 2 feature demos
@@ -1101,7 +1152,7 @@ def main() -> None:
         "intentContext": "Advisory anomaly demo budget",
     })
     advisory_bid = advisory_budget["id"]
-    advisory_tok = advisory_budget["sessionToken"]
+    advisory_tok = advisory_budget["tokens"][0]["sessionToken"]
     print(f"  Advisory anomaly budget {advisory_bid[:8]}…  created")
 
     # Demo 2: extendBudget — keep an agent alive past original expiry
@@ -1154,7 +1205,7 @@ def main() -> None:
             ],
         })
         state["fleet"] = fleet["id"]
-        state["fleet_token"] = fleet["sessionToken"]
+        state["fleet_token"] = fleet["tokens"][0]["sessionToken"]
         _save(state)
         print(f"  Fleet budget: {fleet['id']}  (REFUND $50k | LLM_TOKENS 8M | EMAIL 20k)")
 

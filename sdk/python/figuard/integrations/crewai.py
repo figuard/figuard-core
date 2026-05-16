@@ -19,7 +19,7 @@ Quick start::
     FiGuardCrewGuard(
         tool=book_flight_tool,
         client=client,
-        session_token=budget.session_token,
+        session_token=budget.primary_token.session_token,
         category="flight",
         amount_key="price",
     )
@@ -80,7 +80,7 @@ class FiGuardCrewGuard:
         FiGuardCrewGuard(
             tool=book_flight_tool,
             client=client,
-            session_token=budget.session_token,
+            session_token=budget.primary_token.session_token,
             category="flight",
             amount_key="price",
         )

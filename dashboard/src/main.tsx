@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
 import { BudgetList } from "./pages/BudgetList";
 import { BudgetOverview } from "./pages/BudgetOverview";
+import { CustomerView } from "./pages/CustomerView";
 import { Ledger } from "./pages/Ledger";
 import { Replay } from "./pages/Replay";
 import { SpendTree } from "./pages/SpendTree";
@@ -35,6 +36,7 @@ createRoot(root).render(
             <Route path="budgets/:id/ledger" element={<Ledger />} />
             <Route path="budgets/:id/tree" element={<SpendTree />} />
             <Route path="budgets/:id/replay" element={<Replay />} />
+            <Route path="users" element={<CustomerView />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>

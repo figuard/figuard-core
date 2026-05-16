@@ -41,7 +41,7 @@ budget = client.create_budget(
 # 2. Pre-authorize every spend before it happens
 try:
     result = client.authorize(
-        session_token=budget.session_token,
+        session_token=budget.primary_token.session_token,
         agent_id="agent_flight_booker",
         action_type="PURCHASE",
         description="NYC to LAX flight",
@@ -74,7 +74,7 @@ async def run_agent():
         )
 
         result = await client.authorize(
-            session_token=budget.session_token,
+            session_token=budget.primary_token.session_token,
             agent_id="langchain_agent",
             action_type="PURCHASE",
             description="Hotel booking",
@@ -114,7 +114,7 @@ budget = client.create_budget(
 
 # claimedCategory must match one of allowedCategories
 result = client.authorize(
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     agent_id="travel_agent",
     action_type="PURCHASE",
     description="Flight to NYC",
@@ -242,7 +242,7 @@ executor = AgentExecutor(
     handle_tool_error=True,   # required — sends denial to the LLM
     callbacks=[FiGuardCallbackHandler(
         client=client,
-        session_token=budget.session_token,
+        session_token=budget.primary_token.session_token,
         tool_category_map={"book_flight": "flight", "book_hotel": "hotel"},
         ignore_tools={"search_web"},   # skip authorization for read-only tools
     )],
@@ -252,7 +252,7 @@ executor = AgentExecutor(
 FiGuardToolGuard(
     tool=book_flight_tool,
     client=client,
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     category="flight",
     amount_key="price",
 )
@@ -272,7 +272,7 @@ from figuard.integrations.crewai import FiGuardCrewGuard
 FiGuardCrewGuard(
     tool=book_flight_tool,
     client=client,
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     category="flight",
     amount_key="price",
 )
@@ -292,7 +292,7 @@ from figuard.integrations.openai_agents import guarded_function_tool
 @function_tool
 @guarded_function_tool(
     client=client,
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     category="flight",
     amount_key="price",
 )
@@ -315,7 +315,7 @@ from figuard.integrations.openai import guarded_openai_function
 
 @guarded_openai_function(
     client=client,
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     category="flight",
 )
 def book_flight(destination: str, amount: float) -> str:
@@ -338,7 +338,7 @@ from figuard.integrations.anthropic import guarded_anthropic_tool
 
 @guarded_anthropic_tool(
     client=client,
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     category="flight",
 )
 def book_flight(destination: str, amount: float) -> str:

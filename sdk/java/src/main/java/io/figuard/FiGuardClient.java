@@ -36,7 +36,7 @@ import java.util.logging.Logger;
  *     .build());
  *
  * AuthorizationResult result = client.authorize(AuthorizeRequest.builder()
- *     .sessionToken(budget.sessionToken())
+ *     .sessionToken(budget.primaryToken().sessionToken())
  *     .agentId("agent_001")
  *     .actionType("PURCHASE")
  *     .description("NYC flight")

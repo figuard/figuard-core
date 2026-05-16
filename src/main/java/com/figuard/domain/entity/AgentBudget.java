@@ -113,6 +113,17 @@ public class AgentBudget {
     @Column
     private Integer authorizationExpirySeconds;
 
+    // Rolling-window velocity controls. All three are optional (null = unlimited).
+    // Checked after expiry, before category matching.
+    @Column
+    private Integer velocityMaxPerMinute;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal velocityMaxAmountPerHour;
+
+    @Column
+    private Integer velocityMaxPerDay;
+
     @Column(nullable = false)
     private OffsetDateTime expiresAt;
 

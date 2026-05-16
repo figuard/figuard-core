@@ -42,8 +42,15 @@ const BUDGET_RESPONSE = {
   availableQuantity: 500,
   status: "ACTIVE",
   expiresAt: "2026-12-31T23:59:59Z",
-  sessionTokenPrefix: "st_abc",
-  sessionToken: "st_abc_secret",
+  tokens: [
+    {
+      category: "default",
+      sessionToken: "st_abc_secret",
+      sessionTokenPrefix: "st_abc",
+      unit: null,
+      currency: "USD",
+    },
+  ],
   allocations: [],
 };
 
@@ -83,7 +90,7 @@ const SPEND_EVENT = {
 describe("createBudget", () => {
   const client = new FiGuardClient({ apiKey: "ab_live_test" });
 
-  it("returns a Budget with isActive and sessionToken", async () => {
+  it("returns a Budget with isActive and tokens", async () => {
     mockFetch(200, BUDGET_RESPONSE);
     const budget = await client.createBudget({
       userId: "user_1",
@@ -96,7 +103,8 @@ describe("createBudget", () => {
     expect(budget.isActive).toBe(true);
     expect(budget.isPaused).toBe(false);
     expect(budget.isMonetary).toBe(true);
-    expect(budget.sessionToken).toBe("st_abc_secret");
+    expect(budget.tokens?.[0]?.sessionToken).toBe("st_abc_secret");
+    expect(budget.tokens?.[0]?.category).toBe("default");
   });
 
   it("sends correct request body", async () => {
@@ -122,6 +130,58 @@ describe("createBudget", () => {
     await expect(
       client.createBudget({ userId: "u", totalLimit: 100, expiresIn: "1h" }),
     ).rejects.toThrow(FiGuardApiError);
+  });
+
+  it("sends velocity params in request body when provided", async () => {
+    const mock = mockFetch(200, BUDGET_RESPONSE);
+    await client.createBudget({
+      userId: "user_1",
+      totalLimit: 500,
+      expiresIn: "24h",
+      currency: "USD",
+      velocityMaxPerMinute: 10,
+      velocityMaxAmountPerHour: 250.0,
+      velocityMaxPerDay: 50,
+    });
+
+    const body = JSON.parse((mock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.velocityMaxPerMinute).toBe(10);
+    expect(body.velocityMaxAmountPerHour).toBe(250.0);
+    expect(body.velocityMaxPerDay).toBe(50);
+  });
+
+  it("parses velocity fields from response JSON", async () => {
+    mockFetch(200, {
+      ...BUDGET_RESPONSE,
+      velocityMaxPerMinute: 5,
+      velocityMaxAmountPerHour: 100.0,
+      velocityMaxPerDay: 20,
+    });
+    const budget = await client.createBudget({
+      userId: "user_1",
+      totalLimit: 500,
+      expiresIn: "24h",
+      currency: "USD",
+    });
+
+    expect(budget.velocityMaxPerMinute).toBe(5);
+    expect(budget.velocityMaxAmountPerHour).toBe(100.0);
+    expect(budget.velocityMaxPerDay).toBe(20);
+  });
+
+  it("omits velocity fields from body when not provided", async () => {
+    const mock = mockFetch(200, BUDGET_RESPONSE);
+    await client.createBudget({
+      userId: "user_1",
+      totalLimit: 500,
+      expiresIn: "24h",
+      currency: "USD",
+    });
+
+    const body = JSON.parse((mock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.velocityMaxPerMinute).toBeUndefined();
+    expect(body.velocityMaxAmountPerHour).toBeUndefined();
+    expect(body.velocityMaxPerDay).toBeUndefined();
   });
 });
 

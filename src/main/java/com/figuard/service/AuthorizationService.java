@@ -33,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -110,15 +111,27 @@ public class AuthorizationService {
 
         // Step 2 — Idempotency check (skipped for dry-run — nothing was ever written)
         // Must happen before any writes. If a duplicate key is found, return the original
-        // decision without creating a new SpendEvent. This handles agent retries safely.
+        // decision WITHOUT creating a new SpendEvent. This handles agent retries safely.
+        //
+        // Exception: transient denials are bypassed when the underlying state has recovered.
+        // An agent that retries after a velocity window clears, a budget is resumed, or a
+        // budget is funded should get a fresh evaluation — not a cached stale denial.
+        // See shouldBypassIdempotencyCache() for the full policy.
         if (!request.isDryRun()) {
             var existingEvent = spendEventRepository
                 .findByBudgetIdAndIdempotencyKey(budget.getId(), request.getIdempotencyKey());
             if (existingEvent.isPresent()) {
                 SpendEvent cached = existingEvent.get();
-                log.info("Idempotent hit: budgetId={} key={} decision={}",
-                    budget.getId(), request.getIdempotencyKey(), cached.getDecision());
-                return buildResponse(cached, budget, null);
+                if (shouldBypassIdempotencyCache(cached, budget)) {
+                    log.info("Idempotent bypass (state recovered): budgetId={} key={} cachedDecision={} reason={}",
+                        budget.getId(), request.getIdempotencyKey(),
+                        cached.getDecision(), cached.getDenialReason());
+                    // Fall through to fresh evaluation
+                } else {
+                    log.info("Idempotent hit: budgetId={} key={} decision={}",
+                        budget.getId(), request.getIdempotencyKey(), cached.getDecision());
+                    return buildResponse(cached, budget, null);
+                }
             }
         }
 
@@ -171,6 +184,17 @@ public class AuthorizationService {
         if (OffsetDateTime.now().isAfter(effectiveExpiry)) {
             return deny(budget, null, request, null, DenialCode.BUDGET_EXPIRED, "Budget has expired",
                 delegatedToken);
+        }
+
+        // Step 5b — Velocity controls (rolling-window rate limits)
+        // Checked after expiry/grace and before category/currency matching.
+        // All authorize attempts count toward the window regardless of outcome.
+        // The count/sum queries run against the live spend_events table via existing index.
+        if (budget.getVelocityMaxPerMinute() != null
+                || budget.getVelocityMaxAmountPerHour() != null
+                || budget.getVelocityMaxPerDay() != null) {
+            AuthorizationResponse velocityDenial = checkVelocity(budget, request, delegatedToken);
+            if (velocityDenial != null) return velocityDenial;
         }
 
         // Step 6 — Currency check (monetary budgets only)
@@ -556,6 +580,164 @@ public class AuthorizationService {
             webhookDispatcher.dispatch(tenantId, WebhookEventType.ANOMALY_DETECTED,
                 webhookPayloadBuilder.buildAnomalyDetectedPayload(budget, saved, baselineMean, threshold));
         }
+
+        return buildResponse(saved, budget, null);
+    }
+
+    // -------------------------------------------------------------------------
+    // Idempotency cache bypass — transient denial state recovery
+    // -------------------------------------------------------------------------
+
+    /**
+     * Returns true when a cached denial should be bypassed and the request re-evaluated.
+     *
+     * <p>Only transient denials are bypassed — those where the underlying state can recover
+     * after the denial was written. Permanent denials (e.g. NO_MATCHING_ALLOCATION) are
+     * always replayed from cache regardless of current state.
+     *
+     * <p>Cases:
+     * <ul>
+     *   <li>VELOCITY_LIMIT_EXCEEDED — bypass when the shortest velocity window has elapsed
+     *       since the denial was written. Agent retrying after 1 minute should get a fresh check.
+     *   <li>BUDGET_PAUSED / ANOMALY_DETECTED — bypass when the budget is no longer PAUSED.
+     *       Operator resumes the budget; agent retrying same key should get through.
+     *   <li>BUDGET_EXHAUSTED — bypass when available quantity is now positive.
+     *       Budget was funded; agent retrying same key should get through.
+     *   <li>All others — permanent; always replay from cache.
+     * </ul>
+     */
+    private boolean shouldBypassIdempotencyCache(SpendEvent cached, AgentBudget budget) {
+        if (cached.getDenialReason() == null) return false;
+        return switch (cached.getDenialReason()) {
+            case "VELOCITY_LIMIT_EXCEEDED" -> {
+                Duration shortestWindow = resolveShortestVelocityWindow(budget);
+                yield shortestWindow != null
+                    && cached.getCreatedAt().isBefore(OffsetDateTime.now().minus(shortestWindow));
+            }
+            case "BUDGET_PAUSED", "ANOMALY_DETECTED" ->
+                budget.getStatus() != com.figuard.domain.enums.BudgetStatus.PAUSED;
+            case "BUDGET_EXHAUSTED" ->
+                budget.availableQuantity().compareTo(java.math.BigDecimal.ZERO) > 0;
+            default -> false;
+        };
+    }
+
+    /**
+     * Returns the shortest velocity window configured on the budget, used as the
+     * idempotency bypass TTL for VELOCITY_LIMIT_EXCEEDED denials.
+     *
+     * Priority: per-minute > per-hour > per-day. Returns null if no velocity limits are set.
+     */
+    private Duration resolveShortestVelocityWindow(AgentBudget budget) {
+        if (budget.getVelocityMaxPerMinute() != null)     return Duration.ofMinutes(1);
+        if (budget.getVelocityMaxAmountPerHour() != null) return Duration.ofHours(1);
+        if (budget.getVelocityMaxPerDay() != null)        return Duration.ofDays(1);
+        return null;
+    }
+
+    // -------------------------------------------------------------------------
+    // Velocity controls (Step 5b)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Checks all configured rolling-window rate limits in priority order:
+     * per-minute count → hourly amount → per-day count.
+     *
+     * Returns a denial response if any limit is violated, null if all limits pass.
+     * The first violated limit short-circuits — subsequent limits are not evaluated.
+     */
+    private AuthorizationResponse checkVelocity(AgentBudget budget,
+                                                  AuthorizeSpendRequest request,
+                                                  DelegatedToken delegatedToken) {
+        OffsetDateTime now = OffsetDateTime.now();
+
+        if (budget.getVelocityMaxPerMinute() != null) {
+            OffsetDateTime cutoff = now.minusMinutes(1);
+            long count = spendEventRepository.countAttemptsAfter(budget.getId(), cutoff);
+            if (count >= budget.getVelocityMaxPerMinute()) {
+                String desc = "maxPerMinute=" + budget.getVelocityMaxPerMinute()
+                    + " (window count=" + count + ")";
+                return denyVelocity(budget, request, delegatedToken, cutoff, desc);
+            }
+        }
+
+        if (budget.getVelocityMaxAmountPerHour() != null) {
+            OffsetDateTime cutoff = now.minusHours(1);
+            BigDecimal windowSum = spendEventRepository.sumAttemptedQuantityAfter(budget.getId(), cutoff);
+            if (windowSum.add(request.getRequestedQuantity())
+                    .compareTo(budget.getVelocityMaxAmountPerHour()) > 0) {
+                String desc = "maxAmountPerHour=" + budget.getVelocityMaxAmountPerHour()
+                    + " (window sum=" + windowSum
+                    + ", requested=" + request.getRequestedQuantity() + ")";
+                return denyVelocity(budget, request, delegatedToken, cutoff, desc);
+            }
+        }
+
+        if (budget.getVelocityMaxPerDay() != null) {
+            OffsetDateTime cutoff = now.minusDays(1);
+            long count = spendEventRepository.countAttemptsAfter(budget.getId(), cutoff);
+            if (count >= budget.getVelocityMaxPerDay()) {
+                String desc = "maxPerDay=" + budget.getVelocityMaxPerDay()
+                    + " (window count=" + count + ")";
+                return denyVelocity(budget, request, delegatedToken, cutoff, desc);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Handles a velocity limit violation.
+     *
+     * <ul>
+     *   <li>Dry-run: returns a phantom DENIED event without writing or firing webhooks.</li>
+     *   <li>First violation in the window: saves a VELOCITY_LIMIT_EXCEEDED event and fires
+     *       the VELOCITY_LIMIT_EXCEEDED webhook.</li>
+     *   <li>Subsequent violations in the same window: returns the first violation event
+     *       silently (no new write, no webhook).</li>
+     * </ul>
+     *
+     * @param dedupCutoff  start of the dedup window matching the violated limit
+     * @param violatedLimit  human-readable description for the webhook payload
+     */
+    private AuthorizationResponse denyVelocity(AgentBudget budget,
+                                                 AuthorizeSpendRequest request,
+                                                 DelegatedToken delegatedToken,
+                                                 OffsetDateTime dedupCutoff,
+                                                 String violatedLimit) {
+        // Dry-run: phantom event, no write, no webhook
+        if (request.isDryRun()) {
+            SpendEvent phantom = buildEvent(budget, null, request, null,
+                SpendDecision.DENIED, DenialCode.VELOCITY_LIMIT_EXCEEDED.name(),
+                "Velocity limit violated: " + violatedLimit, null, delegatedToken);
+            log.info("DRY_RUN VELOCITY_DENIED: budgetId={} limit={}", budget.getId(), violatedLimit);
+            return buildResponse(phantom, budget, null);
+        }
+
+        // Dedup check: if a VELOCITY_LIMIT_EXCEEDED event already exists in this window,
+        // return it silently — no new write, no webhook re-fire.
+        List<SpendEvent> existing = spendEventRepository
+            .findVelocityDenialAfter(budget.getId(), dedupCutoff);
+        if (!existing.isEmpty()) {
+            SpendEvent first = existing.get(0);
+            log.info("VELOCITY_DENIED (dedup): budgetId={} existingEventId={} limit={}",
+                budget.getId(), first.getId(), violatedLimit);
+            return buildResponse(first, budget, null);
+        }
+
+        // First violation in this window: write the event and fire the webhook.
+        SpendEvent event = buildEvent(budget, null, request, null,
+            SpendDecision.DENIED, DenialCode.VELOCITY_LIMIT_EXCEEDED.name(),
+            "Velocity limit violated: " + violatedLimit, null, delegatedToken);
+        SpendEvent saved = spendEventRepository.save(event);
+
+        log.warn("VELOCITY_LIMIT_EXCEEDED: budgetId={} limit={} key={}",
+            budget.getId(), violatedLimit, request.getIdempotencyKey());
+
+        webhookDispatcher.dispatch(
+            budget.getTenant().getId(),
+            WebhookEventType.VELOCITY_LIMIT_EXCEEDED,
+            webhookPayloadBuilder.buildVelocityLimitExceededPayload(budget, saved, violatedLimit));
 
         return buildResponse(saved, budget, null);
     }

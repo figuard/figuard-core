@@ -38,9 +38,10 @@ public class BudgetController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) BudgetStatus status,
-            @RequestParam(defaultValue = "false") boolean includeCancelled) {
+            @RequestParam(defaultValue = "false") boolean includeCancelled,
+            @RequestParam(required = false) String userId) {
         Page<BudgetResponse> budgets = budgetService.listBudgets(
-            TenantContext.get(), page, size, status, includeCancelled);
+            TenantContext.get(), page, size, status, includeCancelled, userId);
         return ResponseEntity.ok(budgets);
     }
 
@@ -121,7 +122,7 @@ public class BudgetController {
     @PostMapping("/{id}/rotate-token")
     public ResponseEntity<Map<String, String>> rotateToken(@PathVariable UUID id) {
         String newToken = budgetService.rotateSessionToken(id, TenantContext.get());
-        return ResponseEntity.ok(Map.of("sessionToken", newToken));
+        return ResponseEntity.ok(Map.of("token", newToken));
     }
 
     @GetMapping("/{id}/ledger")

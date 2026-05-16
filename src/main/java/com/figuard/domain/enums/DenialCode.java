@@ -23,5 +23,6 @@ public enum DenialCode {
     ANOMALY_DETECTED,               // requestedQuantity exceeds mean * multiplier threshold; budget auto-paused
     ENTITY_ALREADY_AUTHORIZED,      // entityId already has an AUTHORIZED or CONFIRMED event on this budget (dedup)
     DELEGATE_CAP_EXCEEDED,          // delegation token's per-category cap has no remaining capacity
-    DELEGATION_TOKEN_REVOKED        // the delegation token was explicitly revoked
+    DELEGATION_TOKEN_REVOKED,       // the delegation token was explicitly revoked
+    VELOCITY_LIMIT_EXCEEDED         // rolling-window rate limit (per-minute, hourly amount, or per-day) reached
 }

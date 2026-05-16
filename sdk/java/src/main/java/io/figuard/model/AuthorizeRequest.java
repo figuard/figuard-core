@@ -8,7 +8,7 @@ import java.math.BigDecimal;
  * <p>Build with the nested {@link Builder}:
  * <pre>{@code
  * AuthorizeRequest req = AuthorizeRequest.builder()
- *     .sessionToken(budget.sessionToken())
+ *     .sessionToken(budget.primaryToken().sessionToken())
  *     .agentId("agent-123")
  *     .actionType("PURCHASE")
  *     .description("Buy GPU credits")

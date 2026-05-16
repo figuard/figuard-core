@@ -20,4 +20,15 @@ public class UpdateBudgetRequest {
 
     @Future
     private OffsetDateTime expiresAt;
+
+    // Rolling-window velocity controls. Null = leave unchanged; pass 0 is rejected by @Positive.
+    @Positive(message = "velocityMaxPerMinute must be positive")
+    private Integer velocityMaxPerMinute;
+
+    @Positive(message = "velocityMaxAmountPerHour must be positive")
+    @Digits(integer = 15, fraction = 4)
+    private BigDecimal velocityMaxAmountPerHour;
+
+    @Positive(message = "velocityMaxPerDay must be positive")
+    private Integer velocityMaxPerDay;
 }

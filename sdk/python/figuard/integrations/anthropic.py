@@ -22,7 +22,7 @@ Quick start::
 
     @guarded_anthropic_tool(
         client=figuard_client,
-        session_token=budget.session_token,
+        session_token=budget.primary_token.session_token,
         category="flight",
         amount_key="amount",
     )

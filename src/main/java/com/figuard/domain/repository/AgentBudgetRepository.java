@@ -83,4 +83,11 @@ public interface AgentBudgetRepository extends JpaRepository<AgentBudget, UUID> 
     List<AgentBudget> findExpiringSoon(
         @Param("windowStart") OffsetDateTime windowStart,
         @Param("windowEnd")   OffsetDateTime windowEnd);
+
+    // Customer view: all budgets for a specific userId, with optional status filtering.
+    Page<AgentBudget> findByTenantAndUserId(Tenant tenant, String userId, Pageable pageable);
+
+    Page<AgentBudget> findByTenantAndUserIdAndStatus(Tenant tenant, String userId, BudgetStatus status, Pageable pageable);
+
+    Page<AgentBudget> findByTenantAndUserIdAndStatusNot(Tenant tenant, String userId, BudgetStatus excludedStatus, Pageable pageable);
 }

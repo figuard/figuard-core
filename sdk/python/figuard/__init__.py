@@ -15,7 +15,7 @@ Quick start::
 
     try:
         result = client.authorize(
-            session_token=budget.session_token,
+            session_token=budget.primary_token.session_token,
             agent_id="agent_001",
             action_type="PURCHASE",
             description="NYC flight",
@@ -28,7 +28,7 @@ Quick start::
         print(f"Spend denied: {e.denial_reason}")
 """
 
-__version__ = "0.3.2"
+__version__ = "0.4.0"
 
 from .client import FiGuardClient
 from .exceptions import FiGuardApiError, FiGuardConnectionError, FiGuardDeniedException, FiGuardError

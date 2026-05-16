@@ -6,8 +6,8 @@
  *   import { FiGuardClient, CompositeGuard, GuardedResource } from "figuard";
  *
  *   const guard = new CompositeGuard([
- *     new GuardedResource(client, tokenBudget.sessionToken!, "tokens"),
- *     new GuardedResource(client, usdBudget.sessionToken!, "USD"),
+ *     new GuardedResource(client, tokenBudget.tokens![0].sessionToken!, "tokens"),
+ *     new GuardedResource(client, usdBudget.tokens![0].sessionToken!, "USD"),
  *   ]);
  *
  *   const result = await guard.authorize({

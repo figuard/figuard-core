@@ -14,7 +14,7 @@ Usage::
         )
 
         result = await client.authorize(
-            session_token=budget.session_token,
+            session_token=budget.primary_token.session_token,
             agent_id="agent_flight_booker",
             action_type="PURCHASE",
             description="Book NYC flight",
@@ -164,6 +164,9 @@ class AsyncFiGuardClient:
         soft_limit: Optional[float] = None,
         max_transaction_quantity: Optional[float] = None,
         authorization_expiry_seconds: Optional[int] = None,
+        velocity_max_per_minute: Optional[int] = None,
+        velocity_max_amount_per_hour: Optional[float] = None,
+        velocity_max_per_day: Optional[int] = None,
         anomaly_detection_enabled: bool = False,
         auto_pause_on_anomaly: bool = True,
         entity_dedup_enabled: bool = False,
@@ -180,12 +183,18 @@ class AsyncFiGuardClient:
         :param authorization_expiry_seconds: If set, AUTHORIZED events older than
             this many seconds are excluded from the reserved quantity calculation,
             effectively recycling stale reservations back into the available pool.
+        :param velocity_max_per_minute: If set, denies authorization when the number
+            of authorized events in the last minute exceeds this value.
+        :param velocity_max_amount_per_hour: If set, denies authorization when the
+            total authorized amount in the last hour exceeds this value.
+        :param velocity_max_per_day: If set, denies authorization when the number
+            of authorized events in the last day exceeds this value.
         :param entity_dedup_enabled: If True, a second authorize with the same
             ``entity_id`` is denied with ENTITY_ALREADY_AUTHORIZED instead of
             creating a new event. Use to prevent double-refund on the same order.
 
-        :returns: ``Budget`` with ``session_token`` populated — store this
-                  securely; it is never returned again.
+        :returns: ``Budget`` with ``tokens`` populated — store
+                  ``budget.primary_token.session_token`` securely; it is never returned again.
         """
         body: Dict[str, Any] = {
             "userId": user_id,
@@ -208,6 +217,12 @@ class AsyncFiGuardClient:
             body["maxTransactionQuantity"] = max_transaction_quantity
         if authorization_expiry_seconds is not None:
             body["authorizationExpirySeconds"] = authorization_expiry_seconds
+        if velocity_max_per_minute is not None:
+            body["velocityMaxPerMinute"] = velocity_max_per_minute
+        if velocity_max_amount_per_hour is not None:
+            body["velocityMaxAmountPerHour"] = velocity_max_amount_per_hour
+        if velocity_max_per_day is not None:
+            body["velocityMaxPerDay"] = velocity_max_per_day
         if anomaly_detection_enabled:
             body["anomalyDetectionEnabled"] = True
         if not auto_pause_on_anomaly:

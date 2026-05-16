@@ -91,6 +91,7 @@ const DENIAL_LABELS: Record<DenialCode, string> = {
   INTENT_SCOPE_VIOLATION: "Intent scope violation",
   ANOMALY_DETECTED: "Anomaly detected",
   ENTITY_ALREADY_AUTHORIZED: "Entity already authorized",
+  VELOCITY_LIMIT_EXCEEDED: "Velocity limit exceeded",
 };
 
 export function formatDenialReason(code: DenialCode | null): string {

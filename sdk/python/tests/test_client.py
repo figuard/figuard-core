@@ -54,7 +54,15 @@ def _budget_payload(session_token: bool = False) -> Dict[str, Any]:
         "allocations": [],
     }
     if session_token:
-        payload["sessionToken"] = SESSION_TOKEN
+        payload["tokens"] = [
+            {
+                "category": "default",
+                "sessionToken": SESSION_TOKEN,
+                "sessionTokenPrefix": "st_abcde",
+                "unit": None,
+                "currency": "USD",
+            }
+        ]
     return payload
 
 
@@ -112,7 +120,7 @@ class TestCreateBudget:
 
         assert isinstance(budget, Budget)
         assert budget.id == BUDGET_ID
-        assert budget.session_token == SESSION_TOKEN
+        assert budget.primary_token.session_token == SESSION_TOKEN
         assert budget.status == "ACTIVE"
         assert budget.available_quantity == 500.0
         assert budget.is_active is True
@@ -124,7 +132,7 @@ class TestCreateBudget:
 
         budget = client.get_budget(BUDGET_ID)
 
-        assert budget.session_token is None
+        assert budget.primary_token is None
 
     @resp_lib.activate
     def test_api_error_propagated(self, client: FiGuardClient) -> None:
@@ -137,6 +145,60 @@ class TestCreateBudget:
 
         assert exc_info.value.status_code == 400
         assert "expiresAt" in exc_info.value.message
+
+    @resp_lib.activate
+    def test_velocity_params_sent_in_request_body(self, client: FiGuardClient) -> None:
+        resp_lib.add(resp_lib.POST, f"{BASE}/api/v1/budgets",
+                     json=_budget_payload(session_token=True), status=201)
+
+        client.create_budget(
+            user_id="user_test",
+            total_limit=500.0,
+            expires_at="2025-12-31T23:59:59Z",
+            velocity_max_per_minute=10,
+            velocity_max_amount_per_hour=250.0,
+            velocity_max_per_day=50,
+        )
+
+        sent_body = resp_lib.calls[0].request.body
+        import json as _json
+        body = _json.loads(sent_body)
+        assert body["velocityMaxPerMinute"] == 10
+        assert body["velocityMaxAmountPerHour"] == 250.0
+        assert body["velocityMaxPerDay"] == 50
+
+    @resp_lib.activate
+    def test_parse_budget_extracts_velocity_fields(self, client: FiGuardClient) -> None:
+        payload = _budget_payload(session_token=True)
+        payload["velocityMaxPerMinute"] = 5
+        payload["velocityMaxAmountPerHour"] = 100.0
+        payload["velocityMaxPerDay"] = 20
+        resp_lib.add(resp_lib.POST, f"{BASE}/api/v1/budgets", json=payload, status=201)
+
+        budget = client.create_budget(
+            user_id="user_test",
+            total_limit=500.0,
+            expires_at="2025-12-31T23:59:59Z",
+        )
+
+        assert budget.velocity_max_per_minute == 5
+        assert budget.velocity_max_amount_per_hour == 100.0
+        assert budget.velocity_max_per_day == 20
+
+    @resp_lib.activate
+    def test_velocity_fields_absent_when_not_set(self, client: FiGuardClient) -> None:
+        resp_lib.add(resp_lib.POST, f"{BASE}/api/v1/budgets",
+                     json=_budget_payload(session_token=True), status=201)
+
+        budget = client.create_budget(
+            user_id="user_test",
+            total_limit=500.0,
+            expires_at="2025-12-31T23:59:59Z",
+        )
+
+        assert budget.velocity_max_per_minute is None
+        assert budget.velocity_max_amount_per_hour is None
+        assert budget.velocity_max_per_day is None
 
 
 # ---------------------------------------------------------------------------

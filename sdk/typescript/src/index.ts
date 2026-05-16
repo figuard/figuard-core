@@ -15,7 +15,7 @@
  *
  *   try {
  *     const result = (await client.authorize({
- *       sessionToken: budget.sessionToken!,
+ *       sessionToken: budget.tokens![0].sessionToken!,
  *       agentId: "agent_001",
  *       actionType: "PURCHASE",
  *       description: "NYC flight",

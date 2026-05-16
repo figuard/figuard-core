@@ -40,7 +40,7 @@ print()
 # Attempt 1 — authorized, response lost in transit
 print("Attempt 1: authorizing...")
 auth1 = figuard.authorize(
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     agent_id="ap_agent",
     action_type="PAYMENT",
     description=f"Vendor payment {invoice_id}",
@@ -54,7 +54,7 @@ print()
 # Retry — same idempotency key returns original event
 print("Network timeout. Retrying with same idempotency key...")
 auth2 = figuard.authorize(
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     agent_id="ap_agent",
     action_type="PAYMENT",
     description=f"Vendor payment {invoice_id}",

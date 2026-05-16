@@ -34,9 +34,14 @@ const budget = await client.createBudget({
   intentContext: 'travel booking session',
 });
 
+// budget.tokens is an array — one entry per dimension so agents have full context
+// on all spending dimensions for this user. For simple single-token budgets:
+// one entry with category "default". Use tokens[0] or build a map for multi-token.
+const sessionToken = budget.tokens![0].sessionToken!
+
 // Authorize
 const auth = await client.authorize({
-  sessionToken: budget.sessionToken,
+  sessionToken,
   agentId: 'travel_agent',
   actionType: 'PURCHASE',
   description: 'JetBlue SFO→JFK roundtrip',
@@ -58,8 +63,9 @@ if (auth.isAuthorized) {
 
 ```typescript
 // raiseIfDenied() throws FiGuardDeniedException on denial, returns auth on success
+const sessionToken = budget.tokens![0].sessionToken!
 const auth = await client
-  .authorize({ sessionToken: budget.sessionToken, ...params })
+  .authorize({ sessionToken, ...params })
   .then(a => a.raiseIfDenied());
 ```
 
@@ -75,15 +81,19 @@ const fleetBudget = await client.createBudget({
   expiresIn: '8h',
 });
 
+// fleetBudget.tokens is an array — one entry per dimension. For simple fleet
+// budgets use tokens[0]; for entitlement-backed budgets build a map by category.
+const fleetSessionToken = fleetBudget.tokens![0].sessionToken!
+
 const refundToken = await client.createDelegationToken({
   budgetId: fleetBudget.id,
-  sessionToken: fleetBudget.sessionToken,
+  sessionToken: fleetSessionToken,
   label: 'refund-processor',
   caps: [{ category: 'refund', limit: 3_000 }],
   expiresIn: '4h',
 });
 
-// Sub-agent uses refundToken.sessionToken, never fleetBudget.sessionToken
+// Sub-agent uses refundToken.sessionToken, never fleetSessionToken directly
 const auth = await client.authorize({
   sessionToken: refundToken.sessionToken,
   agentId: 'refund_processor',

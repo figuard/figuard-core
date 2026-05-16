@@ -14,7 +14,7 @@ Usage::
     )
 
     result = client.authorize(
-        session_token=budget.session_token,
+        session_token=budget.primary_token.session_token,
         agent_id="agent_flight_booker",
         action_type="PURCHASE",
         description="Book NYC flight",
@@ -47,6 +47,7 @@ from .models import (
     AuthorizationResult,
     Budget,
     BudgetSnapshot,
+    BudgetToken,
     DelegationToken,
     DelegationTokenAllocation,
     LedgerPage,
@@ -111,6 +112,9 @@ class FiGuardClient:
         soft_limit: Optional[float] = None,
         max_transaction_quantity: Optional[float] = None,
         authorization_expiry_seconds: Optional[int] = None,
+        velocity_max_per_minute: Optional[int] = None,
+        velocity_max_amount_per_hour: Optional[float] = None,
+        velocity_max_per_day: Optional[int] = None,
         anomaly_detection_enabled: bool = False,
         auto_pause_on_anomaly: bool = True,
         entity_dedup_enabled: bool = False,
@@ -127,6 +131,12 @@ class FiGuardClient:
         :param authorization_expiry_seconds: If set, AUTHORIZED events older than
             this many seconds are excluded from the reserved quantity calculation,
             effectively recycling stale reservations back into the available pool.
+        :param velocity_max_per_minute: If set, denies authorization when the number
+            of authorized events in the last minute exceeds this value.
+        :param velocity_max_amount_per_hour: If set, denies authorization when the
+            total authorized amount in the last hour exceeds this value.
+        :param velocity_max_per_day: If set, denies authorization when the number
+            of authorized events in the last day exceeds this value.
         :param entity_dedup_enabled: If True, a second authorize with the same
             ``entity_id`` is denied with ENTITY_ALREADY_AUTHORIZED instead of
             creating a new event. Use to prevent double-refund on the same order.
@@ -135,8 +145,8 @@ class FiGuardClient:
             Mutually exclusive with ``expires_in``.
         :param expires_in: Relative duration from now. Accepts ``"24h"``, ``"7d"``, ``"30m"``,
             a ``timedelta``, or an integer number of seconds. Mutually exclusive with ``expires_at``.
-        :returns: ``Budget`` with ``session_token`` populated — store this
-                  securely; it is never returned again.
+        :returns: ``Budget`` with ``tokens`` populated — store
+                  ``budget.primary_token.session_token`` securely; it is never returned again.
         """
         body: Dict[str, Any] = {
             "userId": user_id,
@@ -159,6 +169,12 @@ class FiGuardClient:
             body["maxTransactionQuantity"] = max_transaction_quantity
         if authorization_expiry_seconds is not None:
             body["authorizationExpirySeconds"] = authorization_expiry_seconds
+        if velocity_max_per_minute is not None:
+            body["velocityMaxPerMinute"] = velocity_max_per_minute
+        if velocity_max_amount_per_hour is not None:
+            body["velocityMaxAmountPerHour"] = velocity_max_amount_per_hour
+        if velocity_max_per_day is not None:
+            body["velocityMaxPerDay"] = velocity_max_per_day
         if anomaly_detection_enabled:
             body["anomalyDetectionEnabled"] = True
         if not auto_pause_on_anomaly:
@@ -386,7 +402,7 @@ class FiGuardClient:
         Example::
 
             auth = client.authorize_tokens(
-                session_token=budget.session_token,
+                session_token=budget.primary_token.session_token,
                 agent_id="summarizer",
                 estimated_tokens=4_000,
                 model="gpt-4o",
@@ -985,6 +1001,21 @@ def _parse_budget(data: Dict[str, Any]) -> Budget:
         )
         for a in data.get("allocations", [])
     ]
+    raw_tokens = data.get("tokens")
+    tokens = (
+        [
+            BudgetToken(
+                category=t["category"],
+                session_token=t.get("sessionToken"),
+                session_token_prefix=t.get("sessionTokenPrefix"),
+                unit=t.get("unit"),
+                currency=t.get("currency"),
+            )
+            for t in raw_tokens
+        ]
+        if raw_tokens is not None
+        else None
+    )
     return Budget(
         id=data["id"],
         user_id=data["userId"],
@@ -997,17 +1028,19 @@ def _parse_budget(data: Dict[str, Any]) -> Budget:
         status=data["status"],
         expires_at=data["expiresAt"],
         created_at=data.get("createdAt"),
-        session_token_prefix=data["sessionTokenPrefix"],
         intent_context=data.get("intentContext"),
         intent_tags=data.get("intentTags"),
         external_reference=data.get("externalReference"),
         soft_limit=data.get("softLimit"),
         max_transaction_quantity=data.get("maxTransactionQuantity"),
         authorization_expiry_seconds=data.get("authorizationExpirySeconds"),
+        velocity_max_per_minute=data.get("velocityMaxPerMinute"),
+        velocity_max_amount_per_hour=data.get("velocityMaxAmountPerHour"),
+        velocity_max_per_day=data.get("velocityMaxPerDay"),
         allocations=allocations,
         cancelled_at=data.get("cancelledAt"),
         metadata=data.get("metadata"),
-        session_token=data.get("sessionToken"),
+        tokens=tokens,
     )
 
 

@@ -218,7 +218,7 @@ def scenario_travel(client: _RawClient, state: dict) -> None:
         ],
     )
     bid = budget["id"]
-    tok = budget["sessionToken"]
+    tok = budget["tokens"][0]["sessionToken"]
     print(f"  Budget created  {DIM('id=' + bid[:8] + '...')}\n")
 
     # Orchestrator: try premium flight first — denied (exceeds $150 allocation)
@@ -290,7 +290,7 @@ def scenario_refund(client: _RawClient, state: dict) -> None:
             intent_context=f"Customer refund: {issue}",
         )
         bid = budget["id"]
-        tok = budget["sessionToken"]
+        tok = budget["tokens"][0]["sessionToken"]
         created_ids.append(bid)
 
         r = client.authorize(session_token=tok, agent_id="support_agent_v1",
@@ -342,7 +342,7 @@ def scenario_campaign(client: _RawClient, state: dict) -> None:
         ],
     )
     bid = budget["id"]
-    tok = budget["sessionToken"]
+    tok = budget["tokens"][0]["sessionToken"]
     print(f"  Budget created  {DIM('id=' + bid[:8] + '...')}\n")
 
     def auth(agent_id, description, amount, category, parent=None, indent=0):

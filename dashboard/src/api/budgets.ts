@@ -4,6 +4,7 @@ import type {
   BudgetFundingResponse,
   BudgetStatus,
   CreateBudgetRequest,
+  DelegationTokenResponse,
   FundBudgetRequest,
   Page,
 } from "../lib/types";
@@ -16,6 +17,7 @@ export interface ListBudgetsParams {
   page?: number;
   size?: number;
   status?: BudgetStatus | "";
+  userId?: string;
 }
 
 export async function resumeBudget(id: string): Promise<BudgetResponse> {
@@ -29,7 +31,12 @@ export async function listBudgets(
   qs.set("page", String(params.page ?? 0));
   qs.set("size", String(params.size ?? 20));
   if (params.status) qs.set("status", params.status);
+  if (params.userId) qs.set("userId", params.userId);
   return apiFetch<Page<BudgetResponse>>(`/api/v1/budgets?${qs}`);
+}
+
+export async function listDelegationTokens(budgetId: string): Promise<DelegationTokenResponse[]> {
+  return apiFetch<DelegationTokenResponse[]>(`/api/v1/budgets/${budgetId}/delegation-tokens`);
 }
 
 export async function createBudget(
@@ -47,6 +54,20 @@ export async function fundBudget(
 ): Promise<BudgetFundingResponse> {
   return apiFetch<BudgetFundingResponse>(`/api/v1/budgets/${id}/fund`, {
     method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function patchBudget(
+  id: string,
+  payload: {
+    velocityMaxPerMinute?: number | null;
+    velocityMaxAmountPerHour?: number | null;
+    velocityMaxPerDay?: number | null;
+  },
+): Promise<BudgetResponse> {
+  return apiFetch<BudgetResponse>(`/api/v1/budgets/${id}`, {
+    method: "PATCH",
     body: JSON.stringify(payload),
   });
 }

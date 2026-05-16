@@ -17,7 +17,7 @@ import { ExpiryBadge } from "../components/ExpiryBadge";
 import { AddFundsModal } from "../components/AddFundsModal";
 import { BUDGET_STATUS_BADGE } from "../lib/colors";
 import { formatDateTime, formatAmount, shortId } from "../lib/format";
-import { resumeBudget } from "../api/budgets";
+import { resumeBudget, patchBudget } from "../api/budgets";
 
 // Build 24-hour hourly spend buckets from ledger events.
 function buildSparkline(
@@ -56,11 +56,28 @@ export function BudgetOverview() {
 
   // Hooks must come before any early returns
   const [addFundsOpen, setAddFundsOpen] = useState(false);
+  const [velocityEditing, setVelocityEditing] = useState(false);
+  const [velocityDraft, setVelocityDraft] = useState<{
+    velocityMaxPerMinute: string;
+    velocityMaxAmountPerHour: string;
+    velocityMaxPerDay: string;
+  }>({ velocityMaxPerMinute: "", velocityMaxAmountPerHour: "", velocityMaxPerDay: "" });
   const queryClient = useQueryClient();
   const resumeMutation = useMutation({
     mutationFn: () => resumeBudget(id!),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["budget", id] });
+    },
+  });
+  const velocityMutation = useMutation({
+    mutationFn: (payload: {
+      velocityMaxPerMinute?: number | null;
+      velocityMaxAmountPerHour?: number | null;
+      velocityMaxPerDay?: number | null;
+    }) => patchBudget(id!, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["budget", id] });
+      setVelocityEditing(false);
     },
   });
 
@@ -257,6 +274,120 @@ export function BudgetOverview() {
           )}
         </div>
       )}
+
+      {/* Velocity limits */}
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="flex items-start justify-between mb-3">
+          <h2 className="text-sm font-semibold text-gray-700">Velocity limits</h2>
+          {!velocityEditing && (
+            <button
+              onClick={() => {
+                setVelocityDraft({
+                  velocityMaxPerMinute: budget.velocityMaxPerMinute != null ? String(budget.velocityMaxPerMinute) : "",
+                  velocityMaxAmountPerHour: budget.velocityMaxAmountPerHour != null ? String(budget.velocityMaxAmountPerHour) : "",
+                  velocityMaxPerDay: budget.velocityMaxPerDay != null ? String(budget.velocityMaxPerDay) : "",
+                });
+                setVelocityEditing(true);
+              }}
+              className="text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors"
+            >
+              Edit
+            </button>
+          )}
+        </div>
+
+        {velocityEditing ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Max attempts / minute</label>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="No limit"
+                  value={velocityDraft.velocityMaxPerMinute}
+                  onChange={(e) => setVelocityDraft((d) => ({ ...d, velocityMaxPerMinute: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Max amount / hour</label>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="No limit"
+                  value={velocityDraft.velocityMaxAmountPerHour}
+                  onChange={(e) => setVelocityDraft((d) => ({ ...d, velocityMaxAmountPerHour: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Max attempts / day</label>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="No limit"
+                  value={velocityDraft.velocityMaxPerDay}
+                  onChange={(e) => setVelocityDraft((d) => ({ ...d, velocityMaxPerDay: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                />
+              </div>
+            </div>
+            {velocityMutation.isError && (
+              <p className="text-xs text-red-600">Failed to save. Try again.</p>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  const parseField = (v: string): number | null =>
+                    v.trim() === "" ? null : Number(v);
+                  velocityMutation.mutate({
+                    velocityMaxPerMinute: parseField(velocityDraft.velocityMaxPerMinute),
+                    velocityMaxAmountPerHour: parseField(velocityDraft.velocityMaxAmountPerHour),
+                    velocityMaxPerDay: parseField(velocityDraft.velocityMaxPerDay),
+                  });
+                }}
+                disabled={velocityMutation.isPending}
+                className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {velocityMutation.isPending ? "Saving…" : "Save"}
+              </button>
+              <button
+                onClick={() => setVelocityEditing(false)}
+                disabled={velocityMutation.isPending}
+                className="rounded-lg border border-gray-300 px-4 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : budget.velocityMaxPerMinute == null &&
+          budget.velocityMaxAmountPerHour == null &&
+          budget.velocityMaxPerDay == null ? (
+          <p className="text-sm text-gray-400">Not configured</p>
+        ) : (
+          <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {budget.velocityMaxPerMinute != null && (
+              <div>
+                <dt className="text-xs text-gray-400">Max attempts / min</dt>
+                <dd className="text-sm font-medium text-gray-700">{budget.velocityMaxPerMinute}</dd>
+              </div>
+            )}
+            {budget.velocityMaxAmountPerHour != null && (
+              <div>
+                <dt className="text-xs text-gray-400">Max amount / hour</dt>
+                <dd className="text-sm font-medium text-gray-700">{fmt(budget.velocityMaxAmountPerHour)}</dd>
+              </div>
+            )}
+            {budget.velocityMaxPerDay != null && (
+              <div>
+                <dt className="text-xs text-gray-400">Max attempts / day</dt>
+                <dd className="text-sm font-medium text-gray-700">{budget.velocityMaxPerDay}</dd>
+              </div>
+            )}
+          </dl>
+        )}
+      </div>
 
       {addFundsOpen && (
         <AddFundsModal budget={budget} onClose={() => setAddFundsOpen(false)} />

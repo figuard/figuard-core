@@ -131,8 +131,11 @@ budget = client.create_budget(
     intent_context="travel booking session",
 )
 
+# budget.tokens is a list — one entry per dimension so agents have full context
+# on all spending dimensions for this user. For simple budgets: one entry with
+# category="default". Use primary_token as a convenience accessor.
 auth = client.authorize(
-    session_token=budget.session_token,
+    session_token=budget.primary_token.session_token,
     agent_id="travel_agent",
     action_type="PURCHASE",
     description="JetBlue SFO→JFK roundtrip",

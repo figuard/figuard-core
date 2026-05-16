@@ -32,6 +32,16 @@ class AllocationResponse:
 
 
 @dataclass(frozen=True)
+class BudgetToken:
+    """A single session token entry returned in the ``tokens`` list on budget creation."""
+    category: str
+    session_token: Optional[str] = None
+    session_token_prefix: Optional[str] = None
+    unit: Optional[str] = None
+    currency: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class Budget:
     id: str
     user_id: str
@@ -41,7 +51,6 @@ class Budget:
     available_quantity: float
     status: str
     expires_at: str
-    session_token_prefix: str
     # Exactly one of currency or unit is set
     currency: Optional[str] = None
     unit: Optional[str] = None
@@ -52,11 +61,26 @@ class Budget:
     soft_limit: Optional[float] = None
     max_transaction_quantity: Optional[float] = None
     authorization_expiry_seconds: Optional[int] = None
+    velocity_max_per_minute: Optional[int] = None
+    velocity_max_amount_per_hour: Optional[float] = None
+    velocity_max_per_day: Optional[int] = None
     allocations: List[AllocationResponse] = field(default_factory=list)
     cancelled_at: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
-    # Only present immediately after create_budget(); None on all subsequent reads.
-    session_token: Optional[str] = None
+    # List of session tokens — only populated immediately after create_budget().
+    # Use primary_token or the session_token convenience shim for the common case.
+    tokens: Optional[List[BudgetToken]] = None
+
+    @property
+    def primary_token(self) -> Optional[BudgetToken]:
+        """Return the first token in the tokens list, or None if tokens is absent."""
+        return self.tokens[0] if self.tokens else None
+
+    @property
+    def session_token(self) -> Optional[str]:
+        # Deprecated: use budget.primary_token.session_token or budget.tokens[0].session_token.
+        # This shim remains for backwards compatibility during the transition period.
+        return self.primary_token.session_token if self.primary_token else None
 
     @property
     def is_active(self) -> bool:

@@ -53,6 +53,9 @@ export async function handleCreateBudget(client: FiGuardClient, args: Args): Pro
     intentContext: optStr(args, "intent_context"),
     anomalyDetectionEnabled: optBool(args, "anomaly_detection_enabled"),
     autoPauseOnAnomaly: optBool(args, "auto_pause_on_anomaly"),
+    velocityMaxPerMinute: optNum(args, "velocity_max_per_minute"),
+    velocityMaxAmountPerHour: optNum(args, "velocity_max_amount_per_hour"),
+    velocityMaxPerDay: optNum(args, "velocity_max_per_day"),
     allocations: args["allocations"] as Array<{
       category: string;
       limit: number;
@@ -64,7 +67,7 @@ export async function handleCreateBudget(client: FiGuardClient, args: Args): Pro
 
   return {
     budget_id: budget.id,
-    session_token: budget.sessionToken,
+    session_token: budget.tokens![0].sessionToken!,
     status: budget.status,
     total_limit: budget.totalLimit,
     currency: budget.currency,

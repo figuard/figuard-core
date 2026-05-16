@@ -162,6 +162,25 @@ public class WebhookPayloadBuilder {
     }
 
     /**
+     * VELOCITY_LIMIT_EXCEEDED — fired on the first violation of a rolling-window rate limit.
+     * Subsequent violations in the same window are silently denied without re-firing.
+     *
+     * @param event          the VELOCITY_LIMIT_EXCEEDED SpendEvent written to the ledger
+     * @param violatedLimit  human-readable description of which limit was hit (e.g. "maxPerMinute=2")
+     */
+    public Map<String, Object> buildVelocityLimitExceededPayload(AgentBudget budget,
+                                                                   SpendEvent event,
+                                                                   String violatedLimit) {
+        Map<String, Object> payload = basePayload(WebhookEventType.VELOCITY_LIMIT_EXCEEDED, budget);
+        payload.put("spendEventId",      event.getId());
+        payload.put("requestedQuantity", event.getRequestedQuantity());
+        payload.put("violatedLimit",     violatedLimit);
+        payload.put("agentId",           event.getAgentId());
+        payload.put("currency",          event.getCurrency());
+        return payload;
+    }
+
+    /**
      * BUDGET_EXPIRING_SOON — fired 60 minutes before budget expiry.
      * Gives orchestrators a window to extend the budget or initiate graceful shutdown.
      */
