@@ -191,7 +191,7 @@ class ConfirmEdgeCasesIT extends IntegrationTestBase {
             .andReturn();
 
         var json = objectMapper.readTree(result.getResponse().getContentAsString());
-        return new String[]{json.get("id").asText(), json.get("sessionToken").asText()};
+        return new String[]{json.get("id").asText(), json.get("tokens").get(0).get("sessionToken").asText()};
     }
 
     /** Creates a budget and immediately authorizes; returns [eventId, budgetId, sessionToken]. */

@@ -52,7 +52,7 @@ class SessionTokenIT extends IntegrationTestBase {
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
 
-        String sessionToken = objectMapper.readTree(createResponse).get("sessionToken").asText();
+        String sessionToken = objectMapper.readTree(createResponse).get("tokens").get(0).get("sessionToken").asText();
 
         mockMvc.perform(post("/api/v1/authorize")
                 .header("X-Session-Token", sessionToken)

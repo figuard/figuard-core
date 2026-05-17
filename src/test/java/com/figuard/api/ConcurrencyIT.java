@@ -267,7 +267,7 @@ class ConcurrencyIT extends IntegrationTestBase {
             .andReturn();
 
         var node = objectMapper.readTree(result.getResponse().getContentAsString());
-        return new String[]{ node.get("sessionToken").asText(), node.get("id").asText() };
+        return new String[]{ node.get("tokens").get(0).get("sessionToken").asText(), node.get("id").asText() };
     }
 
     // Returns [sessionToken, budgetId]
@@ -292,6 +292,6 @@ class ConcurrencyIT extends IntegrationTestBase {
             .andReturn();
 
         var node = objectMapper.readTree(result.getResponse().getContentAsString());
-        return new String[]{ node.get("sessionToken").asText(), node.get("id").asText() };
+        return new String[]{ node.get("tokens").get(0).get("sessionToken").asText(), node.get("id").asText() };
     }
 }

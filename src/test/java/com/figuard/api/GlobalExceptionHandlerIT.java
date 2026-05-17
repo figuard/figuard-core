@@ -135,7 +135,7 @@ class GlobalExceptionHandlerIT extends IntegrationTestBase {
             .andReturn();
 
         var budgetJson = objectMapper.readTree(createResult.getResponse().getContentAsString());
-        String sessionToken = budgetJson.get("sessionToken").asText();
+        String sessionToken = budgetJson.get("tokens").get(0).get("sessionToken").asText();
 
         var authResult = mockMvc.perform(post("/api/v1/authorize")
                 .header("X-Agent-Budget-Key", TEST_API_KEY)

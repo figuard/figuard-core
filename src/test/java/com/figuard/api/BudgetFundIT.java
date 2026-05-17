@@ -214,7 +214,7 @@ class BudgetFundIT extends IntegrationTestBase {
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
         var json = objectMapper.readTree(response);
-        return new BudgetWithToken(json.get("id").asText(), json.get("sessionToken").asText());
+        return new BudgetWithToken(json.get("id").asText(), json.get("tokens").get(0).get("sessionToken").asText());
     }
 
     private String authorize(String sessionToken, double amount) throws Exception {

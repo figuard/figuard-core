@@ -100,7 +100,7 @@ class NoMatchingAllocationIT extends IntegrationTestBase {
             .andReturn().getResponse().getContentAsString();
 
         var json = objectMapper.readTree(response);
-        return new Budget(json.get("id").asText(), json.get("sessionToken").asText());
+        return new Budget(json.get("id").asText(), json.get("tokens").get(0).get("sessionToken").asText());
     }
 
     private static String expiresAt() {

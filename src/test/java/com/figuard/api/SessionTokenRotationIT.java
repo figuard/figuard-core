@@ -103,7 +103,7 @@ class SessionTokenRotationIT extends IntegrationTestBase {
             .andReturn();
 
         var node = objectMapper.readTree(result.getResponse().getContentAsString());
-        return new String[]{ node.get("id").asText(), node.get("sessionToken").asText() };
+        return new String[]{ node.get("id").asText(), node.get("tokens").get(0).get("sessionToken").asText() };
     }
 
     private String rotateToken(UUID budgetId) throws Exception {
@@ -113,7 +113,7 @@ class SessionTokenRotationIT extends IntegrationTestBase {
             .andReturn();
 
         var node = objectMapper.readTree(result.getResponse().getContentAsString());
-        return node.get("sessionToken").asText();
+        return node.get("tokens").get(0).get("sessionToken").asText();
     }
 
     private String authorize(String sessionToken, BigDecimal amount) throws Exception {

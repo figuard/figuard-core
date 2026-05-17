@@ -193,7 +193,7 @@ class ConfirmationTimeoutSweepIT extends IntegrationTestBase {
 
         var budgetJson = objectMapper.readTree(createResult.getResponse().getContentAsString());
         String budgetId     = budgetJson.get("id").asText();
-        String sessionToken = budgetJson.get("sessionToken").asText();
+        String sessionToken = budgetJson.get("tokens").get(0).get("sessionToken").asText();
 
         String authBody = objectMapper.writeValueAsString(Map.of(
             "agentId", "agent_sweep_test",
