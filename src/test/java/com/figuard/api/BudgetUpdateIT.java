@@ -138,6 +138,6 @@ class BudgetUpdateIT extends IntegrationTestBase {
             .andReturn();
 
         var json = objectMapper.readTree(result.getResponse().getContentAsString());
-        return new String[]{json.get("id").asText(), json.get("sessionToken").asText()};
+        return new String[]{json.get("id").asText(), json.get("tokens").get(0).get("sessionToken").asText()};
     }
 }

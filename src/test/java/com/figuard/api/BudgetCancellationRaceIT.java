@@ -131,7 +131,7 @@ class BudgetCancellationRaceIT extends IntegrationTestBase {
             .andReturn();
 
         var node = objectMapper.readTree(result.getResponse().getContentAsString());
-        return new String[]{ node.get("id").asText(), node.get("sessionToken").asText() };
+        return new String[]{ node.get("id").asText(), node.get("tokens").get(0).get("sessionToken").asText() };
     }
 
     private String authorizeBody(int idx) throws Exception {

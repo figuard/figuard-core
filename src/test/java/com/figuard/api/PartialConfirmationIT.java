@@ -41,7 +41,7 @@ class PartialConfirmationIT extends IntegrationTestBase {
 
         var createJson = objectMapper.readTree(createResp);
         String budgetId    = createJson.get("id").asText();
-        String sessionToken = createJson.get("sessionToken").asText();
+        String sessionToken = createJson.get("tokens").get(0).get("sessionToken").asText();
 
         // Authorize $89.00 — availableAmount should drop from $200.00 to $111.00
         String authResp = mockMvc.perform(post("/api/v1/authorize")

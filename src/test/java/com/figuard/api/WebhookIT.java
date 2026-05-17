@@ -227,7 +227,7 @@ class WebhookIT extends IntegrationTestBase {
             .andReturn().getResponse().getContentAsString();
 
         var json = objectMapper.readTree(response);
-        String sessionToken = json.get("sessionToken").asText();
+        String sessionToken = json.get("tokens").get(0).get("sessionToken").asText();
 
         // Establish a baseline with several small authorizations
         for (int i = 0; i < 5; i++) {
@@ -317,7 +317,7 @@ class WebhookIT extends IntegrationTestBase {
             .andExpect(status().isCreated())
             .andReturn().getResponse().getContentAsString();
         var json = objectMapper.readTree(response);
-        return new Budget(json.get("id").asText(), json.get("sessionToken").asText());
+        return new Budget(json.get("id").asText(), json.get("tokens").get(0).get("sessionToken").asText());
     }
 
     private void doAuthorize(String sessionToken, String amount) throws Exception {

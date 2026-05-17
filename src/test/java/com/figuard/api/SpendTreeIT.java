@@ -174,7 +174,7 @@ class SpendTreeIT extends IntegrationTestBase {
             .andReturn().getResponse().getContentAsString();
 
         JsonNode json = objectMapper.readTree(response);
-        return new Budget(json.get("id").asText(), json.get("sessionToken").asText());
+        return new Budget(json.get("id").asText(), json.get("tokens").get(0).get("sessionToken").asText());
     }
 
     private String authorize(String sessionToken, String amount, String parentEventId) throws Exception {
