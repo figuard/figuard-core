@@ -23,6 +23,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/figuard
       SPRING_DATASOURCE_USERNAME: figuard
       SPRING_DATASOURCE_PASSWORD: figuard_local
+      # DEV ONLY — replace with: openssl rand -base64 32
+      WEBHOOK_SECRET_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     depends_on:
       postgres:
         condition: service_healthy

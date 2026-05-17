@@ -74,8 +74,9 @@ The container reads these at startup. Override them by editing `docker-compose.y
 | `SPRING_DATASOURCE_USERNAME` | `figuard` | Database user |
 | `SPRING_DATASOURCE_PASSWORD` | `figuard_local` | Database password |
 | `FIGUARD_SEED_DEMO_KEY` | `true` | Seeds `ab_live_demo` key on first boot |
+| `WEBHOOK_SECRET_KEY` | insecure dev default | AES-256-GCM key for encrypting webhook secrets at rest. **Replace in production.** Generate with: `openssl rand -base64 32` |
 
-For production, set `FIGUARD_SEED_DEMO_KEY=false` and issue your own API keys via `POST /api/v1/api-keys`.
+For production, set `FIGUARD_SEED_DEMO_KEY=false`, rotate `SPRING_DATASOURCE_PASSWORD`, and set a real `WEBHOOK_SECRET_KEY`.
 
 ---
 
