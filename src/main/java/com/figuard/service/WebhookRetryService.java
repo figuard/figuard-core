@@ -59,6 +59,7 @@ public class WebhookRetryService {
 
     private final WebhookDeliveryRepository deliveryRepository;
     private final WebhookDispatcher webhookDispatcher;
+    private final MeterRegistry meterRegistry;
 
     private Counter retriedCounter;
     private Counter recoveredCounter;
@@ -66,7 +67,7 @@ public class WebhookRetryService {
     private Counter renewalAlertCounter;
 
     @PostConstruct
-    void initMetrics(MeterRegistry meterRegistry) {
+    void initMetrics() {
         retriedCounter = Counter.builder("figuard.webhook.retry.attempts")
             .description("Total sweep retry attempts")
             .register(meterRegistry);
