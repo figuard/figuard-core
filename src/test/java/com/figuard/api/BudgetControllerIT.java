@@ -30,9 +30,9 @@ class BudgetControllerIT extends IntegrationTestBase {
                 .content(validBudgetJson(400.00)))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.id").isNotEmpty())
-            .andExpect(jsonPath("$.sessionToken").isNotEmpty())
-            .andExpect(jsonPath("$.sessionToken", startsWith("st_")))
-            .andExpect(jsonPath("$.sessionTokenPrefix").isNotEmpty())
+            .andExpect(jsonPath("$.tokens[0].sessionToken").isNotEmpty())
+            .andExpect(jsonPath("$.tokens[0].sessionToken", startsWith("st_")))
+            .andExpect(jsonPath("$.tokens[0].sessionTokenPrefix").isNotEmpty())
             .andExpect(jsonPath("$.status").value("ACTIVE"))
             .andExpect(jsonPath("$.availableQuantity").value(400.00));
     }
@@ -96,17 +96,17 @@ class BudgetControllerIT extends IntegrationTestBase {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(validBudgetJson(200.00)))
             .andExpect(status().isCreated())
-            .andExpect(jsonPath("$.sessionToken").isNotEmpty())
+            .andExpect(jsonPath("$.tokens[0].sessionToken").isNotEmpty())
             .andReturn().getResponse().getContentAsString();
 
         String budgetId = objectMapper.readTree(createResponse).get("id").asText();
 
-        // Step 2 — GET the same budget, sessionToken must be absent (null)
+        // Step 2 — GET the same budget, sessionToken must be absent (null inside tokens entry)
         mockMvc.perform(get("/api/v1/budgets/{id}", budgetId)
                 .header("X-Agent-Budget-Key", TEST_API_KEY))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.id").value(budgetId))
-            .andExpect(jsonPath("$.sessionToken").doesNotExist());
+            .andExpect(jsonPath("$.tokens[0].sessionToken").doesNotExist());
     }
 
     // -------------------------------------------------------------------------
