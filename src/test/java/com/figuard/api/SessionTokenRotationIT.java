@@ -113,7 +113,7 @@ class SessionTokenRotationIT extends IntegrationTestBase {
             .andReturn();
 
         var node = objectMapper.readTree(result.getResponse().getContentAsString());
-        return node.get("tokens").get(0).get("sessionToken").asText();
+        return node.get("sessionToken").asText();
     }
 
     private String authorize(String sessionToken, BigDecimal amount) throws Exception {

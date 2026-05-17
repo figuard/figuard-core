@@ -2,7 +2,11 @@ package com.figuard.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.figuard.domain.entity.AgentBudget;
+import com.figuard.domain.entity.BudgetAnomalyBaseline;
 import com.figuard.domain.entity.WebhookConfig;
+import com.figuard.domain.repository.AgentBudgetRepository;
+import com.figuard.domain.repository.BudgetAnomalyBaselineRepository;
 import com.figuard.domain.repository.WebhookConfigRepository;
 import com.figuard.domain.repository.WebhookDeliveryRepository;
 import com.figuard.service.WebhookDispatcher;
@@ -33,6 +37,8 @@ class WebhookIT extends IntegrationTestBase {
     @Autowired ObjectMapper objectMapper;
     @Autowired WebhookConfigRepository webhookConfigRepository;
     @Autowired WebhookDeliveryRepository deliveryRepository;
+    @Autowired AgentBudgetRepository budgetRepository;
+    @Autowired BudgetAnomalyBaselineRepository baselineRepository;
 
     private WireMockServer wireMock;
 
@@ -228,11 +234,19 @@ class WebhookIT extends IntegrationTestBase {
 
         var json = objectMapper.readTree(response);
         String sessionToken = json.get("tokens").get(0).get("sessionToken").asText();
+        UUID budgetId = UUID.fromString(json.get("id").asText());
 
-        // Establish a baseline with several small authorizations
-        for (int i = 0; i < 5; i++) {
-            doAuthorize(sessionToken, "10.00");
-        }
+        // Seed baseline directly — AnomalyBaselineService updates only on CONFIRMED events
+        // (async), so we inject the row the same way AnomalyDetectionIT does.
+        AgentBudget budget = budgetRepository.findById(budgetId).orElseThrow();
+        BudgetAnomalyBaseline baseline = new BudgetAnomalyBaseline();
+        baseline.setBudget(budget);
+        baseline.setTenant(tenant);
+        baseline.setSampleCount(5);
+        baseline.setMeanAmount(new java.math.BigDecimal("10.00"));
+        baseline.setMinAmount(new java.math.BigDecimal("10.00"));
+        baseline.setMaxAmount(new java.math.BigDecimal("10.00"));
+        baselineRepository.save(baseline);
 
         // Fire a request that is anomalously large vs the $10 baseline
         mockMvc.perform(post("/api/v1/authorize")
