@@ -6,17 +6,21 @@ import com.figuard.api.dto.response.WebhookDeliveryResponse;
 import com.figuard.api.dto.response.WebhookTestResult;
 import com.figuard.domain.entity.Tenant;
 import com.figuard.domain.entity.WebhookConfig;
+import com.figuard.domain.entity.WebhookDelivery;
+import com.figuard.domain.enums.WebhookDeliveryStatus;
 import com.figuard.domain.enums.WebhookEventType;
 import com.figuard.domain.repository.WebhookConfigRepository;
 import com.figuard.domain.repository.WebhookDeliveryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -33,6 +37,7 @@ public class WebhookConfigService {
     private final WebhookConfigRepository webhookConfigRepository;
     private final WebhookDeliveryRepository webhookDeliveryRepository;
     private final WebhookDispatcher webhookDispatcher;
+    private final WebhookSecretEncryptor secretEncryptor;
 
     @Transactional
     public WebhookConfigResponse createConfig(CreateWebhookConfigRequest request, Tenant tenant) {
@@ -41,7 +46,7 @@ public class WebhookConfigService {
         WebhookConfig config = new WebhookConfig();
         config.setTenant(tenant);
         config.setUrl(request.getUrl());
-        config.setSecret(request.getSecret());
+        config.setSecret(secretEncryptor.encrypt(request.getSecret()));
         config.setActive(true);
         config.setEvents(request.getEvents().toArray(new String[0]));
 
@@ -70,23 +75,55 @@ public class WebhookConfigService {
         findOwnedConfig(configId, tenant);  // tenant isolation check
         return webhookDeliveryRepository.findByWebhookConfigIdOrderByCreatedAtDesc(configId)
             .stream()
-            .map(d -> WebhookDeliveryResponse.builder()
-                .id(d.getId())
-                .webhookConfigId(configId)
-                .eventType(d.getEventType())
-                .status(d.getStatus())
-                .responseStatus(d.getResponseStatus())
-                .responseBody(d.getResponseBody())
-                .attemptCount(d.getAttemptCount())
-                .deliveredAt(d.getDeliveredAt())
-                .createdAt(d.getCreatedAt())
-                .build())
+            .map(this::toDeliveryResponse)
             .toList();
     }
 
     public WebhookTestResult testConfig(UUID id, Tenant tenant) {
         WebhookConfig config = findOwnedConfig(id, tenant);
         return webhookDispatcher.testDeliver(config);
+    }
+
+    // -------------------------------------------------------------------------
+    // Tenant-scoped delivery list (across all configs) — for dashboard tab
+    // -------------------------------------------------------------------------
+
+    @Transactional(readOnly = true)
+    public List<WebhookDeliveryResponse> getAllDeliveries(Tenant tenant, WebhookDeliveryStatus status) {
+        List<WebhookDelivery> deliveries = status != null
+            ? webhookDeliveryRepository.findByTenantIdAndStatusOrderByCreatedAtDesc(tenant.getId(), status)
+            : webhookDeliveryRepository.findByTenantIdOrderByCreatedAtDesc(tenant.getId());
+        return deliveries.stream().map(this::toDeliveryResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Long> getFailedCount(Tenant tenant) {
+        return Map.of("failedCount", webhookDeliveryRepository.countFailedByTenantId(tenant.getId()));
+    }
+
+    @Async("webhookExecutor")
+    @Transactional
+    public void retryDelivery(UUID deliveryId, Tenant tenant) {
+        WebhookDelivery delivery = webhookDeliveryRepository.findById(deliveryId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Delivery not found: " + deliveryId));
+
+        // Tenant isolation: config-backed delivery must belong to this tenant
+        if (delivery.getWebhookConfig() != null
+                && !delivery.getWebhookConfig().getTenant().getId().equals(tenant.getId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Delivery not found: " + deliveryId);
+        }
+
+        if (delivery.getStatus() != WebhookDeliveryStatus.FAILED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "Only FAILED deliveries can be retried (current status: " + delivery.getStatus() + ")");
+        }
+
+        if (delivery.getWebhookConfig() != null) {
+            webhookDispatcher.deliver(delivery.getWebhookConfig(),
+                WebhookEventType.valueOf(delivery.getEventType()), delivery.getPayload());
+        } else {
+            webhookDispatcher.retryDirectDelivery(delivery);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -116,6 +153,22 @@ public class WebhookConfigService {
             .events(List.of(config.getEvents()))
             .active(config.isActive())
             .createdAt(config.getCreatedAt())
+            .build();
+    }
+
+    private WebhookDeliveryResponse toDeliveryResponse(WebhookDelivery d) {
+        return WebhookDeliveryResponse.builder()
+            .id(d.getId())
+            .webhookConfigId(d.getWebhookConfig() != null ? d.getWebhookConfig().getId() : null)
+            .targetUrl(d.getTargetUrl())
+            .eventType(d.getEventType())
+            .status(d.getStatus())
+            .responseStatus(d.getResponseStatus())
+            .responseBody(d.getResponseBody())
+            .payload(d.getPayload())
+            .attemptCount(d.getAttemptCount())
+            .deliveredAt(d.getDeliveredAt())
+            .createdAt(d.getCreatedAt())
             .build();
     }
 }

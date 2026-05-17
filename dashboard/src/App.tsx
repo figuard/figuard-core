@@ -5,12 +5,13 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { useEffect } from "react";
-import { isConfigured } from "./api/client";
+import { useQuery } from "@tanstack/react-query";
+import { isConfigured, apiFetch } from "./api/client";
 
 function navItem(isActive: boolean) {
   return isActive
-    ? "flex items-center gap-2 rounded px-3 py-1.5 text-sm bg-blue-50 text-blue-700 font-medium"
-    : "flex items-center gap-2 rounded px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors";
+    ? "flex items-center rounded px-3 py-1.5 text-sm bg-blue-50 text-blue-700 font-medium"
+    : "flex items-center rounded px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors";
 }
 
 // Per-budget sub-nav, shown when a budget route is active
@@ -49,6 +50,14 @@ export function App() {
     }
   }, []);
 
+  const { data: failedCountData } = useQuery<{ failedCount: number }>({
+    queryKey: ["webhook-failed-count"],
+    queryFn: () => apiFetch("/api/v1/webhooks/deliveries/failed-count"),
+    enabled: isConfigured(),
+    refetchInterval: 30_000,
+  });
+  const failedCount = failedCountData?.failedCount ?? 0;
+
   // Extract budget ID from URL when viewing a specific budget
   const budgetMatch = location.pathname.match(/^\/budgets\/([^/]+)/);
   const currentBudgetId = budgetMatch ? budgetMatch[1] : undefined;
@@ -64,14 +73,23 @@ export function App() {
 
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
           <NavLink to="/budgets" end className={({ isActive }) => navItem(isActive || !!currentBudgetId)}>
-            <span>📋</span> Budgets
+            Budgets
           </NavLink>
 
           {/* Per-budget sub-nav when inside a budget */}
           {currentBudgetId && <BudgetSubNav budgetId={currentBudgetId} />}
 
           <NavLink to="/users" className={({ isActive }) => navItem(isActive)}>
-            <span>👤</span> Users
+            Users
+          </NavLink>
+
+          <NavLink to="/webhooks" className={({ isActive }) => navItem(isActive)}>
+            Webhooks
+            {failedCount > 0 && (
+              <span className="ml-auto rounded-full bg-red-500 px-1.5 py-0.5 text-xs font-semibold text-white leading-none">
+                {failedCount > 99 ? "99+" : failedCount}
+              </span>
+            )}
           </NavLink>
         </nav>
 
@@ -80,7 +98,7 @@ export function App() {
             to="/settings"
             className={({ isActive }) => navItem(isActive)}
           >
-            <span>⚙</span> Settings
+            Settings
           </NavLink>
         </div>
       </aside>

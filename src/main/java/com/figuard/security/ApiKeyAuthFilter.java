@@ -31,7 +31,12 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
         // Actuator: reachable by load balancers without an API key
         // /receipts/**: public receipt pages — no auth needed to view a shared receipt
         // /internal/demo/**: demo seed endpoint — no key exists yet when this is called
-        return uri.startsWith("/actuator") || uri.startsWith("/receipts/") || uri.startsWith("/internal/demo/");
+        // Swagger UI and OpenAPI spec: public for interactive docs
+        return uri.startsWith("/actuator")
+            || uri.startsWith("/receipts/")
+            || uri.startsWith("/internal/demo/")
+            || uri.startsWith("/swagger-ui")
+            || uri.startsWith("/v3/api-docs");
     }
 
     @Override

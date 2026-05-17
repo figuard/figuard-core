@@ -4,6 +4,7 @@ import com.figuard.api.dto.request.CreateWebhookConfigRequest;
 import com.figuard.api.dto.response.WebhookConfigResponse;
 import com.figuard.api.dto.response.WebhookDeliveryResponse;
 import com.figuard.api.dto.response.WebhookTestResult;
+import com.figuard.domain.enums.WebhookDeliveryStatus;
 import com.figuard.security.TenantContext;
 import com.figuard.service.WebhookConfigService;
 import jakarta.validation.Valid;
@@ -13,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -72,5 +74,33 @@ public class WebhookController {
         // Return 200 even on delivery failure — the HTTP call itself succeeded.
         // Callers check result.success to know if their endpoint responded with 2xx.
         return ResponseEntity.ok(result);
+    }
+
+    /**
+     * All deliveries for this tenant across all webhook configs, newest first.
+     * Optional ?status=FAILED|DELIVERED|PENDING filter.
+     */
+    @GetMapping("/deliveries")
+    public ResponseEntity<List<WebhookDeliveryResponse>> getAllDeliveries(
+            @RequestParam(required = false) WebhookDeliveryStatus status) {
+        return ResponseEntity.ok(
+            webhookConfigService.getAllDeliveries(TenantContext.get(), status));
+    }
+
+    /**
+     * Count of FAILED deliveries — used by the dashboard nav badge.
+     */
+    @GetMapping("/deliveries/failed-count")
+    public ResponseEntity<Map<String, Long>> getFailedCount() {
+        return ResponseEntity.ok(webhookConfigService.getFailedCount(TenantContext.get()));
+    }
+
+    /**
+     * Retry a FAILED delivery. Fires asynchronously — returns 202 Accepted immediately.
+     */
+    @PostMapping("/deliveries/{deliveryId}/retry")
+    public ResponseEntity<Void> retryDelivery(@PathVariable UUID deliveryId) {
+        webhookConfigService.retryDelivery(deliveryId, TenantContext.get());
+        return ResponseEntity.accepted().build();
     }
 }

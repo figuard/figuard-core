@@ -41,10 +41,19 @@ public class DataSeeder implements CommandLineRunner {
         apiKey.setActive(true);
         apiKeyRepository.save(apiKey);
 
-        log.info("========================================");
-        log.info("[DataSeeder] Test tenant created: id={}", tenant.getId());
-        log.info("[DataSeeder] API key ready — use this in Postman/curl:");
-        log.info("[DataSeeder]   X-Agent-Budget-Key: {}", RAW_KEY);
-        log.info("========================================");
+        log.info("[DataSeeder] Seed tenant created: id={}", tenant.getId());
+
+        System.out.println();
+        System.out.println("================================================");
+        System.out.println("  FiGuard is ready");
+        System.out.println();
+        System.out.println("  API:       http://localhost:8080");
+        System.out.println("  Demo key:  " + RAW_KEY);
+        System.out.println();
+        System.out.println("  Try it:");
+        System.out.println("  curl -H \"X-Agent-Budget-Key: " + RAW_KEY + "\" \\");
+        System.out.println("       http://localhost:8080/api/v1/budgets");
+        System.out.println("================================================");
+        System.out.println();
     }
 }
