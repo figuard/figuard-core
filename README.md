@@ -155,20 +155,24 @@ client.confirm_event(auth.event_id, confirmed_quantity=267.00)
 
 ```bash
 git clone https://github.com/figuard/figuard-core
-cd figuard-core && make run
+cd figuard-core
+docker compose up
 # Ready at http://localhost:8080
-
-# Optional: run the dashboard in a separate terminal
-make dashboard
-# Dashboard at http://localhost:5173
 ```
 
-Verify it's working in one line:
+That's it. The server is a Docker container — same as Postgres or Redis. You never need to touch the internals. Switch your client to localhost:
 
-```bash
-curl -s -H "X-Agent-Budget-Key: sb_live_demo" \
-  http://localhost:8080/api/v1/budgets
-# {"content":[],"totalElements":0,...}
+```python
+pip install figuard
+```
+
+```python
+from figuard import FiGuardClient
+
+client = FiGuardClient(
+    api_key="ab_live_demo",
+    base_url="http://localhost:8080",
+)
 ```
 
 Run the example scenarios:
@@ -199,6 +203,8 @@ Or follow the decision tree in [Pick your pattern](docs/pick-your-pattern.md) if
 **Not a firewall for human users.** FiGuard is purpose-built for agent-to-service authorization. The session token model assumes agents are ephemeral and untrusted by default.
 
 **Not a replacement for Stripe spending controls.** Use both if you want defense in depth. FiGuard blocks at agent decision time; Stripe blocks at payment time. Different attack surfaces.
+
+**Not a security boundary against adversarial agents.** FiGuard enforces what the agent declares. An agent that lies about its category or amount bypasses category enforcement. FiGuard is designed for honest agents with bounded resources — the same threat model as a database connection pool or a rate limiter. It prevents accidental overspend and enforces organizational policies on well-behaved agents. For adversarial agent containment, pair FiGuard with a security layer like [Microsoft AGT](https://github.com/microsoft/agt).
 
 ---
 
