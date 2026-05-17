@@ -162,7 +162,7 @@ docker compose up
 
 That's it. The server is a Docker container — same as Postgres or Redis. You never need to touch the internals. Switch your client to localhost:
 
-```python
+```bash
 pip install figuard
 ```
 
