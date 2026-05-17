@@ -122,7 +122,7 @@ public class BudgetController {
     @PostMapping("/{id}/rotate-token")
     public ResponseEntity<Map<String, String>> rotateToken(@PathVariable UUID id) {
         String newToken = budgetService.rotateSessionToken(id, TenantContext.get());
-        return ResponseEntity.ok(Map.of("token", newToken));
+        return ResponseEntity.ok(Map.of("sessionToken", newToken));
     }
 
     @GetMapping("/{id}/ledger")

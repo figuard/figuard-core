@@ -109,5 +109,21 @@ The response contains `rawKey` — store it immediately, it's shown once. Use it
 
 - Put the API behind a reverse proxy (nginx, Caddy) with TLS termination. The container speaks plain HTTP.
 - Set `FIGUARD_SEED_DEMO_KEY=false` and rotate `SPRING_DATASOURCE_PASSWORD`.
+- Set `WEBHOOK_SECRET_KEY` to a 32-byte random key (`openssl rand -base64 32`). The default in `application.yml` is insecure and for local development only.
 - The `postgres_data` volume is your ledger — back it up.
 - The health check endpoint is `GET /actuator/health` (no auth required).
+
+### Rate limiting
+
+FiGuard does not include API-level rate limiting. For production deployments, configure rate limiting in your reverse proxy. Example nginx configuration:
+
+```nginx
+limit_req_zone $binary_remote_addr zone=figuard_authorize:10m rate=100r/s;
+
+location /api/v1/authorize {
+    limit_req zone=figuard_authorize burst=50 nodelay;
+    proxy_pass http://figuard:8080;
+}
+```
+
+Caddy and Traefik have equivalent rate limiting middleware. Applying stricter limits on `/api/v1/authorize` than on read endpoints is recommended — authorization is the hot path and the most likely target for runaway agents.

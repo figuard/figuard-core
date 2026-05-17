@@ -25,8 +25,8 @@ public class WebhookConfig {
     @Column(nullable = false, length = 2000)
     private String url;
 
-    @Column(nullable = false)
-    private String secret;              // HMAC signing secret
+    @Column(nullable = false, length = 512)
+    private String secret;  // AES-256-GCM encrypted HMAC signing secret (enc: prefix). See WebhookSecretEncryptor.
 
     @Column(nullable = false)
     private boolean isActive = true;

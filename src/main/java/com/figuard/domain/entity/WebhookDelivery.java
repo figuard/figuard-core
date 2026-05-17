@@ -21,8 +21,13 @@ public class WebhookDelivery {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "webhook_config_id", nullable = false)
+    @JoinColumn(name = "webhook_config_id", nullable = true)
     private WebhookConfig webhookConfig;
+
+    // Populated for direct-URL dispatches (e.g. anomalyAlertWebhookUrl) where
+    // no WebhookConfig row exists. Exactly one of webhookConfig or targetUrl is set.
+    @Column(length = 2048)
+    private String targetUrl;
 
     @Column(nullable = false, length = 100)
     private String eventType;
@@ -42,6 +47,13 @@ public class WebhookDelivery {
     private OffsetDateTime deliveredAt;
 
     private OffsetDateTime nextRetryAt;
+
+    /**
+     * Set to true once RENEWAL_TOKEN_DELIVERY_FAILED has been dispatched for this delivery.
+     * Only relevant when eventType = "entitlement.renewed". Prevents re-firing on each sweep pass.
+     */
+    @Column(nullable = false)
+    private boolean renewalAlertSent = false;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

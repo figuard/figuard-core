@@ -18,7 +18,11 @@ Each budget is enforced independently. FiGuard does not provide a view that says
 
 ## Webhook delivery is best-effort
 
-Webhooks are retried once on non-2xx. If the second attempt fails, the delivery is marked FAILED and not retried again. Build your webhook handler to be idempotent, and poll the ledger for critical use cases where webhook delivery cannot be missed.
+FiGuard attempts delivery up to 10 times. The first 4 attempts happen immediately with short delays (0 s, 1 s, 2 s, 4 s). If all four fail, a background sweep retries with exponential backoff: 1 min, 2 min, 4 min, 8 min, 16 min, 32 min. After 10 total attempts the delivery is marked terminal.
+
+You can manually trigger a retry at any time via `POST /api/v1/webhooks/deliveries/{id}/retry` or from the Webhooks tab in the dashboard.
+
+Build your webhook handler to be idempotent — the same event can be delivered more than once if a network error occurs after your endpoint has processed the payload but before it returned 2xx. For critical use cases where webhook delivery cannot be missed, poll the ledger (`GET /api/v1/budgets/{id}/ledger`) as a fallback.
 
 ---
 
@@ -54,13 +58,39 @@ Tenant isolation is enforced at the API level — each API key belongs to one te
 
 ---
 
-## Velocity window uses a live COUNT query
+## Authorizations per budget are serialized
 
-The rolling velocity windows (`velocity_max_per_minute`, `velocity_max_amount_per_hour`, `velocity_max_per_day`) are currently evaluated by issuing a live `COUNT` or `SUM` query against the `spend_events` table for the relevant window. This works well at moderate throughput.
+FiGuard acquires a pessimistic write lock on the budget row for every `authorize` call. This serializes all concurrent agents sharing a budget, guaranteeing ACID correctness: no two agents can double-spend the same available quantity.
 
-At very high concurrency — roughly 1,000+ `authorize` calls per second on a single budget — this query can become a bottleneck. If you expect that volume, consider:
+The throughput ceiling is approximately **1 / avg_db_transaction_time** per budget. On a typical Postgres instance with a local connection this is around 200–500 authorizations per second. It is not a per-server ceiling — different budgets lock independently, so horizontal scaling is straightforward: distribute agents across multiple budgets.
 
-- **Option B (V3 roadmap):** a dedicated counter table incremented atomically per budget per window, avoiding the full `spend_events` scan.
-- **Option C (V4 roadmap):** a Redis sliding-window counter using sorted sets, eliminating the database round-trip entirely.
+For high-concurrency fleet scenarios where many agents share a single envelope, the recommended pattern is a parent delegation model: one root budget issues delegation tokens to child agents, each child gets its own delegated budget with a hard cap. Agents authorize against their child budget (independent lock), not the shared root.
 
-For most agent workloads (dozens to low hundreds of calls per minute) the current implementation is sufficient.
+---
+
+## Velocity controls add two queries per authorization
+
+When velocity limits are configured (`velocity_max_per_minute`, `velocity_max_amount_per_hour`, `velocity_max_per_day`), each `authorize` call issues one `COUNT` query and one `SUM` query against `spend_events` for the relevant rolling windows. Both queries run inside the budget's pessimistic lock.
+
+This is correct and efficient for most agent workloads (dozens to low hundreds of calls per minute per budget). At high concurrent load — roughly 500+ `authorize` calls per second on a single budget — these queries add measurable latency.
+
+**V3 roadmap:** replace the live queries with a dedicated counter table incremented atomically per budget per window.  
+**V4 roadmap:** Redis sliding-window counters using sorted sets, eliminating the DB round-trip for velocity checks entirely.
+
+---
+
+## No built-in API rate limiting
+
+FiGuard does not include application-level rate limiting on the `authorize` endpoint or any other API endpoint. For production deployments, configure rate limiting in your reverse proxy (nginx, Caddy, Traefik). See [Self-Hosting](self-hosting.md) for configuration guidance.
+
+---
+
+## No database-level tenant isolation (Row Level Security)
+
+Tenant isolation is currently enforced at the application layer: every repository query includes a `tenant_id` predicate, and every API request is scoped to a tenant via its API key. A bug in the application code could in principle issue a query that returns cross-tenant data.
+
+PostgreSQL Row Level Security (RLS) would add a second enforcement layer at the database itself — policies that reject any query not scoped to the current tenant, regardless of what the application sends. This is the correct defense-in-depth for a multi-tenant SaaS deployment.
+
+For self-hosted deployments (the primary use case for this project), each instance is typically single-tenant, making RLS less critical.
+
+**V2 roadmap:** optional RLS policy migration for operators running FiGuard in a shared multi-tenant mode.

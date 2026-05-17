@@ -3,6 +3,7 @@
 **Pre-flight spend authorization for AI agents.**  
 Your agent asks permission before money moves. FiGuard says yes or no — and keeps a complete audit trail either way.
 
+[![CI](https://github.com/figuard/figuard-core/actions/workflows/ci.yml/badge.svg)](https://github.com/figuard/figuard-core/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/figuard)](https://pypi.org/project/figuard/)
 [![npm](https://img.shields.io/npm/v/figuard?label=npm%20(ts-sdk)&color=cb3837)](https://www.npmjs.com/package/figuard)
@@ -221,6 +222,8 @@ None of this is architecturally exotic. It's the same set of problems that payme
 
 ## Docs
 
+- **Interactive API docs:** http://localhost:8080/swagger-ui.html (local) · https://sandbox.figuard.io/swagger-ui.html (live sandbox)
+- [API Reference](docs/api-reference.md) — full endpoint reference with payloads
 - [Pick Your Pattern](docs/pick-your-pattern.md) — decision tree: find your scenario, get the exact create + authorize calls
 - [Budget Configuration](docs/budget-configuration.md) — full parameter reference for all four configuration layers
 - [Framework Integrations](docs/integrations.md) — LangChain, CrewAI, OpenAI Agents SDK, Anthropic
@@ -259,6 +262,18 @@ Source: [`examples/rogue_agent_scenarios/`](examples/rogue_agent_scenarios/)
 
 ---
 
+## Roadmap
+
+### V2
+- **Row Level Security** — PostgreSQL RLS policies as a second enforcement layer for operators running FiGuard in shared multi-tenant mode
+- **Velocity counter table** — replace live `COUNT`/`SUM` queries with an atomically-incremented counter table per budget per window, removing the `spend_events` scan from the authorize hot path
+
+### V3
+- **Redis velocity counters** — sliding-window counters in Redis, eliminating the DB round-trip for velocity checks at high throughput
+- **Helm chart** — production-grade Kubernetes deployment with configurable replicas, resource limits, and secret management
+
+---
+
 ## Contributing
 
 Issues, PRs, and integration requests welcome.
@@ -267,7 +282,7 @@ Issues, PRs, and integration requests welcome.
 - [Good first issues](https://github.com/figuard/figuard-core/labels/good-first-issue)
 - [GitHub Discussions](https://github.com/figuard/figuard-core/discussions)
 
-Looking for contributors on: Go SDK · LlamaIndex integration · DSPy integration
+Looking for contributors on: Go SDK · LlamaIndex integration · DSPy integration · Helm chart
 
 ---
 

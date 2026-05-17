@@ -17,5 +17,6 @@ public enum WebhookEventType {
     LEDGER_INTEGRITY_VIOLATION,  // LedgerIntegrityService detected a balance invariant breach
     WEBHOOK_TEST,                // synthetic event fired by POST /webhooks/{id}/test
     DELEGATION_TOKEN_REVOKED,    // a delegation token was explicitly revoked via DELETE /delegation-tokens/{id}
-    VELOCITY_LIMIT_EXCEEDED      // a rolling-window rate limit was hit (first violation per window)
+    VELOCITY_LIMIT_EXCEEDED,     // a rolling-window rate limit was hit (first violation per window)
+    RENEWAL_TOKEN_DELIVERY_FAILED // entitlement.renewed webhook failed 3+ sweep retries — operator must call rotate-tokens
 }
