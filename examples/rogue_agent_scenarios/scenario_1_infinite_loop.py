@@ -20,8 +20,8 @@ Run:
 from figuard import FiGuardClient
 
 figuard = FiGuardClient(
-    api_key="sb_live_demo",
-    base_url="https://figuard-sandbox-1.onrender.com",
+    api_key="ab_live_demo",  # sandbox: use "sb_live_demo"
+    base_url="http://localhost:8080",  # sandbox: use "https://figuard-sandbox-1.onrender.com"
 )
 
 cost_per_call = 0.02
