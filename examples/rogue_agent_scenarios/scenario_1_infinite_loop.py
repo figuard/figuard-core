@@ -13,18 +13,16 @@ When the budget is exhausted FiGuard returns BUDGET_EXHAUSTED and the loop
 stops cleanly — no exception, no crash, full audit trail.
 
 Run:
-    pip install figuard anthropic
+    pip install figuard
     python scenario_1_infinite_loop.py
 """
 
-import anthropic
 from figuard import FiGuardClient
 
 figuard = FiGuardClient(
     api_key="sb_live_demo",
     base_url="https://figuard-sandbox-1.onrender.com",
 )
-claude = anthropic.Anthropic()
 
 cost_per_call = 0.02
 
@@ -62,11 +60,7 @@ while True:
         print(f"  Saved vs 847 iterations: ${(847 - iteration) * cost_per_call:.2f}")
         break
 
-    claude.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=100,
-        messages=[{"role": "user", "content": "Rate quality 0-1: example content"}],
-    )
+    # Simulated LLM call — score oscillates 0.82–0.91, never reaches the 0.95 threshold
     figuard.confirm_event(auth.event_id, confirmed_quantity=cost_per_call)
     total_cost += cost_per_call
 
