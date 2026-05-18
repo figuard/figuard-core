@@ -32,7 +32,7 @@ from figuard import FiGuardClient
 
 figuard = FiGuardClient(
     api_key="sb_live_demo",
-    base_url="https://sandbox.figuard.io",
+    base_url="https://figuard-sandbox-1.onrender.com",
 )
 
 budget = figuard.create_budget(
