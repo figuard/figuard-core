@@ -1002,8 +1002,8 @@ def _parse_budget(data: Dict[str, Any]) -> Budget:
         for a in data.get("allocations", [])
     ]
     raw_tokens = data.get("tokens")
-    tokens = (
-        [
+    if raw_tokens is not None:
+        tokens = [
             BudgetToken(
                 category=t["category"],
                 session_token=t.get("sessionToken"),
@@ -1013,9 +1013,20 @@ def _parse_budget(data: Dict[str, Any]) -> Budget:
             )
             for t in raw_tokens
         ]
-        if raw_tokens is not None
-        else None
-    )
+    elif data.get("sessionToken"):
+        # Backward compatibility: servers prior to the tokens[] restructure returned
+        # a flat sessionToken field at the budget root. Wrap it in a synthetic token
+        # so primary_token works regardless of server version.
+        tokens = [
+            BudgetToken(
+                category="default",
+                session_token=data["sessionToken"],
+                session_token_prefix=data.get("sessionTokenPrefix"),
+                currency=data.get("currency"),
+            )
+        ]
+    else:
+        tokens = None
     return Budget(
         id=data["id"],
         user_id=data["userId"],
