@@ -263,7 +263,7 @@ class WebhookIT extends IntegrationTestBase {
                 ))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.decision").value("DENIED"))
-            .andExpect(jsonPath("$.denialCode").value("ANOMALY_DETECTED"));
+            .andExpect(jsonPath("$.denialReason").value("ANOMALY_DETECTED"));
 
         // Both BUDGET_PAUSED and ANOMALY_DETECTED webhooks must have fired
         await().atMost(5, TimeUnit.SECONDS).untilAsserted(() -> {
