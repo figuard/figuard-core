@@ -53,3 +53,5 @@ sdk/python/.pytest_cache/
 
 ### macOS ###
 .DS_Store
+demo.cast
+demo.gif

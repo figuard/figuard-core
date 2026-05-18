@@ -101,6 +101,8 @@ qty spent released released
 
 ---
 
+![FiGuard demo](https://github.com/user-attachments/assets/b3f3bd14-b578-4e78-a4ff-96a28e3d63ba)
+
 ## 60-Second Quickstart
 
 **1. Point at the sandbox**
