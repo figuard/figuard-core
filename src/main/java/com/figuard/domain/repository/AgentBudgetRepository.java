@@ -84,9 +84,6 @@ public interface AgentBudgetRepository extends JpaRepository<AgentBudget, UUID> 
         @Param("windowStart") OffsetDateTime windowStart,
         @Param("windowEnd")   OffsetDateTime windowEnd);
 
-    // Sandbox abuse guard: total budget count for a tenant, used to enforce a per-key cap.
-    long countByTenant(Tenant tenant);
-
     // Customer view: all budgets for a specific userId, with optional status filtering.
     Page<AgentBudget> findByTenantAndUserId(Tenant tenant, String userId, Pageable pageable);
 
