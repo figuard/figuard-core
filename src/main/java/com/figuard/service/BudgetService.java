@@ -73,9 +73,23 @@ public class BudgetService {
     @Value("${agent-billing.token.rotation-grace-period-seconds:60}")
     private int tokenRotationGraceSeconds;
 
+    /** 0 = unlimited (production default). Set > 0 in sandbox to block bulk creation abuse. */
+    @Value("${agent-billing.budget.max-per-key:0}")
+    private int maxBudgetsPerKey;
+
     @Transactional
     public CreateBudgetResult createBudget(CreateBudgetRequest request, Tenant tenant) {
         validateExpiresAt(request.getExpiresAt());
+
+        if (maxBudgetsPerKey > 0) {
+            long existing = budgetRepository.countByTenant(tenant);
+            if (existing >= maxBudgetsPerKey) {
+                throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                    "Budget limit reached for this API key (" + maxBudgetsPerKey + " max). "
+                    + "This is a shared sandbox — older budgets are wiped periodically. "
+                    + "Self-host for unlimited budgets: https://github.com/figuard/figuard-core");
+            }
+        }
 
         if (request.getAllocations() != null && !request.getAllocations().isEmpty()) {
             validateAllocations(request.getAllocations(), request.getTotalLimit());

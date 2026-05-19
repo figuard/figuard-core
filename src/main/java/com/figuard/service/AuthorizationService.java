@@ -397,12 +397,32 @@ public class AuthorizationService {
                 delegatedToken);
         }
 
+        // Delegate cap check — flat budgets have no fleet allocations, so we match
+        // the cap by claimedCategory (if present) or fall back to any cap on the token.
+        DelegatedTokenAllocation lockedDelegateCap = null;
+        if (delegatedToken != null) {
+            Optional<DelegatedTokenAllocation> delegateCap = (request.getClaimedCategory() != null)
+                ? delegatedTokenAllocationRepository.findByTokenIdAndCategoryWithLock(
+                    delegatedToken.getId(), request.getClaimedCategory())
+                : delegatedTokenAllocationRepository.findFirstByTokenIdWithLock(delegatedToken.getId());
+            if (delegateCap.isPresent()) {
+                lockedDelegateCap = delegateCap.get();
+                if (!lockedDelegateCap.canAccommodate(request.getRequestedQuantity())) {
+                    return deny(budget, null, request, parentEvent,
+                        DenialCode.DELEGATE_CAP_EXCEEDED,
+                        "Delegation token cap for '" + lockedDelegateCap.getCategory() + "' has " +
+                        lockedDelegateCap.availableQuantity() + " available, requested " +
+                        request.getRequestedQuantity(), delegatedToken);
+                }
+            }
+        }
+
         if (!budget.canAccommodateWith(request.getRequestedQuantity(), effectiveReserved)) {
             return deny(budget, null, request, parentEvent, DenialCode.INSUFFICIENT_FUNDS,
                 "Budget has " + budget.availableQuantityWith(effectiveReserved) + " available, requested " +
                 request.getRequestedQuantity(), delegatedToken);
         }
-        return approve(budget, null, request, parentEvent, delegatedToken, null);
+        return approve(budget, null, request, parentEvent, delegatedToken, lockedDelegateCap);
     }
 
     // -------------------------------------------------------------------------

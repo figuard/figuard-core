@@ -34,4 +34,12 @@ public interface DelegatedTokenAllocationRepository extends JpaRepository<Delega
     Optional<DelegatedTokenAllocation> findByTokenIdAndCategory(
         @Param("tokenId") UUID tokenId,
         @Param("category") String category);
+
+    /**
+     * Pessimistic lock — fallback for flat-budget delegation when no claimedCategory is set.
+     * Returns any single cap on this token so the flat path can still enforce the overall limit.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT a FROM DelegatedTokenAllocation a WHERE a.delegatedToken.id = :tokenId ORDER BY a.createdAt ASC")
+    Optional<DelegatedTokenAllocation> findFirstByTokenIdWithLock(@Param("tokenId") UUID tokenId);
 }
