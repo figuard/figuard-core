@@ -19,17 +19,46 @@ Run:
 import threading
 from figuard import FiGuardClient
 
+# ── ANSI colours ──────────────────────────────────────────────────────────────
+RED    = "\033[91m"
+GREEN  = "\033[32m"
+YELLOW = "\033[93m"
+BOLD   = "\033[1m"
+DIM    = "\033[2m"
+RESET  = "\033[0m"
+
 figuard = FiGuardClient(
-    api_key="ab_live_demo",  # sandbox: use "sb_live_demo"
+    api_key="ab_live_demo",            # sandbox: use "sb_live_demo"
     base_url="http://localhost:8080",  # sandbox: use "https://figuard-sandbox-1.onrender.com"
 )
 
+BUDGET_LIMIT  = 1000.00
+AGENTS        = 10
+SPEND_EACH    = 200.00
+
+# ── WITHOUT FIGUARD ───────────────────────────────────────────────────────────
+print(f"\n{BOLD}{RED}━━━  WITHOUT FIGUARD  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}")
+print(f"  10 agents launch simultaneously, each reads balance = ${BUDGET_LIMIT:,.2f}")
+print()
+for i in range(AGENTS):
+    print(f"  {RED}Agent {i:2d}: reads ${BUDGET_LIMIT:,.2f} available → AUTHORIZED  ${SPEND_EACH:.2f}{RESET}")
+print()
+overspend = AGENTS * SPEND_EACH
+print(f"  {RED}✗  Total committed: ${overspend:,.2f} against a ${BUDGET_LIMIT:,.2f} budget — ${overspend - BUDGET_LIMIT:,.2f} over{RESET}")
+
+# ── WITH FIGUARD ──────────────────────────────────────────────────────────────
+print(f"\n{BOLD}{GREEN}━━━  WITH FIGUARD  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}")
+
 budget = figuard.create_budget(
     user_id="supervisor",
-    total_limit=1000.00,
+    total_limit=BUDGET_LIMIT,
     currency="USD",
     expires_in="1h",
 )
+
+print(f"  Budget: {BOLD}${budget.total_limit:,.2f}{RESET}  |  {AGENTS} agents × ${SPEND_EACH:.0f} = ${AGENTS * SPEND_EACH:,.0f} requested")
+print(f"  {DIM}SERIALIZABLE isolation — pessimistic write lock per authorize(){RESET}")
+print()
 
 results: list[tuple[int, str, str | None]] = []
 lock = threading.Lock()
@@ -41,29 +70,27 @@ def agent_spend(agent_id: int) -> None:
         agent_id=f"research_agent_{agent_id}",
         action_type="COMPUTE",
         description=f"Research subtask {agent_id}",
-        requested_quantity=200.00,
+        requested_quantity=SPEND_EACH,
         idempotency_key=f"research-task-{agent_id}",
     )
     with lock:
         results.append((agent_id, auth.decision,
                         auth.denial_reason if not auth.is_authorized else None))
-        status = "✓ AUTHORIZED" if auth.is_authorized else "✗ DENIED    "
-        reason = f"[{auth.denial_reason}]" if not auth.is_authorized else ""
-        print(f"Agent {agent_id:2d}: {status}  $200.00  {reason}")
+        if auth.is_authorized:
+            print(f"  {GREEN}Agent {agent_id:2d}: ✓ AUTHORIZED   ${SPEND_EACH:.2f}{RESET}")
+        else:
+            print(f"  {RED}Agent {agent_id:2d}: ✗ DENIED   ${SPEND_EACH:.2f}  [{auth.denial_reason}]{RESET}")
 
 
-print(f"Budget: ${budget.total_limit:.2f}  |  10 agents × $200 = $2,000 requested")
-print()
-
-threads = [threading.Thread(target=agent_spend, args=(i,)) for i in range(10)]
+threads = [threading.Thread(target=agent_spend, args=(i,)) for i in range(AGENTS)]
 for t in threads:
     t.start()
 for t in threads:
     t.join()
 
 authorized = [r for r in results if r[1] == "AUTHORIZED"]
-total = len(authorized) * 200.0
+total = len(authorized) * SPEND_EACH
 
 print()
-print(f"✓ Authorized: {len(authorized)}/10 agents  (${total:.2f} of ${budget.total_limit:.2f})")
-print(f"  Budget never exceeded: {total <= budget.total_limit}")
+print(f"  {GREEN}✓  {len(authorized)}/{AGENTS} agents authorized — ${total:,.2f} of ${BUDGET_LIMIT:,.2f}{RESET}")
+print(f"  {GREEN}✓  Budget never exceeded: {total <= BUDGET_LIMIT}{RESET}")
