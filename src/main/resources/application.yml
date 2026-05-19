@@ -32,7 +32,6 @@ agent-billing:
     stale-budget-sweep-interval-minutes: 5
     stale-budget-sweep-interval-ms: 300000
     expiry-grace-period-seconds: 60
-    max-per-key: 0   # 0 = unlimited. Set via AGENT_BILLING_BUDGET_MAX_PER_KEY env var in sandbox.
   token:
     rotation-grace-period-seconds: 60
   webhook:
