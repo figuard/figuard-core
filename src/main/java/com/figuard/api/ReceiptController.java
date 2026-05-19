@@ -4,6 +4,9 @@ import com.figuard.exception.ReceiptExpiredException;
 import com.figuard.exception.ReceiptNotFoundException;
 import com.figuard.security.TenantContext;
 import com.figuard.service.SpendReceiptService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Hidden;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -25,16 +28,17 @@ import java.util.UUID;
  */
 public class ReceiptController {
 
-    /**
-     * Authenticated — requires X-Agent-Budget-Key header.
-     * Returns the receipt URL for the given budget.
-     */
+    @Tag(name = "Budgets")
     @RestController
     @RequiredArgsConstructor
     public static class AuthenticatedReceiptController {
 
         private final SpendReceiptService receiptService;
 
+        @Operation(
+            summary = "Get receipt URL",
+            description = "Returns a shareable receipt URL for the budget. The URL is public (no API key required to view) and renders a read-only HTML summary of confirmed spend."
+        )
         @GetMapping("/api/v1/budgets/{budgetId}/receipt")
         public ResponseEntity<Map<String, String>> getReceiptUrl(@PathVariable UUID budgetId) {
             String url = receiptService.getOrCreateReceiptUrl(budgetId, TenantContext.get());
@@ -43,11 +47,9 @@ public class ReceiptController {
     }
 
     /**
-     * Public — no API key required.
-     * Renders an HTML receipt page from a Thymeleaf template.
-     * Exceptions are handled here (not in GlobalExceptionHandler) because this controller
-     * returns HTML, not JSON.
+     * Public HTML receipt page — hidden from the API docs (returns HTML, not JSON).
      */
+    @Hidden
     @Controller
     @RequiredArgsConstructor
     public static class PublicReceiptController {

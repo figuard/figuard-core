@@ -54,6 +54,16 @@ management:
       prometheus:
         enabled: true
 
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+    display-request-duration: true
+    persist-authorization: true
+  api-docs:
+    path: /v3/api-docs
+
 logging:
   level:
     com.figuard: INFO
