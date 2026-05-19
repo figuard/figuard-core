@@ -18,10 +18,35 @@ Run:
 
 from figuard import FiGuardClient
 
+# ── ANSI colours ──────────────────────────────────────────────────────────────
+RED    = "\033[91m"
+GREEN  = "\033[32m"
+YELLOW = "\033[93m"
+BOLD   = "\033[1m"
+DIM    = "\033[2m"
+RESET  = "\033[0m"
+
 figuard = FiGuardClient(
-    api_key="ab_live_demo",  # sandbox: use "sb_live_demo"
+    api_key="ab_live_demo",            # sandbox: use "sb_live_demo"
     base_url="http://localhost:8080",  # sandbox: use "https://figuard-sandbox-1.onrender.com"
 )
+
+invoice_id = "INV-2026-0342"
+amount     = 1500.00
+
+# ── WITHOUT FIGUARD ───────────────────────────────────────────────────────────
+print(f"\n{BOLD}{RED}━━━  WITHOUT FIGUARD  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}")
+print(f"  Processing invoice {invoice_id} for ${amount:,.2f}")
+print()
+print(f"  {RED}Attempt 1: AUTHORIZED — ${amount:,.2f} charged{RESET}")
+print(f"  {DIM}  ← network timeout: response lost in transit{RESET}")
+print(f"  {RED}Retry:     AUTHORIZED — ${amount:,.2f} charged again{RESET}")
+print()
+print(f"  {RED}✗  Vendor paid twice — ${amount * 2:,.2f} total charged{RESET}")
+print(f"  {DIM}  Finance caught the duplicate 3 weeks later{RESET}")
+
+# ── WITH FIGUARD ──────────────────────────────────────────────────────────────
+print(f"\n{BOLD}{GREEN}━━━  WITH FIGUARD  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}")
 
 budget = figuard.create_budget(
     user_id="ap_agent",
@@ -31,14 +56,11 @@ budget = figuard.create_budget(
     entity_dedup_enabled=True,
 )
 
-invoice_id = "INV-2026-0342"
-amount = 1500.00
-
-print(f"Processing invoice {invoice_id} for ${amount:.2f}")
+print(f"  Invoice: {BOLD}{invoice_id}{RESET}  |  Amount: ${amount:,.2f}")
 print()
 
 # Attempt 1 — authorized, response lost in transit
-print("Attempt 1: authorizing...")
+print(f"  Attempt 1: authorizing...")
 auth1 = figuard.authorize(
     session_token=budget.primary_token.session_token,
     agent_id="ap_agent",
@@ -47,12 +69,12 @@ auth1 = figuard.authorize(
     requested_quantity=amount,
     idempotency_key=f"invoice-{invoice_id}",
 )
-print(f"  {auth1.decision} — event {auth1.event_id}")
-print("  ← network timeout: agent never received this response")
+print(f"  {GREEN}✓ {auth1.decision} — event {auth1.event_id}{RESET}")
+print(f"  {DIM}  ← network timeout: agent never received this response{RESET}")
 print()
 
 # Retry — same idempotency key returns original event
-print("Network timeout. Retrying with same idempotency key...")
+print(f"  {YELLOW}Network timeout. Retrying with same idempotency key...{RESET}")
 auth2 = figuard.authorize(
     session_token=budget.primary_token.session_token,
     agent_id="ap_agent",
@@ -61,15 +83,16 @@ auth2 = figuard.authorize(
     requested_quantity=amount,
     idempotency_key=f"invoice-{invoice_id}",
 )
-print(f"  {auth2.decision} — event {auth2.event_id}")
+print(f"  {GREEN}✓ {auth2.decision} — event {auth2.event_id}  (same event returned){RESET}")
 print()
 
-print(f"Same event returned: {auth1.event_id == auth2.event_id}")
-print(f"Amount authorized:   ${amount:.2f}  (not ${amount * 2:.2f})")
+same_event = auth1.event_id == auth2.event_id
+print(f"  Same event ID:     {GREEN}{same_event}{RESET}")
+print(f"  Amount charged:    {GREEN}${amount:,.2f}{RESET}  (not ${amount * 2:,.2f})")
 
 if auth1.is_authorized:
     figuard.confirm_event(auth1.event_id, confirmed_quantity=amount)
-    print(f"Confirmed once:      ${amount:.2f}")
+    print(f"  Confirmed once:    {GREEN}${amount:,.2f}{RESET}")
 
 print()
-print("✓ Duplicate prevented. Payment processor called once.")
+print(f"  {GREEN}✓  Duplicate prevented — payment processor called exactly once{RESET}")

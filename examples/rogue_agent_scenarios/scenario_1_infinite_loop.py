@@ -1,69 +1,86 @@
 """
-Scenario 1 — The Infinite Quality Loop
+Scenario 1 — The Infinite Loop
 
 THE INCIDENT
-A quality-checking agent evaluated content in a loop until its score exceeded 0.95.
-The score oscillated between 0.82 and 0.91 and never reached the threshold.
-The agent ran 847 iterations overnight before someone noticed.
-Cost: $16.94. Time: ~14 hours. No alert fired.
+A ReAct agent was scoring search results in a loop. The "stop when score > 0.95"
+condition was never met (hallucinated threshold). Without a budget it would run
+forever, calling the LLM on every iteration. A human noticed the bill hours later.
 
 THE FIX
-A $5.00 budget on the task. At $0.02/call that allows 250 iterations maximum.
-When the budget is exhausted FiGuard returns BUDGET_EXHAUSTED and the loop
-stops cleanly — no exception, no crash, full audit trail.
+A hard spend limit on the budget. FiGuard stops the loop at iteration 251 with
+INSUFFICIENT_FUNDS. The agent gets a clear, machine-readable signal to stop.
 
 Run:
     pip install figuard
     python scenario_1_infinite_loop.py
 """
 
+import random
 from figuard import FiGuardClient
 
+# ── ANSI colours ──────────────────────────────────────────────────────────────
+RED    = "\033[91m"
+GREEN  = "\033[32m"
+YELLOW = "\033[93m"
+CYAN   = "\033[96m"
+BOLD   = "\033[1m"
+DIM    = "\033[2m"
+RESET  = "\033[0m"
+
 figuard = FiGuardClient(
-    api_key="ab_live_demo",  # sandbox: use "sb_live_demo"
+    api_key="ab_live_demo",            # sandbox: use "sb_live_demo"
     base_url="http://localhost:8080",  # sandbox: use "https://figuard-sandbox-1.onrender.com"
 )
 
-cost_per_call = 0.02
+CALL_COST    = 0.02
+BUDGET_LIMIT = 5.00
+
+# ── WITHOUT FIGUARD ───────────────────────────────────────────────────────────
+print(f"\n{BOLD}{RED}━━━  WITHOUT FIGUARD  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}")
+print(f"  Agent loops forever — no budget, no stop signal.")
+print()
+uncapped_iters = int(BUDGET_LIMIT / CALL_COST) + random.randint(400, 600)
+uncapped_cost  = round(uncapped_iters * CALL_COST, 2)
+for i in [1, 50, 100, 200, uncapped_iters]:
+    cost_so_far = round(i * CALL_COST, 2)
+    print(f"  {RED}iter {i:>4d}: LLM call fired — ${cost_so_far:.2f} accumulated{RESET}")
+print()
+print(f"  {RED}✗  Ran {uncapped_iters} iterations — ${uncapped_cost:.2f} charged before a human killed it{RESET}")
+
+# ── WITH FIGUARD ──────────────────────────────────────────────────────────────
+print(f"\n{BOLD}{GREEN}━━━  WITH FIGUARD  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{RESET}")
 
 budget = figuard.create_budget(
-    user_id="quality_checker",
-    total_limit=5.00,
+    user_id="react_agent",
+    total_limit=BUDGET_LIMIT,
     currency="USD",
     expires_in="1h",
-    authorization_expiry_seconds=300,
-    intent_context="content quality check — single document",
 )
 
-print(f"Budget: ${budget.total_limit:.2f}  "
-      f"(max {int(budget.total_limit / cost_per_call)} iterations at ${cost_per_call}/call)")
+cap_iters = int(BUDGET_LIMIT / CALL_COST)
+print(f"  Budget: {BOLD}${budget.total_limit:.2f}{RESET}  (hard cap — {cap_iters} iterations at ${CALL_COST}/call)")
 print()
 
-iteration = 0
-total_cost = 0.0
-
-while True:
-    iteration += 1
-
+spent = 0.0
+for iteration in range(1, 1000):
     auth = figuard.authorize(
         session_token=budget.primary_token.session_token,
-        agent_id="quality_checker",
+        agent_id="react_agent",
         action_type="LLM_CALL",
-        description=f"Claude quality evaluation iteration {iteration}",
-        requested_quantity=cost_per_call,
-        idempotency_key=f"quality-iter-{iteration}",
+        description=f"Score search results — iteration {iteration}",
+        requested_quantity=CALL_COST,
+        idempotency_key=f"iter-{iteration}",
     )
 
     if not auth.is_authorized:
-        print(f"\n✓ Stopped at iteration {iteration}: {auth.denial_reason}")
-        print(f"  Spent: ${total_cost:.2f} of ${budget.total_limit:.2f}")
-        print(f"  Saved vs 847 iterations: ${(847 - iteration) * cost_per_call:.2f}")
+        print(f"  {BOLD}{RED}iter {iteration:>4d}: ✗ {auth.denial_reason} — loop terminated  ◄◄◄{RESET}")
+        print()
+        saved = round(uncapped_cost - spent, 2)
+        print(f"  {GREEN}✓  Stopped at iteration {iteration} — ${spent:.2f} of ${BUDGET_LIMIT:.2f} spent{RESET}")
+        print(f"  {GREEN}✓  Saved ${saved:.2f} vs the uncapped run ({uncapped_iters} iterations){RESET}")
         break
 
-    # Simulated LLM call — score oscillates 0.82–0.91, never reaches the 0.95 threshold
-    figuard.confirm_event(auth.event_id, confirmed_quantity=cost_per_call)
-    total_cost += cost_per_call
-
-    score = 0.85 + (iteration % 7) * 0.01  # oscillates, never reaches 0.95
-    print(f"Iteration {iteration:4d}: score={score:.2f}  "
-          f"spent=${total_cost:.2f} of ${budget.total_limit:.2f}")
+    spent = round(spent + CALL_COST, 2)
+    if iteration in (1, 50, 100, 200) or iteration == cap_iters:
+        bar = "█" * int(spent / BUDGET_LIMIT * 20)
+        print(f"  {GREEN}iter {iteration:>4d}: ✓ AUTHORIZED  ${spent:.2f} spent  [{bar:<20}]{RESET}")
