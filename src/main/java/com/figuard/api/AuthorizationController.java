@@ -4,6 +4,11 @@ import com.figuard.api.dto.request.AuthorizeSpendRequest;
 import com.figuard.api.dto.response.AuthorizationResponse;
 import com.figuard.security.TenantContext;
 import com.figuard.service.AuthorizationService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.validation.Valid;
@@ -17,6 +22,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+@Tag(name = "Authorization", description = "The hot path. Agents call this before every action that consumes a bounded resource. Requires the `X-Session-Token` header (the `st_` token from the budget) in addition to the API key.")
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/authorize")
@@ -36,10 +42,29 @@ public class AuthorizationController {
             .register(meterRegistry);
     }
 
+    @Operation(
+        summary = "Request spend authorization",
+        description = """
+            The core FiGuard call. Before your agent acts, call this endpoint. FiGuard checks the budget, allocation limits, velocity controls, and anomaly thresholds — then returns AUTHORIZED or DENIED.
+
+            **Required header:** `X-Session-Token: st_<token>` — the session token from the budget.
+
+            **On AUTHORIZED:** an `eventId` is returned. Pass it to `/events/{id}/confirm`, `/fail`, or `/void` once you know the outcome.
+
+            **On DENIED:** check `denialReason` for the specific cause (BUDGET_EXHAUSTED, ALLOCATION_EXHAUSTED, VELOCITY_LIMIT_EXCEEDED, etc.).
+
+            **Idempotent:** sending the same `idempotencyKey` twice returns the cached decision without re-evaluating. Omit `idempotencyKey` to always get a fresh evaluation.
+            """
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Decision returned — check `decision` field for AUTHORIZED or DENIED"),
+        @ApiResponse(responseCode = "401", description = "X-Session-Token header missing or invalid"),
+        @ApiResponse(responseCode = "404", description = "Budget not found or expired")
+    })
     @PostMapping
     @ResponseStatus(HttpStatus.OK)
     public AuthorizationResponse authorize(
-            HttpServletRequest httpRequest,
+            @Parameter(hidden = true) HttpServletRequest httpRequest,
             @Valid @RequestBody AuthorizeSpendRequest request) {
 
         // TokenRedactionFilter wraps the request and returns [REDACTED] for X-Session-Token.

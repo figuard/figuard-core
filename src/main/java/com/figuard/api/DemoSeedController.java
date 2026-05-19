@@ -5,6 +5,7 @@ import com.figuard.domain.entity.Tenant;
 import com.figuard.domain.repository.ApiKeyRepository;
 import com.figuard.domain.repository.TenantRepository;
 import com.figuard.util.HashUtil;
+import io.swagger.v3.oas.annotations.Hidden;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +21,7 @@ import java.util.Map;
  * Enabled in all profiles except "prod" — excluded from production via @Profile.
  * Idempotent: calling it multiple times with the same key is safe.
  */
+@Hidden
 @RestController
 @RequestMapping("/internal/demo")
 @RequiredArgsConstructor
