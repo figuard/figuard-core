@@ -1,7 +1,10 @@
 # FiGuard
 
-**Pre-flight spend authorization for AI agents.**  
-Your agent asks permission before money moves. FiGuard says yes or no — and keeps a complete audit trail either way.
+**Your agent asks permission before anything moves.**  
+FiGuard says yes or no — and keeps a complete audit trail either way.
+
+Pre-flight authorization for money, tokens, API calls, or any bounded resource.  
+Works with LangChain, CrewAI, LangGraph, and the OpenAI Agents SDK.
 
 [![CI](https://github.com/figuard/figuard-core/actions/workflows/ci.yml/badge.svg)](https://github.com/figuard/figuard-core/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -11,43 +14,83 @@ Your agent asks permission before money moves. FiGuard says yes or no — and ke
 
 ---
 
-## The Problem
-
-```python
-# Without FiGuard — the agent decides to spend
-for item in purchases:
-    stripe.charge(item["amount"])  # all three go through — no gates, no record
-```
-
-```python
-# With FiGuard — authorize before anything moves
-for item in purchases:
-    auth = client.authorize(
-        session_token=session_token,
-        agent_id="travel_agent",
-        action_type="PURCHASE",
-        description=item["description"],
-        requested_quantity=item["amount"],
-        claimed_category=item["category"],
-        idempotency_key=item["key"],
-    )
-    if auth.is_authorized:
-        stripe.charge(auth.approved_quantity)
-        client.confirm_event(auth.event_id, confirmed_quantity=auth.approved_quantity)
-    else:
-        log.warning("Blocked: %s — %s", item["description"], auth.denial_reason)
-
-# ✓ flight:    AUTHORIZED — $267.00 charged
-# ✗ insurance: DENIED     — NO_MATCHING_ALLOCATION
-# ✓ hotel:     AUTHORIZED — $198.00 charged
-```
-
-The difference: **authorization happens before the transaction, not after.**  
-Denied decisions are recorded in the ledger regardless. The agent always gets a structured, machine-readable response.
+![FiGuard demo](https://github.com/user-attachments/assets/e953a132-c379-45fe-9796-644a4ec84c5d)
 
 ---
 
-![FiGuard Spend Tree — orchestrator with confirmed and denied sub-agent events](docs/spend-tree.png)
+## 60-Second Quickstart
+
+**1. Point at the sandbox**
+
+```bash
+pip install figuard
+```
+
+```python
+from figuard import FiGuardClient
+
+client = FiGuardClient(
+    api_key="sb_live_demo",
+    base_url="https://figuard-sandbox-1.onrender.com",
+)
+```
+
+No setup required. The sandbox is a live FiGuard instance with a preloaded demo key.
+
+**2. Create a budget and authorize a spend**
+
+```python
+budget = client.create_budget(
+    user_id="agent_001",
+    total_limit=500.00,
+    currency="USD",
+    expires_in="24h",
+    authorization_expiry_seconds=300,
+    intent_context="travel booking session",
+)
+
+auth = client.authorize(
+    session_token=budget.primary_token.session_token,
+    agent_id="travel_agent",
+    action_type="PURCHASE",
+    description="JetBlue SFO→JFK roundtrip",
+    requested_quantity=270.00,
+    idempotency_key="booking-001",
+)
+
+print(auth.decision)          # AUTHORIZED
+print(auth.approved_quantity) # 270.0
+
+# Confirm with actual charged amount after the transaction succeeds
+client.confirm_event(auth.event_id, confirmed_quantity=267.00)
+```
+
+**3. Self-host** — [see self-hosting docs](docs/self-hosting.md)
+
+```bash
+git clone https://github.com/figuard/figuard-core
+cd figuard-core
+docker compose up
+# Ready at http://localhost:8080
+```
+
+That's it. The server is a Docker container — same as Postgres or Redis. You never need to touch the internals. Switch your client to localhost:
+
+```python
+from figuard import FiGuardClient
+
+client = FiGuardClient(
+    api_key="ab_live_demo",
+    base_url="http://localhost:8080",
+)
+```
+
+Run the example scenarios:
+
+```bash
+pip install figuard
+python examples/rogue_agent_scenarios/demo.py
+```
 
 ---
 
@@ -99,90 +142,9 @@ qty spent released released
         └───────────────────────────────────┘
 ```
 
----
+Every authorization, denial, confirmation, and void is a row in the ledger. The spend tree shows the full causal chain across an orchestrator and its sub-agents:
 
-![FiGuard demo](https://github.com/user-attachments/assets/b3f3bd14-b578-4e78-a4ff-96a28e3d63ba)
-
-## 60-Second Quickstart
-
-**1. Point at the sandbox**
-
-```bash
-pip install figuard
-```
-
-```python
-from figuard import FiGuardClient
-
-client = FiGuardClient(
-    api_key="sb_live_demo",
-    base_url="https://figuard-sandbox-1.onrender.com",
-)
-```
-
-No setup required. The sandbox is a live FiGuard instance with a preloaded demo key.
-
-**2. Create a budget and authorize a spend**
-
-```python
-budget = client.create_budget(
-    user_id="agent_001",
-    total_limit=500.00,
-    currency="USD",
-    expires_in="24h",
-    authorization_expiry_seconds=300,
-    intent_context="travel booking session",
-)
-
-# budget.tokens is a list — one entry per dimension so agents have full context
-# on all spending dimensions for this user. For simple budgets: one entry with
-# category="default". Use primary_token as a convenience accessor.
-auth = client.authorize(
-    session_token=budget.primary_token.session_token,
-    agent_id="travel_agent",
-    action_type="PURCHASE",
-    description="JetBlue SFO→JFK roundtrip",
-    requested_quantity=270.00,
-    idempotency_key="booking-001",
-)
-
-print(auth.decision)          # AUTHORIZED
-print(auth.approved_quantity) # 270.0
-
-# Confirm with actual charged amount after the transaction succeeds
-client.confirm_event(auth.event_id, confirmed_quantity=267.00)
-```
-
-**3. Self-host** — [see self-hosting docs](docs/self-hosting.md)
-
-```bash
-git clone https://github.com/figuard/figuard-core
-cd figuard-core
-docker compose up
-# Ready at http://localhost:8080
-```
-
-That's it. The server is a Docker container — same as Postgres or Redis. You never need to touch the internals. Switch your client to localhost:
-
-```bash
-pip install figuard
-```
-
-```python
-from figuard import FiGuardClient
-
-client = FiGuardClient(
-    api_key="ab_live_demo",
-    base_url="http://localhost:8080",
-)
-```
-
-Run the example scenarios:
-
-```bash
-pip install figuard anthropic
-python examples/rogue_agent_scenarios/scenario_1_infinite_loop.py
-```
+![FiGuard Spend Tree — orchestrator with confirmed and denied sub-agent events](docs/spend-tree.png)
 
 ---
 
@@ -193,6 +155,24 @@ Pick your scenario in the interactive wizard — monetary vs non-monetary budget
 **[→ Open the code wizard](https://figuard.io/#get-started)**
 
 Or follow the decision tree in [Pick your pattern](docs/pick-your-pattern.md) if you prefer plain docs. Full parameter reference in [Budget configuration](docs/budget-configuration.md).
+
+---
+
+## Examples
+
+### Agent Failure Scenarios
+
+Five real failure modes — each a runnable Python file plus an interactive Colab notebook.
+
+| # | Scenario | FiGuard stops it at | Colab |
+|---|----------|---------------------|-------|
+| 1 | **Infinite quality loop** — 847 iterations, $16.94, no alert | iteration 251, $5.00 budget ceiling | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/01_infinite_loop.ipynb) |
+| 2 | **Duplicate invoice payment** — timeout + retry = double charge | retry returns same event_id, one charge | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/02_duplicate_payment.ipynb) |
+| 3 | **Concurrent fleet overspend** — 10 agents, 1 budget, $2k attempted | 5 authorized, 5 denied, $1k never exceeded | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/03_concurrent_overspend.ipynb) |
+| 4 | **Rogue sub-agent** — one hallucinating agent drains the whole fleet | delegation cap stops researcher at $200, fleet completes | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/04_rogue_subagent_fleet.ipynb) |
+| 5 | **Category violation** — hotel charged to flight budget, found at month-end | `DENIED — NO_MATCHING_ALLOCATION` at authorization time | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/05_category_violation.ipynb) |
+
+Source: [`examples/rogue_agent_scenarios/`](examples/rogue_agent_scenarios/)
 
 ---
 
@@ -243,21 +223,7 @@ None of this is architecturally exotic. It's the same set of problems that payme
 - [Self-Hosting](docs/self-hosting.md)
 - [Known Limitations](docs/known-limitations.md)
 
-## Examples
-
-### Agent Failure Scenarios
-
-Five real failure modes — each a runnable Python file plus an interactive Colab notebook.
-
-| # | Scenario | FiGuard stops it at | Colab |
-|---|----------|---------------------|-------|
-| 1 | **Infinite quality loop** — 847 iterations, $16.94, no alert | iteration 251, $5.00 budget ceiling | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/01_infinite_loop.ipynb) |
-| 2 | **Duplicate invoice payment** — timeout + retry = double charge | retry returns same event_id, one charge | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/02_duplicate_payment.ipynb) |
-| 3 | **Concurrent fleet overspend** — 10 agents, 1 budget, $2k attempted | 5 authorized, 5 denied, $1k never exceeded | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/03_concurrent_overspend.ipynb) |
-| 4 | **Rogue sub-agent** — one hallucinating agent drains the whole fleet | delegation cap stops researcher at $200, fleet completes | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/04_rogue_subagent_fleet.ipynb) |
-| 5 | **Category violation** — hotel charged to flight budget, found at month-end | `DENIED — CATEGORY_MISMATCH` at authorization time | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/05_category_violation.ipynb) |
-
-Source: [`examples/rogue_agent_scenarios/`](examples/rogue_agent_scenarios/)
+---
 
 ## SDKs
 
