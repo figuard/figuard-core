@@ -15,8 +15,10 @@ import com.figuard.domain.enums.WebhookEventType;
 import com.figuard.api.mapper.BudgetMapper;
 import com.figuard.domain.entity.AgentBudget;
 import com.figuard.domain.entity.BudgetAllocation;
+import com.figuard.domain.entity.EntitlementItem;
 import com.figuard.domain.entity.Tenant;
 import com.figuard.domain.repository.AgentBudgetRepository;
+import com.figuard.domain.repository.EntitlementItemRepository;
 import com.figuard.exception.BudgetNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,6 +55,7 @@ public class BudgetService {
         List.of(BudgetStatus.ACTIVE, BudgetStatus.PAUSED);
 
     private final AgentBudgetRepository budgetRepository;
+    private final EntitlementItemRepository entitlementItemRepository;
     private final SessionTokenService sessionTokenService;
     private final BudgetMapper budgetMapper;
     private final WebhookDispatcher webhookDispatcher;
@@ -105,6 +108,15 @@ public class BudgetService {
 
         // Build entity from request
         AgentBudget budget = budgetMapper.toEntity(request, tenant);
+
+        // When entitlementItemId is provided, auto-populate subscriptionId from the item.
+        // This ensures the subscription status gate (pause/cancel) fires correctly at authorization.
+        if (request.getEntitlementItemId() != null) {
+            EntitlementItem item = entitlementItemRepository.findById(request.getEntitlementItemId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "entitlementItemId " + request.getEntitlementItemId() + " not found"));
+            budget.setSubscriptionId(item.getSubscription().getId());
+        }
 
         // Apply default authorizationExpirySeconds when the caller doesn't specify one.
         // Prevents orphaned AUTHORIZED events from silently locking funds indefinitely

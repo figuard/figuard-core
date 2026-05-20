@@ -105,6 +105,49 @@ class DelegationServiceTest {
     }
 
     @Test
+    void createToken_label_idempotency_returnsExistingToken() {
+        DelegatedToken existing = activeToken();
+        existing.setLabel("order-123");
+
+        when(budgetRepository.findById(budget.getId())).thenReturn(Optional.of(budget));
+        when(delegatedTokenRepository.findActiveByBudgetIdAndLabel(budget.getId(), "order-123"))
+            .thenReturn(Optional.of(existing));
+
+        CreateDelegationTokenRequest req = request("order-123",
+            List.of(cap("refund", BigDecimal.valueOf(3000))));
+
+        DelegationTokenResponse resp = delegationService.createToken(budget.getId(), req, tenant);
+
+        // Returns existing token — no new token created, no session token re-issued
+        assertThat(resp.getId()).isEqualTo(existing.getId());
+        assertThat(resp.getSessionToken()).isNull();
+        verify(delegatedTokenRepository, never()).save(any());
+        verify(sessionTokenService, never()).generateToken();
+    }
+
+    @Test
+    void createToken_null_label_skips_idempotency_check() {
+        when(budgetRepository.findById(budget.getId())).thenReturn(Optional.of(budget));
+        when(sessionTokenService.generateToken()).thenReturn("st_NOLAB");
+        when(sessionTokenService.hashToken(any())).thenReturn("hash");
+        when(sessionTokenService.extractPrefix(any())).thenReturn("st_NOLAB");
+        when(delegatedTokenRepository.save(any())).thenAnswer(inv -> {
+            DelegatedToken t = inv.getArgument(0);
+            setField(t, "id", UUID.randomUUID());
+            setField(t, "createdAt", OffsetDateTime.now());
+            return t;
+        });
+
+        CreateDelegationTokenRequest req = request(null, List.of(cap("refund", BigDecimal.TEN)));
+
+        delegationService.createToken(budget.getId(), req, tenant);
+
+        // No label → no idempotency query
+        verify(delegatedTokenRepository, never()).findActiveByBudgetIdAndLabel(any(), any());
+        verify(delegatedTokenRepository).save(any());
+    }
+
+    @Test
     void createToken_rejects_cancelledBudget() {
         budget.setStatus(BudgetStatus.CANCELLED);
         when(budgetRepository.findById(budget.getId())).thenReturn(Optional.of(budget));

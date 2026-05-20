@@ -415,6 +415,137 @@ export function makeDelegationToken(data: Record<string, unknown>): DelegationTo
   };
 }
 
+// ---------------------------------------------------------------------------
+// Fund budget
+// ---------------------------------------------------------------------------
+
+export interface BudgetFundingResult {
+  readonly budgetId: string;
+  /** CREDIT | DEBIT | RESET | RESET_SPENT */
+  readonly operation: string;
+  readonly amount: number;
+  readonly previousTotalLimit: number;
+  readonly totalLimit: number;
+  readonly quantitySpent: number;
+  readonly quantityReserved: number;
+  readonly availableQuantity: number;
+  readonly status: string;
+  readonly reason?: string;
+  readonly updatedAt?: string;
+  readonly traceId?: string;
+}
+
+export function makeBudgetFundingResult(data: Record<string, unknown>): BudgetFundingResult {
+  return {
+    budgetId: data["budgetId"] as string,
+    operation: data["operation"] as string,
+    amount: data["amount"] as number,
+    previousTotalLimit: data["previousTotalLimit"] as number,
+    totalLimit: data["totalLimit"] as number,
+    quantitySpent: data["quantitySpent"] as number,
+    quantityReserved: data["quantityReserved"] as number,
+    availableQuantity: data["availableQuantity"] as number,
+    status: data["status"] as string,
+    reason: data["reason"] as string | undefined,
+    updatedAt: data["updatedAt"] as string | undefined,
+    traceId: data["traceId"] as string | undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// API keys
+// ---------------------------------------------------------------------------
+
+export interface ApiKey {
+  readonly id: string;
+  readonly keyPrefix: string;
+  readonly active: boolean;
+  readonly description?: string;
+  readonly createdAt?: string;
+  readonly lastUsedAt?: string;
+  /** fg_live_... — returned ONCE at creation/rotation. undefined on all subsequent reads. */
+  readonly rawKey?: string;
+}
+
+export function makeApiKey(data: Record<string, unknown>): ApiKey {
+  return {
+    id: data["id"] as string,
+    keyPrefix: data["keyPrefix"] as string,
+    active: data["active"] as boolean,
+    description: data["description"] as string | undefined,
+    createdAt: data["createdAt"] as string | undefined,
+    lastUsedAt: data["lastUsedAt"] as string | undefined,
+    rawKey: data["rawKey"] as string | undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Subscriptions & Entitlements
+// ---------------------------------------------------------------------------
+
+export interface EntitlementItem {
+  readonly id: string;
+  readonly category: string;
+  readonly periodLimit: number;
+  /** BLOCK | WARN_ONLY */
+  readonly overagePolicy: string;
+  /** MONTHLY | QUARTERLY | ANNUALLY */
+  readonly renewalPeriod: string;
+  readonly currentPeriodConsumed: number;
+  readonly currentPeriodReserved: number;
+  /** NORMAL | APPROACHING | LIMIT_REACHED */
+  readonly state: string;
+  readonly warnAtPercentage?: number;
+  readonly nextRenewalAt?: string;
+  readonly createdAt?: string;
+}
+
+export interface Subscription {
+  readonly id: string;
+  readonly externalSubscriberId: string;
+  readonly plan: string;
+  /** ACTIVE | PAUSED | CANCELLED */
+  readonly status: string;
+  readonly renewalPeriod: string;
+  readonly entitlements: EntitlementItem[];
+  readonly startsAt?: string;
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
+}
+
+export function makeEntitlementItem(data: Record<string, unknown>): EntitlementItem {
+  return {
+    id: data["id"] as string,
+    category: data["category"] as string,
+    periodLimit: data["periodLimit"] as number,
+    overagePolicy: data["overagePolicy"] as string,
+    renewalPeriod: data["renewalPeriod"] as string,
+    currentPeriodConsumed: (data["currentPeriodConsumed"] as number) ?? 0,
+    currentPeriodReserved: (data["currentPeriodReserved"] as number) ?? 0,
+    state: (data["state"] as string) ?? "NORMAL",
+    warnAtPercentage: data["warnAtPercentage"] as number | undefined,
+    nextRenewalAt: data["nextRenewalAt"] as string | undefined,
+    createdAt: data["createdAt"] as string | undefined,
+  };
+}
+
+export function makeSubscription(data: Record<string, unknown>): Subscription {
+  const entitlements = ((data["entitlements"] as Record<string, unknown>[]) ?? []).map(
+    makeEntitlementItem,
+  );
+  return {
+    id: data["id"] as string,
+    externalSubscriberId: data["externalSubscriberId"] as string,
+    plan: data["plan"] as string,
+    status: data["status"] as string,
+    renewalPeriod: data["renewalPeriod"] as string,
+    entitlements,
+    startsAt: data["startsAt"] as string | undefined,
+    createdAt: data["createdAt"] as string | undefined,
+    updatedAt: data["updatedAt"] as string | undefined,
+  };
+}
+
 /** Coerce a Spring enum (string or {name, ordinal} object) to a plain string. */
 function coerceString(value: unknown): string | undefined {
   if (value === null || value === undefined) return undefined;

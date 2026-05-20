@@ -4,7 +4,7 @@ FiGuard MCP server — use FiGuard directly from Claude Code, Cursor, or Claude 
 
 ## What this does
 
-Adds 8 FiGuard tools to your AI assistant. Instead of writing SDK code, you just talk to Claude:
+Adds 14 FiGuard tools to your AI assistant. Instead of writing SDK code, you just talk to Claude:
 
 > "Create a $500 travel budget with $300 for flights and $200 for hotels"
 > → Claude calls `figuard_create_budget`
@@ -92,7 +92,7 @@ Point `FIGUARD_BASE_URL` at the hosted sandbox to try FiGuard without running a 
 ```json
 {
   "FIGUARD_API_KEY": "sb_live_demo",
-  "FIGUARD_BASE_URL": "https://sandbox.figuard.io"
+  "FIGUARD_BASE_URL": "https://figuard-sandbox-1.onrender.com"
 }
 ```
 
@@ -108,6 +108,12 @@ Point `FIGUARD_BASE_URL` at the hosted sandbox to try FiGuard without running a 
 | `figuard_get_budget` | Check budget status, spent, reserved, available |
 | `figuard_get_ledger` | List all spend events with filtering |
 | `figuard_resume_budget` | Unfreeze a budget paused by anomaly detection |
+| `figuard_extend_budget` | Extend a budget's expiry time |
+| `figuard_cancel_batch` | Cancel up to 100 budgets in one call |
+| `figuard_fund_budget` | Adjust a budget's total limit (CREDIT / DEBIT / RESET / RESET_SPENT) |
+| `figuard_create_delegation_token` | Create a scoped per-agent token against a fleet budget |
+| `figuard_revoke_delegation_token` | Revoke a delegation token (idempotent) |
+| `figuard_get_delegation_token` | Check delegation token state and cap usage |
 
 ## Security note
 

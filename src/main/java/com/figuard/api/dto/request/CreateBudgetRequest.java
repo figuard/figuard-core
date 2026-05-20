@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Data
 public class CreateBudgetRequest {
@@ -16,6 +17,13 @@ public class CreateBudgetRequest {
     private String userId;
 
     private String externalReference;
+
+    /**
+     * Optional. When set, this budget is entitlement-backed (known-user path).
+     * Spend enforcement uses the EntitlementItem's per-period limit instead of
+     * (or in addition to) the budget's totalLimit.
+     */
+    private UUID entitlementItemId;
 
     @Size(max = 1000)
     private String intentContext;

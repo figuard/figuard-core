@@ -12,6 +12,7 @@ import com.figuard.domain.enums.DelegatedTokenStatus;
 import com.figuard.domain.enums.WebhookEventType;
 import com.figuard.domain.repository.AgentBudgetRepository;
 import com.figuard.domain.repository.DelegatedTokenRepository;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -61,6 +62,18 @@ public class DelegationService {
         if (budget.getStatus() == BudgetStatus.CANCELLED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                 "Cannot create a delegation token for a CANCELLED budget");
+        }
+
+        // Label idempotency: if an ACTIVE token with this label already exists on the budget,
+        // return it. Session token is not re-issued (caller must have stored it at creation).
+        if (request.getLabel() != null && !request.getLabel().isBlank()) {
+            Optional<DelegatedToken> existing = delegatedTokenRepository
+                .findActiveByBudgetIdAndLabel(budgetId, request.getLabel());
+            if (existing.isPresent()) {
+                log.info("DelegatedToken idempotent hit: id={} parentBudgetId={} label={}",
+                    existing.get().getId(), budgetId, request.getLabel());
+                return toResponse(existing.get(), null);
+            }
         }
 
         String rawToken = sessionTokenService.generateToken();

@@ -37,6 +37,13 @@ public class SpendEvent {
     @Column(nullable = false)
     private UUID rootBudgetId;                  // always the top-level budget UUID
 
+    /**
+     * Nullable — only set when the spend event draws from a subscription entitlement item.
+     * Null means the event was authorized against a standalone budget (unknown-user path).
+     */
+    @Column
+    private UUID entitlementItemId;
+
     @Column(nullable = false)
     private String agentId;                     // observability only, not enforcement
 

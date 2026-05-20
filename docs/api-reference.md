@@ -977,6 +977,68 @@ Re-run a budget's history under a hypothetical policy. Shows exactly which autho
 
 ---
 
+## Subscriptions & Entitlements
+
+Base path: `/api/v1/subscriptions`
+
+All routes require `X-Agent-Budget-Key`.
+
+### `GET /api/v1/subscriptions`
+List all subscriptions for this tenant.
+
+### `POST /api/v1/subscriptions`
+Create a subscription. Returns 201.
+
+```json
+{
+  "externalSubscriberId": "user_abc",
+  "plan": "pro",
+  "renewalPeriod": "MONTHLY",
+  "startsAt": "2026-06-01T00:00:00Z"
+}
+```
+
+### `GET /api/v1/subscriptions/{subscriptionId}`
+Get a subscription by ID.
+
+### `GET /api/v1/subscriptions/by-subscriber/{externalSubscriberId}`
+Look up a subscription by your external subscriber ID (e.g. your user ID or customer ID).
+
+### `POST /api/v1/subscriptions/{subscriptionId}/pause`
+Pause a subscription. All linked budgets will receive HTTP 402 (`SUBSCRIPTION_PAUSED`) on the next authorize call.
+
+### `POST /api/v1/subscriptions/{subscriptionId}/resume`
+Resume a paused subscription. Authorize calls will succeed again (subject to entitlement limits).
+
+### `POST /api/v1/subscriptions/{subscriptionId}/cancel`
+Cancel a subscription. All linked budgets will receive HTTP 402 (`SUBSCRIPTION_CANCELLED`).
+
+### `GET /api/v1/subscriptions/{subscriptionId}/entitlements`
+List all entitlement items for this subscription.
+
+### `POST /api/v1/subscriptions/{subscriptionId}/entitlements`
+Add an entitlement item to a subscription. Returns 201.
+
+```json
+{
+  "category": "api_calls",
+  "periodLimit": 10000,
+  "overagePolicy": "BLOCK",
+  "warnAtPercentage": 80,
+  "renewalPeriod": "MONTHLY"
+}
+```
+
+`overagePolicy` values: `BLOCK` (deny spend when limit reached) | `WARN_ONLY` (allow spend, fire webhook).
+
+### `GET /api/v1/subscriptions/{subscriptionId}/entitlements/{entitlementItemId}`
+Get a single entitlement item, including `currentPeriodConsumed`, `currentPeriodReserved`, `state` (NORMAL / APPROACHING / LIMIT_REACHED), and `nextRenewalAt`.
+
+### `POST /api/v1/subscriptions/{subscriptionId}/entitlements/{entitlementItemId}/reset`
+Manually reset an entitlement item's consumed counter to zero and advance `nextRenewalAt`. Use for mid-period corrections or manual billing period control. Same logic as the auto-renewal sweep.
+
+---
+
 ## Error Responses
 
 All errors return a consistent shape:

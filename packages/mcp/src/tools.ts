@@ -447,4 +447,41 @@ export const TOOLS = [
       required: ["budget_ids"],
     },
   },
+
+  {
+    name: "figuard_fund_budget",
+    description:
+      "Adjust a budget's totalLimit in-place without creating a new session. " +
+      "Use CREDIT to top up a nearly-exhausted budget mid-run, DEBIT to reduce it, " +
+      "RESET to set a new absolute limit, or RESET_SPENT to start a fresh billing period " +
+      "(zeroes quantitySpent and reactivates EXHAUSTED budgets). " +
+      "Returns the budget state before and after the operation.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        budget_id: {
+          type: "string",
+          description: "ID of the budget to fund.",
+        },
+        operation: {
+          type: "string",
+          enum: ["CREDIT", "DEBIT", "RESET", "RESET_SPENT"],
+          description:
+            "CREDIT: add amount to totalLimit. " +
+            "DEBIT: subtract amount (rejected if result < quantitySpent). " +
+            "RESET: set totalLimit to exactly amount. " +
+            "RESET_SPENT: zero quantitySpent, set new totalLimit, reactivate EXHAUSTED budgets.",
+        },
+        amount: {
+          type: "number",
+          description: "Amount to apply. Must be positive.",
+        },
+        reason: {
+          type: "string",
+          description: "Optional note recorded in the response for audit purposes.",
+        },
+      },
+      required: ["budget_id", "operation", "amount"],
+    },
+  },
 ] as const;
