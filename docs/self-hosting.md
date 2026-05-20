@@ -26,15 +26,15 @@ The first build takes around two minutes — the JVM layer is cached after that.
 =========================================
 [FiGuard] Ready at http://localhost:8080
 [FiGuard] Dashboard: http://localhost:5173
-[FiGuard] Demo API key: ab_live_demo
-[FiGuard] Header: X-Agent-Budget-Key: ab_live_demo
+[FiGuard] Demo API key: fg_live_demo
+[FiGuard] Header: X-Agent-Budget-Key: fg_live_demo
 =========================================
 ```
 
 Verify it's healthy:
 
 ```bash
-curl -s -H "X-Agent-Budget-Key: ab_live_demo" \
+curl -s -H "X-Agent-Budget-Key: fg_live_demo" \
   http://localhost:8080/api/v1/budgets
 # {"content":[],"totalElements":0,...}
 ```
@@ -73,7 +73,7 @@ The container reads these at startup. Override them by editing `docker-compose.y
 | `SPRING_DATASOURCE_URL` | `jdbc:postgresql://postgres:5432/figuard` | JDBC URL |
 | `SPRING_DATASOURCE_USERNAME` | `figuard` | Database user |
 | `SPRING_DATASOURCE_PASSWORD` | `figuard_local` | Database password |
-| `FIGUARD_SEED_DEMO_KEY` | `true` | Seeds `ab_live_demo` key on first boot |
+| `FIGUARD_SEED_DEMO_KEY` | `true` | Seeds `fg_live_demo` key on first boot |
 | `WEBHOOK_SECRET_KEY` | insecure dev default | AES-256-GCM key for encrypting webhook secrets at rest. **Replace in production.** Generate with: `openssl rand -base64 32` |
 
 For production, set `FIGUARD_SEED_DEMO_KEY=false`, rotate `SPRING_DATASOURCE_PASSWORD`, and set a real `WEBHOOK_SECRET_KEY`.
@@ -82,11 +82,11 @@ For production, set `FIGUARD_SEED_DEMO_KEY=false`, rotate `SPRING_DATASOURCE_PAS
 
 ## Issuing your own API key
 
-The `ab_live_demo` key is seeded for convenience and is shared across everyone who self-hosts. For any real use, create a scoped key:
+The `fg_live_demo` key is seeded for convenience and is shared across everyone who self-hosts. For any real use, create a scoped key:
 
 ```bash
 curl -s -X POST http://localhost:8080/api/v1/api-keys \
-  -H "X-Agent-Budget-Key: ab_live_demo" \
+  -H "X-Agent-Budget-Key: fg_live_demo" \
   -H "Content-Type: application/json" \
   -d '{"description": "my agent key"}' | jq .
 ```

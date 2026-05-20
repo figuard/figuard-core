@@ -25,6 +25,41 @@ const STATUS_TABS: { label: string; value: DeliveryStatus | null }[] = [
   { label: "Pending", value: "PENDING" },
 ];
 
+const EVENT_TYPES = [
+  "SPEND_CONFIRMED",
+  "SPEND_VOIDED",
+  "SPEND_PAYMENT_FAILED",
+  "SPEND_DENIED",
+  "BUDGET_50_PCT",
+  "BUDGET_90_PCT",
+  "BUDGET_EXHAUSTED",
+  "BUDGET_PAUSED",
+  "BUDGET_RESUMED",
+  "BUDGET_EXPIRING_SOON",
+  "BUDGET_EXPIRED_UNUSED",
+  "ALLOCATION_EXHAUSTED",
+  "ANOMALY_DETECTED",
+  "VELOCITY_LIMIT_EXCEEDED",
+  "DELEGATION_TOKEN_CREATED",
+  "DELEGATION_TOKEN_REVOKED",
+  "LEDGER_INTEGRITY_VIOLATION",
+  "RENEWAL_TOKEN_DELIVERY_FAILED",
+];
+
+const TIME_RANGES: { label: string; value: string | null; hours: number | null }[] = [
+  { label: "All time", value: null, hours: null },
+  { label: "Last hour", value: "1h", hours: 1 },
+  { label: "Last 24h", value: "24h", hours: 24 },
+  { label: "Last 7d", value: "7d", hours: 168 },
+];
+
+function sinceFromHours(hours: number | null): string | null {
+  if (hours === null) return null;
+  const d = new Date();
+  d.setHours(d.getHours() - hours);
+  return d.toISOString();
+}
+
 function statusBadge(status: DeliveryStatus) {
   if (status === "DELIVERED")
     return (
@@ -58,14 +93,22 @@ function formatTime(iso: string) {
 
 export function Webhooks() {
   const [activeTab, setActiveTab] = useState<DeliveryStatus | null>(null);
+  const [eventTypeFilter, setEventTypeFilter] = useState<string>("");
+  const [timeRange, setTimeRange] = useState<{ label: string; value: string | null; hours: number | null }>(TIME_RANGES[0]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  const statusParam = activeTab ? `?status=${activeTab}` : "";
+  // Build query string from active filters
+  const params = new URLSearchParams();
+  if (activeTab) params.set("status", activeTab);
+  if (eventTypeFilter) params.set("eventType", eventTypeFilter);
+  const since = sinceFromHours(timeRange.hours);
+  if (since) params.set("since", since);
+  const queryString = params.toString() ? `?${params.toString()}` : "";
 
   const { data: deliveries = [], isLoading, isError } = useQuery<WebhookDelivery[]>({
-    queryKey: ["webhook-deliveries", activeTab],
-    queryFn: () => apiFetch<WebhookDelivery[]>(`/api/v1/webhooks/deliveries${statusParam}`),
+    queryKey: ["webhook-deliveries", activeTab, eventTypeFilter, timeRange.value],
+    queryFn: () => apiFetch<WebhookDelivery[]>(`/api/v1/webhooks/deliveries${queryString}`),
     refetchInterval: 15_000,
   });
 
@@ -78,6 +121,14 @@ export function Webhooks() {
     },
   });
 
+  const hasActiveFilters = activeTab !== null || eventTypeFilter !== "" || timeRange.value !== null;
+
+  function clearFilters() {
+    setActiveTab(null);
+    setEventTypeFilter("");
+    setTimeRange(TIME_RANGES[0]);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -85,21 +136,66 @@ export function Webhooks() {
         <p className="text-sm text-gray-500">Refreshes every 15 seconds</p>
       </div>
 
-      {/* Status filter tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
-        {STATUS_TABS.map((tab) => (
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-3">
+
+        {/* Status tabs */}
+        <div className="flex gap-1 border border-gray-200 rounded-lg p-0.5 bg-gray-50">
+          {STATUS_TABS.map((tab) => (
+            <button
+              key={String(tab.value)}
+              onClick={() => setActiveTab(tab.value)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                activeTab === tab.value
+                  ? "bg-white text-gray-900 shadow-sm ring-1 ring-gray-200"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Event type dropdown */}
+        <select
+          value={eventTypeFilter}
+          onChange={(e) => setEventTypeFilter(e.target.value)}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">All event types</option>
+          {EVENT_TYPES.map((et) => (
+            <option key={et} value={et}>
+              {et}
+            </option>
+          ))}
+        </select>
+
+        {/* Time range */}
+        <div className="flex gap-1 border border-gray-200 rounded-lg p-0.5 bg-gray-50">
+          {TIME_RANGES.map((tr) => (
+            <button
+              key={String(tr.value)}
+              onClick={() => setTimeRange(tr)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                timeRange.value === tr.value
+                  ? "bg-white text-gray-900 shadow-sm ring-1 ring-gray-200"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {tr.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Clear filters */}
+        {hasActiveFilters && (
           <button
-            key={String(tab.value)}
-            onClick={() => setActiveTab(tab.value)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === tab.value
-                ? "border-blue-600 text-blue-700"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-            }`}
+            onClick={clearFilters}
+            className="text-xs text-blue-600 hover:text-blue-800 underline"
           >
-            {tab.label}
+            Clear filters
           </button>
-        ))}
+        )}
       </div>
 
       {isError && (
@@ -115,8 +211,15 @@ export function Webhooks() {
       )}
 
       {!isLoading && deliveries.length === 0 && (
-        <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
-          No deliveries{activeTab ? ` with status ${activeTab}` : ""}.
+        <div className="flex flex-col items-center justify-center h-40 gap-2">
+          <p className="text-gray-400 text-sm">
+            No deliveries{hasActiveFilters ? " match the current filters" : ""}.
+          </p>
+          {hasActiveFilters && (
+            <button onClick={clearFilters} className="text-xs text-blue-600 hover:underline">
+              Clear filters
+            </button>
+          )}
         </div>
       )}
 

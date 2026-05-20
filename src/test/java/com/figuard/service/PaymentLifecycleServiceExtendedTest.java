@@ -46,6 +46,8 @@ class PaymentLifecycleServiceExtendedTest {
     @Mock WebhookPayloadBuilder webhookPayloadBuilder;
     @Mock BudgetMapper budgetMapper;
     @Mock AnomalyBaselineService anomalyBaselineService;
+    @org.mockito.Spy
+    io.micrometer.core.instrument.MeterRegistry meterRegistry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
 
     @InjectMocks PaymentLifecycleService service;
 

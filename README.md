@@ -8,6 +8,7 @@ Works with LangChain, CrewAI, LangGraph, and the OpenAI Agents SDK.
 
 [![CI](https://github.com/figuard/figuard-core/actions/workflows/ci.yml/badge.svg)](https://github.com/figuard/figuard-core/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-624%20passing-brightgreen)](#)
 [![PyPI](https://img.shields.io/pypi/v/figuard)](https://pypi.org/project/figuard/)
 [![npm](https://img.shields.io/npm/v/figuard?label=npm%20(ts-sdk)&color=cb3837)](https://www.npmjs.com/package/figuard)
 [![npm](https://img.shields.io/npm/v/figuard-mcp?label=figuard-mcp&color=cb3837)](https://www.npmjs.com/package/figuard-mcp)
@@ -80,7 +81,7 @@ That's it. The server is a Docker container — same as Postgres or Redis. You n
 from figuard import FiGuardClient
 
 client = FiGuardClient(
-    api_key="ab_live_demo",
+    api_key="fg_live_demo",
     base_url="http://localhost:8080",
 )
 ```
@@ -241,6 +242,7 @@ None of this is architecturally exotic. It's the same set of problems that payme
 ### V2
 - **Row Level Security** — PostgreSQL RLS policies as a second enforcement layer for operators running FiGuard in shared multi-tenant mode
 - **Velocity counter table** — replace live `COUNT`/`SUM` queries with an atomically-incremented counter table per budget per window, removing the `spend_events` scan from the authorize hot path
+- **Overdraft policies** — per-budget policy flag controlling behaviour when budget is exhausted: `REJECT` (current default), `ALLOW_IF_AVAILABLE` (use remaining funds, deny the rest), `ALLOW_WITH_OVERDRAFT` (permit and record overdraft for later settlement)
 
 ### V3
 - **Redis velocity counters** — sliding-window counters in Redis, eliminating the DB round-trip for velocity checks at high throughput

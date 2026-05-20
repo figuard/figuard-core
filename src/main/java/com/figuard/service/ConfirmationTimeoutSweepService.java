@@ -33,6 +33,7 @@ public class ConfirmationTimeoutSweepService {
 
     private Counter sweepRunCounter;
     private Counter eventsProcessedCounter;
+    private Counter reservationExpiredCounter;
 
     @PostConstruct
     void initMetrics() {
@@ -44,6 +45,10 @@ public class ConfirmationTimeoutSweepService {
         eventsProcessedCounter = Counter.builder("figuard.sweep.events_processed")
             .tag("job", "confirmation_timeout")
             .description("Number of stale AUTHORIZED events auto-voided")
+            .register(meterRegistry);
+
+        reservationExpiredCounter = Counter.builder("figuard.reservation.expired")
+            .description("Number of spend reservations expired due to confirmation timeout")
             .register(meterRegistry);
 
         // Gauge: current count of in-flight (AUTHORIZED) events — updated on each DB read
@@ -78,6 +83,7 @@ public class ConfirmationTimeoutSweepService {
             try {
                 lifecycleService.autoVoidStaleEvent(event);
                 eventsProcessedCounter.increment();
+                reservationExpiredCounter.increment();
             } catch (Exception e) {
                 // Log and continue — don't let one failure block the rest
                 log.error("Failed to auto-void event {}: {}", event.getId(), e.getMessage());

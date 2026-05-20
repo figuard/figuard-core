@@ -5,7 +5,7 @@ Usage::
 
     from figuard import FiGuardClient
 
-    client = FiGuardClient(api_key="ab_live_...")
+    client = FiGuardClient(api_key="fg_live_...")
 
     budget = client.create_budget(
         user_id="user_123",
@@ -71,7 +71,7 @@ class FiGuardClient:
     Thread-safe: the underlying ``requests.Session`` is used for connection
     pooling only; no mutable state is shared between calls.
 
-    :param api_key:  Your ``ab_live_...`` or ``ab_test_...`` API key.
+    :param api_key:  Your ``fg_live_...`` or ``fg_test_...`` API key.
     :param base_url: Override for self-hosted deployments.
     :param timeout:  Per-request timeout in seconds (default 30).
     """

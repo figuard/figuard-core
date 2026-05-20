@@ -37,6 +37,21 @@ public interface WebhookDeliveryRepository extends JpaRepository<WebhookDelivery
         @Param("tenantId") UUID tenantId,
         @Param("status") WebhookDeliveryStatus status);
 
+    // Filtered delivery list — all params optional; null = no constraint.
+    @Query("""
+        SELECT d FROM WebhookDelivery d
+        WHERE d.webhookConfig.tenant.id = :tenantId
+          AND (:status    IS NULL OR d.status    = :status)
+          AND (:eventType IS NULL OR d.eventType = :eventType)
+          AND (:since     IS NULL OR d.createdAt >= :since)
+        ORDER BY d.createdAt DESC
+        """)
+    List<WebhookDelivery> findFiltered(
+        @Param("tenantId")  UUID tenantId,
+        @Param("status")    WebhookDeliveryStatus status,
+        @Param("eventType") String eventType,
+        @Param("since")     OffsetDateTime since);
+
     // Retry sweep — FAILED deliveries due for re-attempt.
     // nextRetryAt IS NULL catches deliveries that failed before the retry service existed.
     @Query("""

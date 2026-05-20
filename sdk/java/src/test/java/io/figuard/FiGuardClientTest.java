@@ -27,7 +27,7 @@ class FiGuardClientTest {
     // Shared helpers
     // -------------------------------------------------------------------------
 
-    private static final String API_KEY = "ab_test_1234567890";
+    private static final String API_KEY = "fg_test_1234567890";
 
     static FiGuardClient clientFor(MockWebServer server) {
         OkHttpClient fast = new OkHttpClient.Builder()

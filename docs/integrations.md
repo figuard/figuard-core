@@ -1,167 +1,52 @@
 # Framework Integrations
 
-FiGuard integrates with LangChain, CrewAI, OpenAI Agents SDK, and Anthropic. Each integration intercepts tool calls automatically — you don't write explicit `authorize()` calls.
+FiGuard works with every major Python agent framework. Pick yours:
 
-For direct SDK usage (no framework), see the [60-second quickstart](../README.md#60-second-quickstart).
+| Framework | What you need | Guide |
+|-----------|--------------|-------|
+| **LangChain** | Callback handler — attach to `AgentExecutor`, no tool changes | [LangChain guide](integrations/langchain.md) |
+| **OpenAI Agents SDK** | Decorator on tool functions — `@guarded_function_tool` | [OpenAI Agents guide](integrations/openai-agents.md) |
+| **CrewAI** | `FiGuardCrewGuard.wrap(crew)` — one call covers all agents | [CrewAI guide](integrations/crewai.md) |
+| **Claude / Cursor / Claude Code** | MCP server — no Python needed | [MCP guide](integrations/mcp.md) |
 
 ---
 
-## LangChain
+## Which pattern is right for me?
 
-```bash
-pip install "figuard[langchain]" langchain-openai
-```
+**Use the callback handler (LangChain)** if you want authorization to intercept tool calls at the executor level. Works with LangGraph too — pass the handler in the agent config.
+
+**Use the decorator (OpenAI Agents)** if you want hard per-tool enforcement. The tool function never runs if denied — regardless of how the agent handles errors.
+
+**Use `wrap()` (CrewAI)** if you have many tools across multiple agents and want a single setup call.
+
+**Use MCP** if you're not writing Python. Claude Code, Cursor, and Claude Desktop can call FiGuard tools directly from conversation.
+
+---
+
+## They all share the same budget model
+
+Regardless of framework, budget creation is the same:
 
 ```python
-from langchain_openai import ChatOpenAI
-from figuard.integrations.langchain import FiGuardCallbackHandler
 from figuard import FiGuardClient
 
-client = FiGuardClient(api_key="sb_live_demo", base_url="https://sandbox.figuard.io")
-
+client = FiGuardClient(
+    api_key="sb_live_demo",
+    base_url="https://figuard-sandbox-1.onrender.com",
+)
 budget = client.create_budget(
     user_id="agent_001",
     total_limit=500.00,
     currency="USD",
     expires_in="24h",
 )
-
-handler = FiGuardCallbackHandler(
-    client=client,
-    session_token=budget.primary_token.session_token,
-    agent_id="langchain_agent",
-)
-
-llm = ChatOpenAI(callbacks=[handler])
-# Every tool call is now pre-flight authorized.
-# Denied tool calls return a structured denial string as the tool result.
+session_token = budget.primary_token.session_token
 ```
 
-The handler intercepts `on_tool_start` events. It extracts the spend amount from the tool input (configured via `amount_key`) and calls `authorize()` before the tool executes. If denied, the tool is not called and the denial reason is returned to the LLM as the tool result.
+The `session_token` is what you pass to any integration. Budget configuration — allocations, velocity limits, anomaly detection — is set once here and enforced everywhere.
 
 ---
 
-## CrewAI
+## Not using a framework?
 
-```bash
-pip install "figuard[crewai]" crewai
-```
-
-```python
-from crewai import Crew, Agent, Task
-from figuard.integrations.crewai import FiGuardCrewGuard
-from figuard import FiGuardClient
-
-client = FiGuardClient(api_key="sb_live_demo", base_url="https://sandbox.figuard.io")
-
-budget = client.create_budget(
-    user_id="agent_001",
-    total_limit=500.00,
-    currency="USD",
-    expires_in="24h",
-)
-
-guard = FiGuardCrewGuard(
-    client=client,
-    session_token=budget.primary_token.session_token,
-)
-
-crew = Crew(agents=[...], tasks=[...])
-guard.wrap(crew)   # patches tool execution on all agents in the crew
-result = crew.kickoff()
-```
-
-`FiGuardCrewGuard.wrap()` patches the tool execution pipeline on every agent in the crew. The guard is applied once at the crew level — you don't need to modify individual agents or tasks.
-
----
-
-## OpenAI Agents SDK
-
-```bash
-pip install "figuard[openai-agents]" openai-agents
-```
-
-The OpenAI Agents integration uses a decorator pattern. Apply `@guarded_function_tool` to your tool function before `@function_tool`.
-
-```python
-from agents import Agent, Runner, function_tool
-from figuard.integrations.openai_agents import guarded_function_tool
-from figuard import FiGuardClient
-
-client = FiGuardClient(api_key="sb_live_demo", base_url="https://sandbox.figuard.io")
-
-budget = client.create_budget(
-    user_id="agent_001",
-    total_limit=500.00,
-    currency="USD",
-    expires_in="24h",
-)
-
-@function_tool
-@guarded_function_tool(
-    client=client,
-    session_token=budget.primary_token.session_token,
-    category="flight",     # maps to claimed_category
-    amount_key="price",    # which kwarg holds the spend amount
-    agent_id="travel_agent",
-)
-def book_flight(destination: str, price: float) -> str:
-    """Book a flight to the destination."""
-    # real implementation
-    return f"Flight to {destination} booked for ${price}"
-
-agent = Agent(name="travel_agent", tools=[book_flight])
-result = Runner.run_sync(agent, "Book a flight to NYC for $299")
-```
-
-**Decorator order matters.** Apply `@guarded_function_tool` as the inner decorator (closer to the function) and `@function_tool` as the outer decorator. This lets FiGuard wrap the raw Python function before the Agents SDK converts it to a JSON schema.
-
-When a tool call is denied, the function returns a structured denial string to the agent:
-```
-"FiGuard DENIED: INSUFFICIENT_FUNDS — no remaining budget for flights"
-```
-
-The agent receives this as the tool result and can adjust its plan.
-
----
-
-## Anthropic (tool use)
-
-```bash
-pip install "figuard[anthropic]" anthropic
-```
-
-```python
-from anthropic import Anthropic
-from figuard.integrations.anthropic import FiGuardAnthropicGuard
-from figuard import FiGuardClient
-
-client = FiGuardClient(api_key="sb_live_demo", base_url="https://sandbox.figuard.io")
-
-budget = client.create_budget(
-    user_id="agent_001",
-    total_limit=500.00,
-    currency="USD",
-    expires_in="24h",
-)
-
-guard = FiGuardAnthropicGuard(
-    client=client,
-    session_token=budget.primary_token.session_token,
-    agent_id="claude_agent",
-)
-
-anthropic_client = Anthropic()
-# Use guard.run_tool() in your tool execution loop to pre-authorize each call
-```
-
-See `sdk/python/figuard/integrations/anthropic.py` for the full tool execution loop pattern.
-
----
-
-## What all integrations share
-
-- Budget creation is identical across all frameworks — use whatever `create_budget` config you need.
-- Denied tool calls are surfaced to the LLM as tool results, not exceptions. The agent decides how to proceed.
-- All authorizations and denials appear in the ledger at `GET /api/v1/budgets/{id}/ledger`.
-- Framework integrations work with single-agent budgets. For fleet delegation, use the raw SDK.
+Use the raw client directly — see the [60-second quickstart](../README.md#60-second-quickstart) in the README.

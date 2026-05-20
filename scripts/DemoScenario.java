@@ -33,7 +33,7 @@ public class DemoScenario {
 
     public static void main(String[] args) throws Exception {
         String baseUrl = args.length > 0 ? args[0] : "http://localhost:8080";
-        String apiKey  = args.length > 1 ? args[1] : "ab_live_integrationtest";
+        String apiKey  = args.length > 1 ? args[1] : "fg_live_integrationtest";
 
         FiGuardClient client = FiGuardClient.builder()
                 .apiKey(apiKey)

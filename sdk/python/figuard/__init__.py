@@ -5,7 +5,7 @@ Quick start::
 
     from figuard import FiGuardClient, FiGuardDeniedException
 
-    client = FiGuardClient(api_key="ab_live_...")
+    client = FiGuardClient(api_key="fg_live_...")
 
     budget = client.create_budget(
         user_id="user_123",

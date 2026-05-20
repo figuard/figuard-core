@@ -23,7 +23,7 @@ import java.util.logging.Logger;
  *
  * <pre>{@code
  * FiGuardClient client = FiGuardClient.builder()
- *     .apiKey("ab_live_...")
+ *     .apiKey("fg_live_...")
  *     .baseUrl("https://sandbox.figuard.io")
  *     .build();
  *

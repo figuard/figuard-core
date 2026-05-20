@@ -428,7 +428,7 @@ def _seed_demo_data(base_url: str, api_key: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="FiGuard demo script")
     parser.add_argument("--base-url",  default="http://localhost:8080")
-    parser.add_argument("--api-key",   default="ab_live_demo")
+    parser.add_argument("--api-key",   default="fg_live_demo")
     parser.add_argument("--no-wait",   action="store_true",
                         help="Skip health check (service already running)")
     parser.add_argument("--force",     action="store_true",

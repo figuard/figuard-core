@@ -19,7 +19,7 @@ Requires Node.js 18+.
 ```typescript
 import { FiGuardClient, FiGuardDeniedException } from "figuard";
 
-const client = new FiGuardClient({ apiKey: "ab_live_..." });
+const client = new FiGuardClient({ apiKey: "fg_live_..." });
 
 // 1. Create a budget for your user's session
 const budget = await client.createBudget({
@@ -232,7 +232,7 @@ console.log(result.isAuthorized); // true/false based on real enforcement
 
 ```typescript
 const client = new FiGuardClient({
-  apiKey: "ab_live_...",
+  apiKey: "fg_live_...",
   baseUrl: "https://api.figuard.io", // override for self-hosted deployments
   timeoutMs: 30_000,                 // per-request timeout (default: 30s)
 });
@@ -249,7 +249,7 @@ Point `baseUrl` at your own FiGuard deployment:
 
 ```typescript
 const client = new FiGuardClient({
-  apiKey: "ab_live_...",
+  apiKey: "fg_live_...",
   baseUrl: "http://localhost:8080",
 });
 ```

@@ -5,7 +5,7 @@ Usage::
 
     from figuard import AsyncFiGuardClient
 
-    async with AsyncFiGuardClient(api_key="ab_live_...") as client:
+    async with AsyncFiGuardClient(api_key="fg_live_...") as client:
         budget = await client.create_budget(
             user_id="user_123",
             total_limit=500.00,
@@ -85,18 +85,18 @@ class AsyncFiGuardClient:
 
     Supports ``async with`` for managed session lifecycle::
 
-        async with AsyncFiGuardClient(api_key="ab_live_...") as client:
+        async with AsyncFiGuardClient(api_key="fg_live_...") as client:
             budget = await client.create_budget(...)
 
     Or construct manually and call ``await client.close()`` when done::
 
-        client = AsyncFiGuardClient(api_key="ab_live_...")
+        client = AsyncFiGuardClient(api_key="fg_live_...")
         try:
             budget = await client.create_budget(...)
         finally:
             await client.close()
 
-    :param api_key:  Your ``ab_live_...`` or ``ab_test_...`` API key.
+    :param api_key:  Your ``fg_live_...`` or ``fg_test_...`` API key.
     :param base_url: Override for self-hosted deployments.
     :param timeout:  Per-request timeout in seconds (default 30).
     """

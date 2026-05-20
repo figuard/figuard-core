@@ -38,7 +38,7 @@ For self-hosted:
       "command": "npx",
       "args": ["figuard-mcp"],
       "env": {
-        "FIGUARD_API_KEY": "ab_live_demo",
+        "FIGUARD_API_KEY": "fg_live_demo",
         "FIGUARD_BASE_URL": "http://localhost:8080"
       }
     }

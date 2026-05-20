@@ -4,10 +4,10 @@ All endpoints are prefixed with your base URL (e.g. `https://api.figuard.io`).
 
 ## Authentication
 
-Every request (except receipt display) requires an API key in the `Authorization` header:
+Every request (except receipt display) requires an API key in the `X-Agent-Budget-Key` header:
 
 ```
-Authorization: Bearer fg_live_...
+X-Agent-Budget-Key: fg_live_...
 ```
 
 The `/api/v1/authorize` endpoint additionally requires the budget session token in a separate header:
@@ -26,7 +26,7 @@ Session tokens are returned **once** when a budget is created. Store them secure
 |---|---|
 | `BudgetStatus` | `ACTIVE` `PAUSED` `EXHAUSTED` `EXPIRED` `CANCELLED` |
 | `SpendDecision` | `AUTHORIZED` `DENIED` `CONFIRMED` `FAILED` `VOIDED` |
-| `DenialCode` | `BUDGET_EXHAUSTED` `BUDGET_PAUSED` `BUDGET_EXPIRED` `BUDGET_CANCELLED` `CURRENCY_MISMATCH` `NO_MATCHING_ALLOCATION` `ALLOCATION_EXHAUSTED` `FORBIDDEN_ITEM_TYPE` `MISSING_CLAIMED_CATEGORY` `EXCEEDS_QUANTITY_LIMIT` `INTENT_SCOPE_VIOLATION` `ANOMALY_DETECTED` `VELOCITY_LIMIT_EXCEEDED` `ENTITY_ALREADY_AUTHORIZED` `DELEGATE_CAP_EXCEEDED` `INVALID_PARENT_EVENT` |
+| `DenialCode` | `INSUFFICIENT_FUNDS` `BUDGET_EXHAUSTED` `BUDGET_PAUSED` `BUDGET_EXPIRED` `BUDGET_CANCELLED` `CURRENCY_MISMATCH` `NO_MATCHING_ALLOCATION` `ALLOCATION_EXHAUSTED` `FORBIDDEN_ITEM_TYPE` `MISSING_CLAIMED_CATEGORY` `EXCEEDS_QUANTITY_LIMIT` `INTENT_SCOPE_VIOLATION` `ANOMALY_DETECTED` `VELOCITY_LIMIT_EXCEEDED` `ENTITY_ALREADY_AUTHORIZED` `DELEGATE_CAP_EXCEEDED` `DELEGATION_TOKEN_REVOKED` `DUPLICATE_REQUEST` `INVALID_PARENT_EVENT` |
 | `EnforcementMode` | `OPEN` `CATEGORY_CONSTRAINED` `STRICT` |
 | `FundingOperation` | `CREDIT` `DEBIT` `RESET` `RESET_SPENT` |
 | `AllocationStatus` | `ACTIVE` `EXHAUSTED` |
@@ -361,7 +361,7 @@ Returns the full spend event tree, grouped by parent-child relationships.
 
 ### `POST /api/v1/authorize`
 
-**Headers:** `Authorization: Bearer fg_live_...` + `X-Session-Token: st_...`
+**Headers:** `X-Agent-Budget-Key: fg_live_...` + `X-Session-Token: st_...`
 
 Pre-flight check: reserves quantity and returns AUTHORIZED or DENIED before the real action executes. All checks are atomic — the reservation is held until confirmed, failed, or voided.
 
@@ -412,7 +412,31 @@ Pre-flight check: reserves quantity and returns AUTHORIZED or DENIED before the 
 }
 ```
 
-> **Dry run:** When `dryRun: true`, all enforcement checks run normally but nothing is written — no SpendEvent, no reservation, no webhook. Use this to preview whether a request would be authorized without side effects.
+### Testing policies without side effects
+
+Set `"dryRun": true` on any authorize call to run all enforcement checks without writing anything:
+
+```bash
+curl -X POST .../api/v1/authorize \
+  -H "X-Agent-Budget-Key: fg_live_..." \
+  -H "X-Session-Token: st_..." \
+  -d '{
+    "agentId": "test-agent",
+    "actionType": "PURCHASE",
+    "description": "Flight SFO→JFK",
+    "requestedQuantity": 350.00,
+    "idempotencyKey": "test-key-001",
+    "dryRun": true
+  }'
+```
+
+The response is identical to a live call — AUTHORIZED or DENIED with full reason codes and budget snapshot. But no SpendEvent is created, no reservation is held, and no webhook fires. The budget balance is unchanged.
+
+Use this to:
+- Test enforcement rules before going live
+- Validate velocity limit thresholds
+- Check category allocations without consuming budget
+- Preview denial reasons during agent development
 
 ---
 

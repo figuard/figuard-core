@@ -23,6 +23,8 @@ import com.figuard.domain.repository.DelegatedTokenRepository;
 import com.figuard.domain.repository.SpendEventRepository;
 import com.figuard.security.TraceIdFilter;
 import com.figuard.service.model.MatchResult;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -57,6 +59,7 @@ public class AuthorizationService {
     private final BudgetAnomalyBaselineRepository anomalyBaselineRepository;
     private final DelegatedTokenRepository delegatedTokenRepository;
     private final DelegatedTokenAllocationRepository delegatedTokenAllocationRepository;
+    private final MeterRegistry meterRegistry;
 
     @Value("${agent-billing.authorization.confirmation-timeout-seconds:300}")
     private int confirmationTimeoutSeconds;
@@ -753,6 +756,10 @@ public class AuthorizationService {
 
         log.warn("VELOCITY_LIMIT_EXCEEDED: budgetId={} limit={} key={}",
             budget.getId(), violatedLimit, request.getIdempotencyKey());
+
+        Counter.builder("figuard.velocity.denied")
+            .register(meterRegistry)
+            .increment();
 
         webhookDispatcher.dispatch(
             budget.getTenant().getId(),

@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class DataSeeder implements CommandLineRunner {
 
-    static final String RAW_KEY = "ab_live_demo";
+    static final String RAW_KEY = "fg_live_demo";
 
     private final TenantRepository tenantRepository;
     private final ApiKeyRepository apiKeyRepository;

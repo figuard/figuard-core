@@ -78,13 +78,15 @@ public class WebhookController {
 
     @Operation(
         summary = "List all deliveries",
-        description = "All deliveries for this tenant across all webhook configs, newest first. Use `?status=FAILED` to find deliveries that need attention."
+        description = "All deliveries for this tenant across all webhook configs, newest first. All filter params are optional and combinable."
     )
     @GetMapping("/deliveries")
     public ResponseEntity<List<WebhookDeliveryResponse>> getAllDeliveries(
-            @Parameter(description = "Filter by delivery status") @RequestParam(required = false) WebhookDeliveryStatus status) {
+            @Parameter(description = "Filter by delivery status") @RequestParam(required = false) WebhookDeliveryStatus status,
+            @Parameter(description = "Filter by event type (e.g. SPEND_CONFIRMED)") @RequestParam(required = false) String eventType,
+            @Parameter(description = "Only include deliveries created at or after this ISO-8601 timestamp") @RequestParam(required = false) java.time.OffsetDateTime since) {
         return ResponseEntity.ok(
-            webhookConfigService.getAllDeliveries(TenantContext.get(), status));
+            webhookConfigService.getAllDeliveries(TenantContext.get(), status, eventType, since));
     }
 
     @Operation(summary = "Count failed deliveries", description = "Returns the count of FAILED deliveries for this tenant. Used by the dashboard to show a warning badge.")

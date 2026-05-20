@@ -8,21 +8,26 @@ Every `authorize()` call either succeeds or returns a structured denial. The den
 
 | Code | Meaning | When it fires |
 |---|---|---|
-| `INSUFFICIENT_FUNDS` | Requested quantity exceeds available budget | Budget has less remaining than `requested_quantity` |
+| `INSUFFICIENT_FUNDS` | Requested quantity exceeds available balance | Budget has some funds remaining, but less than `requested_quantity` |
+| `BUDGET_EXHAUSTED` | Budget is in EXHAUSTED status — balance fully consumed | `quantitySpent + quantityReserved == totalLimit`; subsequent calls are denied immediately without checking amounts |
 | `ALLOCATION_EXHAUSTED` | Category allocation is fully reserved | The `claimed_category` allocation has no remaining capacity |
 | `NO_MATCHING_ALLOCATION` | No allocation for the declared category | Budget has allocations but none match `claimed_category` |
 | `MISSING_CLAIMED_CATEGORY` | Category required but not provided | Budget uses `CATEGORY_CONSTRAINED` or `STRICT` mode and `claimed_category` was omitted |
+| `FORBIDDEN_ITEM_TYPE` | Item type not permitted for this allocation | `claimed_item_type` is in the allocation's `forbidden_item_types` list (STRICT mode) |
 | `BUDGET_EXPIRED` | Budget has passed its `expiresAt` | Current time > `expiresAt` |
-| `BUDGET_PAUSED` | Budget was paused by anomaly detection | `auto_pause_on_anomaly=True` and a previous request triggered the anomaly threshold |
+| `BUDGET_PAUSED` | Budget is paused | `auto_pause_on_anomaly=True` triggered, or operator paused manually |
 | `BUDGET_CANCELLED` | Budget was explicitly cancelled | Orchestrator or developer called `POST /budgets/{id}/cancel` |
 | `ANOMALY_DETECTED` | Spend pattern outside normal range | `anomaly_detection_enabled=True` and request exceeds the computed threshold |
 | `EXCEEDS_QUANTITY_LIMIT` | Single transaction over the per-transaction cap | `max_transaction_quantity` is set and `requested_quantity` exceeds it |
-| `ENTITY_DEDUP_REJECTED` | Duplicate entity within the dedup window | `entity_dedup_enabled=True` and the same `agent_id`+`idempotency_key` combination was already seen |
+| `ENTITY_ALREADY_AUTHORIZED` | This entity ID is already authorized or confirmed | `entity_dedup_enabled=True` and the same `entity_id` already has an AUTHORIZED or CONFIRMED event on this budget |
+| `DUPLICATE_REQUEST` | Idempotency key already seen | Same `idempotency_key` replays the original decision — not a new denial, just a cache hit |
 | `CURRENCY_MISMATCH` | Currency in request doesn't match budget | `currency` field on authorize call differs from budget's `currency` |
 | `INTENT_SCOPE_VIOLATION` | Action outside declared intent | Request `action_type` not in the permitted scope for this budget |
-| `DELEGATE_CAP_EXCEEDED` | Sub-agent over its delegation cap | Sub-agent's delegation token allocation is exhausted |
-| `BUDGET_EXHAUSTED` | Budget limit fully consumed | `quantitySpent + quantityReserved == totalLimit` |
-| `VELOCITY_LIMIT_EXCEEDED` | Too many authorize attempts within the rolling window | `velocity_max_per_minute`, `velocity_max_amount_per_hour`, or `velocity_max_per_day` is set and the rolling window count/amount has been reached |
+| `DELEGATE_CAP_EXCEEDED` | Sub-agent over its delegation cap | Sub-agent's delegation token cap is exhausted |
+| `DELEGATION_TOKEN_REVOKED` | The delegation token was explicitly revoked | Orchestrator called `POST /budgets/{id}/delegation-tokens/{token_id}/revoke` |
+| `VELOCITY_LIMIT_EXCEEDED` | Too many authorize attempts within the rolling window | `velocity_max_per_minute`, `velocity_max_amount_per_hour`, or `velocity_max_per_day` limit reached |
+
+> **`INSUFFICIENT_FUNDS` vs `BUDGET_EXHAUSTED`:** These are distinct. `INSUFFICIENT_FUNDS` means the budget has *some* funds remaining but not enough for this request — the agent could retry with a smaller amount. `BUDGET_EXHAUSTED` means the budget has reached its limit and is now in EXHAUSTED status — no further authorizations will pass regardless of amount.
 
 ---
 
