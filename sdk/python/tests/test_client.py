@@ -22,7 +22,7 @@ from figuard import (
 from figuard.models import AuthorizationResult, Budget
 
 BASE = "https://api.figuard.io"
-API_KEY = "ab_test_sdktest"
+API_KEY = "fg_test_sdktest"
 
 BUDGET_ID = str(uuid.uuid4())
 EVENT_ID = str(uuid.uuid4())

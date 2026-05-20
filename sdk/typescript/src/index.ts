@@ -4,7 +4,7 @@
  * Quick start:
  *   import { FiGuardClient, FiGuardDeniedException } from "figuard";
  *
- *   const client = new FiGuardClient({ apiKey: "ab_live_..." });
+ *   const client = new FiGuardClient({ apiKey: "fg_live_..." });
  *
  *   const budget = await client.createBudget({
  *     userId: "user_123",

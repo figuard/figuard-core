@@ -47,7 +47,7 @@ public abstract class IntegrationTestBase {
         registry.add("spring.datasource.hikari.keepalive-time", () -> "30000");
     }
 
-    protected static final String TEST_API_KEY = "ab_live_integrationtest";
+    protected static final String TEST_API_KEY = "fg_live_integrationtest";
 
     @Autowired protected MockMvc mockMvc;
     @Autowired private TenantRepository tenantRepository;

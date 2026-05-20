@@ -89,11 +89,16 @@ public class WebhookConfigService {
     // -------------------------------------------------------------------------
 
     @Transactional(readOnly = true)
-    public List<WebhookDeliveryResponse> getAllDeliveries(Tenant tenant, WebhookDeliveryStatus status) {
-        List<WebhookDelivery> deliveries = status != null
-            ? webhookDeliveryRepository.findByTenantIdAndStatusOrderByCreatedAtDesc(tenant.getId(), status)
-            : webhookDeliveryRepository.findByTenantIdOrderByCreatedAtDesc(tenant.getId());
-        return deliveries.stream().map(this::toDeliveryResponse).toList();
+    public List<WebhookDeliveryResponse> getAllDeliveries(
+            Tenant tenant,
+            WebhookDeliveryStatus status,
+            String eventType,
+            java.time.OffsetDateTime since) {
+        return webhookDeliveryRepository
+            .findFiltered(tenant.getId(), status, eventType, since)
+            .stream()
+            .map(this::toDeliveryResponse)
+            .toList();
     }
 
     @Transactional(readOnly = true)

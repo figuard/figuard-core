@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
-@Tag(name = "API Keys", description = "Manage API keys for this tenant. Raw key values (`ab_live_` prefix) are returned only at creation or rotation time — subsequent reads return only the prefix and metadata.")
+@Tag(name = "API Keys", description = "Manage API keys for this tenant. Raw key values (`fg_live_` prefix) are returned only at creation or rotation time — subsequent reads return only the prefix and metadata.")
 @RestController
 @RequestMapping("/api/v1/api-keys")
 @RequiredArgsConstructor
@@ -32,7 +32,7 @@ public class ApiKeyController {
 
     @Operation(
         summary = "Create an API key",
-        description = "Create a new API key. The raw key (`ab_live_...`) is returned once in this response — store it securely. Subsequent reads return only the prefix and metadata."
+        description = "Create a new API key. The raw key (`fg_live_...`) is returned once in this response — store it securely. Subsequent reads return only the prefix and metadata."
     )
     @ApiResponse(responseCode = "201", description = "API key created")
     @PostMapping

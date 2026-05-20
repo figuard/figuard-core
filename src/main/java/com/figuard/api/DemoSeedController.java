@@ -34,7 +34,7 @@ public class DemoSeedController {
     @PostMapping("/seed")
     @Transactional
     public ResponseEntity<Map<String, String>> seed(@RequestBody Map<String, String> body) {
-        String rawKey = body.getOrDefault("apiKey", "ab_live_integrationtest");
+        String rawKey = body.getOrDefault("apiKey", "fg_live_integrationtest");
         String keyHash = HashUtil.sha256(rawKey);
 
         if (apiKeyRepository.findByKeyHash(keyHash).isPresent()) {

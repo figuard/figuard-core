@@ -48,7 +48,7 @@ if (!API_KEY) {
   console.error(
     "[figuard-mcp] Error: FIGUARD_API_KEY environment variable is not set.\n" +
     "Add it to your MCP client configuration:\n\n" +
-    '  "env": { "FIGUARD_API_KEY": "ab_live_..." }\n',
+    '  "env": { "FIGUARD_API_KEY": "fg_live_..." }\n',
   );
   process.exit(1);
 }

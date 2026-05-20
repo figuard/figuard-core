@@ -21,7 +21,7 @@ import requests
 from figuard import FiGuardClient
 
 FIGUARD_URL = os.environ.get("FIGUARD_URL", "http://localhost:8080")
-DEMO_API_KEY = os.environ.get("FIGUARD_API_KEY", "ab_live_testkey123")
+DEMO_API_KEY = os.environ.get("FIGUARD_API_KEY", "fg_live_testkey123")
 
 
 def _expires_at() -> str:

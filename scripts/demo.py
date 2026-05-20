@@ -10,7 +10,7 @@ Usage:
     cd sdk/python
     pip install -e .[dev,async]
     cd ../../scripts
-    python demo.py [--base-url http://localhost:8080] [--api-key ab_live_...]
+    python demo.py [--base-url http://localhost:8080] [--api-key fg_live_...]
 """
 
 import argparse
@@ -125,8 +125,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="FiGuard Python SDK demo")
     parser.add_argument("--base-url", default="http://localhost:8080",
                         help="FiGuard service base URL (default: http://localhost:8080)")
-    parser.add_argument("--api-key", default="ab_live_integrationtest",
-                        help="API key (default: ab_live_integrationtest for local dev)")
+    parser.add_argument("--api-key", default="fg_live_integrationtest",
+                        help="API key (default: fg_live_integrationtest for local dev)")
     args = parser.parse_args()
 
     run(args.base_url, args.api_key)

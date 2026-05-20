@@ -88,7 +88,7 @@ const SPEND_EVENT = {
 // ---------------------------------------------------------------------------
 
 describe("createBudget", () => {
-  const client = new FiGuardClient({ apiKey: "ab_live_test" });
+  const client = new FiGuardClient({ apiKey: "fg_live_test" });
 
   it("returns a Budget with isActive and tokens", async () => {
     mockFetch(200, BUDGET_RESPONSE);
@@ -190,7 +190,7 @@ describe("createBudget", () => {
 // ---------------------------------------------------------------------------
 
 describe("authorize", () => {
-  const client = new FiGuardClient({ apiKey: "ab_live_test" });
+  const client = new FiGuardClient({ apiKey: "fg_live_test" });
 
   it("returns isAuthorized=true for AUTHORIZED decision", async () => {
     mockFetch(200, AUTH_AUTHORIZED);
@@ -291,7 +291,7 @@ describe("authorize", () => {
 
     const headers = (mock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
     expect(headers["X-Session-Token"]).toBe("st_abc_secret");
-    expect(headers["X-Agent-Budget-Key"]).toBe("ab_live_test");
+    expect(headers["X-Agent-Budget-Key"]).toBe("fg_live_test");
   });
 });
 
@@ -300,7 +300,7 @@ describe("authorize", () => {
 // ---------------------------------------------------------------------------
 
 describe("payment lifecycle", () => {
-  const client = new FiGuardClient({ apiKey: "ab_live_test" });
+  const client = new FiGuardClient({ apiKey: "fg_live_test" });
 
   it("confirmEvent returns SpendEventResponse", async () => {
     mockFetch(200, SPEND_EVENT);
@@ -328,7 +328,7 @@ describe("payment lifecycle", () => {
 // ---------------------------------------------------------------------------
 
 describe("getLedger", () => {
-  const client = new FiGuardClient({ apiKey: "ab_live_test" });
+  const client = new FiGuardClient({ apiKey: "fg_live_test" });
 
   it("returns LedgerPage with hasNext computed correctly", async () => {
     mockFetch(200, {
@@ -383,7 +383,7 @@ describe("retry behavior", () => {
       });
     }) as unknown as typeof fetch;
 
-    const client = new FiGuardClient({ apiKey: "ab_live_test" });
+    const client = new FiGuardClient({ apiKey: "fg_live_test" });
     const budget = await client.getBudget("bgt_abc123");
     expect(budget.id).toBe("bgt_abc123");
     expect(call).toBe(2);
@@ -391,13 +391,13 @@ describe("retry behavior", () => {
 
   it("throws FiGuardConnectionError after all retries exhausted", async () => {
     mockFetchNetworkError("ECONNREFUSED");
-    const client = new FiGuardClient({ apiKey: "ab_live_test" });
+    const client = new FiGuardClient({ apiKey: "fg_live_test" });
     await expect(client.getBudget("bgt_abc123")).rejects.toThrow(FiGuardConnectionError);
   });
 
   it("does not retry on 4xx", async () => {
     const mock = mockFetch(404, { message: "Budget not found" });
-    const client = new FiGuardClient({ apiKey: "ab_live_test" });
+    const client = new FiGuardClient({ apiKey: "fg_live_test" });
     await expect(client.getBudget("bgt_notfound")).rejects.toThrow(FiGuardApiError);
     expect(mock).toHaveBeenCalledTimes(1);
   });

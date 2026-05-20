@@ -60,13 +60,13 @@ class ApiKeyAuthFilterTest {
 
     @Test
     void validKey_proceedsAndSetsTenantContext() throws Exception {
-        String rawKey = "ab_live_testkey123";
+        String rawKey = "fg_live_testkey123";
         String keyHash = ApiKeyAuthFilter.sha256(rawKey);
 
         Tenant tenant = new Tenant();
         ApiKey apiKey = new ApiKey();
         apiKey.setKeyHash(keyHash);
-        apiKey.setKeyPrefix("ab_live_t");
+        apiKey.setKeyPrefix("fg_live_t");
         apiKey.setActive(true);
         apiKey.setTenant(tenant);
 
@@ -87,7 +87,7 @@ class ApiKeyAuthFilterTest {
 
     @Test
     void inactiveKey_returns401() throws Exception {
-        String rawKey = "ab_live_inactive";
+        String rawKey = "fg_live_inactive";
         String keyHash = ApiKeyAuthFilter.sha256(rawKey);
 
         ApiKey apiKey = new ApiKey();

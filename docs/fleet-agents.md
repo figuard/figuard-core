@@ -124,4 +124,6 @@ A delegation token cannot outlive its parent budget — `expires_in` is capped a
 
 ## Framework integrations and fleet
 
-Framework integrations (LangChain, CrewAI, OpenAI Agents) use a single session token. If you need per-agent delegation caps, use the raw Python or TypeScript SDK and wire the delegation tokens manually to each agent instance.
+Framework integrations (LangChain, CrewAI, OpenAI Agents SDK) handle single-agent budgets automatically — create a budget, pass the session token to the handler or guard, done.
+
+For fleet deployments with per-agent caps, use the Python or TypeScript SDK directly. This gives you full control over which delegation token each agent receives, which categories each agent can spend from, and when tokens are revoked. The examples in this document show exactly that pattern — create delegation tokens in the orchestrator, hand each sub-agent only its own scoped token, and let FiGuard enforce the caps automatically.

@@ -15,7 +15,7 @@ Scenarios:
   11. Velocity loop          — velocity_max_per_minute=3, 4th call returns VELOCITY_LIMIT_EXCEEDED
 
 Usage:
-  python demo/seed.py [--base-url http://localhost:8080] [--api-key ab_live_demo]
+  python demo/seed.py [--base-url http://localhost:8080] [--api-key fg_live_demo]
 
 Idempotent: re-running skips already-seeded scenarios.
 Delete demo/.seed-state.json to force a full re-seed.
@@ -1080,7 +1080,7 @@ def _wait_for_service(base_url: str, max_wait: int = 30) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="FiGuard comprehensive seed script")
     parser.add_argument("--base-url", default="http://localhost:8080")
-    parser.add_argument("--api-key",  default="ab_live_demo")
+    parser.add_argument("--api-key",  default="fg_live_demo")
     parser.add_argument("--no-wait",  action="store_true")
     parser.add_argument("--force",    action="store_true",
                         help="Ignore state file and re-seed all scenarios")

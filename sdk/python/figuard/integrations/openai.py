@@ -17,7 +17,7 @@ Quick start::
     from figuard.integrations.openai import guarded_openai_function
 
     openai_client = OpenAI()
-    figuard_client = FiGuardClient(api_key="ab_live_demo")
+    figuard_client = FiGuardClient(api_key="fg_live_demo")
     budget = figuard_client.create_budget(user_id="user_123", total_limit=500.00, ...)
 
     @guarded_openai_function(

@@ -43,7 +43,7 @@ class TokenRedactionFilterTest {
     @Test
     void getHeader_returnsRedacted_forXAgentBudgetKey() throws Exception {
         MockHttpServletRequest original = new MockHttpServletRequest();
-        original.addHeader("X-Agent-Budget-Key", "ab_live_realkey123");
+        original.addHeader("X-Agent-Budget-Key", "fg_live_realkey123");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         final HttpServletRequest[] wrappedRequest = new HttpServletRequest[1];

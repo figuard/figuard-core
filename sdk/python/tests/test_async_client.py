@@ -24,7 +24,7 @@ from figuard import (
 from figuard.models import AuthorizationResult, Budget
 
 BASE = "https://api.figuard.io"
-API_KEY = "ab_test_asynctest"
+API_KEY = "fg_test_asynctest"
 
 BUDGET_ID = str(uuid.uuid4())
 EVENT_ID = str(uuid.uuid4())

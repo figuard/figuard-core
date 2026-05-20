@@ -18,6 +18,7 @@ import com.figuard.domain.enums.WebhookEventType;
 import com.figuard.domain.repository.AgentBudgetRepository;
 import com.figuard.domain.repository.BudgetAllocationRepository;
 import com.figuard.domain.repository.BudgetAnomalyBaselineRepository;
+import com.figuard.domain.repository.DelegatedTokenAllocationRepository;
 import com.figuard.domain.repository.DelegatedTokenRepository;
 import com.figuard.domain.repository.SpendEventRepository;
 import com.figuard.service.model.MatchResult;
@@ -50,6 +51,7 @@ class AuthorizationServiceTest {
     @Mock BudgetAllocationRepository allocationRepository;
     @Mock SpendEventRepository spendEventRepository;
     @Mock DelegatedTokenRepository delegatedTokenRepository;
+    @Mock DelegatedTokenAllocationRepository delegatedTokenAllocationRepository;
     @Mock CategoryMatchingService categoryMatchingService;
     @Mock SessionTokenService sessionTokenService;
     @Spy IntentScopeValidator intentScopeValidator;
@@ -57,6 +59,8 @@ class AuthorizationServiceTest {
     @Mock WebhookPayloadBuilder webhookPayloadBuilder;
     @Mock BudgetMapper budgetMapper;
     @Mock BudgetAnomalyBaselineRepository anomalyBaselineRepository;
+    @org.mockito.Spy
+    io.micrometer.core.instrument.MeterRegistry meterRegistry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
 
     @InjectMocks AuthorizationService service;
 

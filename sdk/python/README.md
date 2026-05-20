@@ -29,7 +29,7 @@ Requires Python 3.9+.
 ```python
 from figuard import FiGuardClient, FiGuardDeniedException
 
-client = FiGuardClient(api_key="ab_live_...")
+client = FiGuardClient(api_key="fg_live_...")
 
 # 1. Create a budget for your user's session
 budget = client.create_budget(
@@ -66,7 +66,7 @@ import asyncio
 from figuard import AsyncFiGuardClient
 
 async def run_agent():
-    async with AsyncFiGuardClient(api_key="ab_live_...") as client:
+    async with AsyncFiGuardClient(api_key="fg_live_...") as client:
         budget = await client.create_budget(
             user_id="user_123",
             total_limit=500.00,
@@ -208,7 +208,7 @@ for root in tree.roots:
 
 ```python
 client = FiGuardClient(
-    api_key="ab_live_...",
+    api_key="fg_live_...",
     base_url="https://api.figuard.io",  # override for self-hosted
     timeout=30,                          # per-request timeout in seconds
 )

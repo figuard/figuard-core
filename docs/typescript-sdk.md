@@ -34,9 +34,12 @@ const budget = await client.createBudget({
   intentContext: 'travel booking session',
 });
 
-// budget.tokens is an array — one entry per dimension so agents have full context
-// on all spending dimensions for this user. For simple single-token budgets:
-// one entry with category "default". Use tokens[0] or build a map for multi-token.
+// budget.tokens is an array — one entry per budget dimension (category).
+// Simple budgets have one entry (category "default"). Entitlement-backed budgets
+// may have multiple entries, one per category the user is entitled to.
+// For a single-token budget, tokens[0] is always the right one.
+// Use the null-assertion (!!) only if you've verified the budget was created
+// successfully — both tokens and sessionToken are guaranteed present on a fresh budget.
 const sessionToken = budget.tokens![0].sessionToken!
 
 // Authorize
@@ -63,7 +66,7 @@ if (auth.isAuthorized) {
 
 ```typescript
 // raiseIfDenied() throws FiGuardDeniedException on denial, returns auth on success
-const sessionToken = budget.tokens![0].sessionToken!
+const sessionToken = budget.tokens![0].sessionToken!  // tokens[0] = default/single-category token
 const auth = await client
   .authorize({ sessionToken, ...params })
   .then(a => a.raiseIfDenied());
@@ -81,8 +84,10 @@ const fleetBudget = await client.createBudget({
   expiresIn: '8h',
 });
 
-// fleetBudget.tokens is an array — one entry per dimension. For simple fleet
-// budgets use tokens[0]; for entitlement-backed budgets build a map by category.
+// fleetBudget.tokens is an array — same shape as a regular budget.
+// Fleet budgets are single-dimension by default, so tokens[0] is the fleet token.
+// Build a Map<category, sessionToken> if you're working with multi-category entitlements:
+//   const tokenMap = new Map(fleetBudget.tokens!.map(t => [t.category, t.sessionToken!]));
 const fleetSessionToken = fleetBudget.tokens![0].sessionToken!
 
 const refundToken = await client.createDelegationToken({

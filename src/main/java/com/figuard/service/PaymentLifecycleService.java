@@ -16,6 +16,8 @@ import com.figuard.domain.repository.AgentBudgetRepository;
 import com.figuard.domain.repository.BudgetAllocationRepository;
 import com.figuard.domain.repository.DelegatedTokenAllocationRepository;
 import com.figuard.domain.repository.SpendEventRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -42,6 +44,7 @@ public class PaymentLifecycleService {
     private final WebhookPayloadBuilder webhookPayloadBuilder;
     private final BudgetMapper budgetMapper;
     private final AnomalyBaselineService anomalyBaselineService;
+    private final MeterRegistry meterRegistry;
 
     // -------------------------------------------------------------------------
     // Confirm
@@ -97,6 +100,8 @@ public class PaymentLifecycleService {
 
         log.info("Event CONFIRMED: id={} budgetId={} confirmed={}",
             event.getId(), budget.getId(), confirmed);
+
+        Counter.builder("figuard.event.confirmed").register(meterRegistry).increment();
 
         // Update anomaly baseline asynchronously — must not delay the confirm response
         anomalyBaselineService.updateBaseline(budget, confirmed);
@@ -154,6 +159,8 @@ public class PaymentLifecycleService {
         eventRepository.save(event);
 
         log.info("Event FAILED: id={} budgetId={} reason={}", event.getId(), budget.getId(), request.getReason());
+
+        Counter.builder("figuard.event.failed").register(meterRegistry).increment();
 
         // Fire SPEND_PAYMENT_FAILED webhook asynchronously
         webhookDispatcher.dispatch(
@@ -241,6 +248,8 @@ public class PaymentLifecycleService {
             event.getId(), budget.getId(),
             request.isVoidChildEvents() ? authorizedDescendants.size() : 0,
             request.getReason());
+
+        Counter.builder("figuard.event.voided").register(meterRegistry).increment();
 
         webhookDispatcher.dispatch(
             budget.getTenant().getId(),

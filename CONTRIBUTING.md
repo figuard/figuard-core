@@ -26,8 +26,8 @@ When ready:
 ```
 =========================================
 [FiGuard] Ready at http://localhost:8080
-[FiGuard] Demo API key: ab_live_demo
-[FiGuard] Header: X-Agent-Budget-Key: ab_live_demo
+[FiGuard] Demo API key: fg_live_demo
+[FiGuard] Header: X-Agent-Budget-Key: fg_live_demo
 =========================================
 ```
 

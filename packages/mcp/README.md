@@ -26,7 +26,7 @@ Adds 8 FiGuard tools to your AI assistant. Instead of writing SDK code, you just
 
 ```bash
 claude mcp add figuard-mcp \
-  --env FIGUARD_API_KEY=ab_live_... \
+  --env FIGUARD_API_KEY=fg_live_... \
   --env FIGUARD_BASE_URL=http://localhost:8080
 ```
 
@@ -39,7 +39,7 @@ Or add to `~/.claude/claude_desktop_config.json` manually:
       "command": "npx",
       "args": ["figuard-mcp"],
       "env": {
-        "FIGUARD_API_KEY": "ab_live_...",
+        "FIGUARD_API_KEY": "fg_live_...",
         "FIGUARD_BASE_URL": "http://localhost:8080"
       }
     }
@@ -58,7 +58,7 @@ Add to `.cursor/mcp.json` in your project (or `~/.cursor/mcp.json` globally):
       "command": "npx",
       "args": ["figuard-mcp"],
       "env": {
-        "FIGUARD_API_KEY": "ab_live_...",
+        "FIGUARD_API_KEY": "fg_live_...",
         "FIGUARD_BASE_URL": "http://localhost:8080"
       }
     }
@@ -77,7 +77,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "command": "npx",
       "args": ["figuard-mcp"],
       "env": {
-        "FIGUARD_API_KEY": "ab_live_...",
+        "FIGUARD_API_KEY": "fg_live_...",
         "FIGUARD_BASE_URL": "http://localhost:8080"
       }
     }

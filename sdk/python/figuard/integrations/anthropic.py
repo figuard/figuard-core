@@ -17,7 +17,7 @@ Quick start::
     from figuard.integrations.anthropic import guarded_anthropic_tool
 
     anthropic_client = Anthropic()
-    figuard_client = FiGuardClient(api_key="ab_live_demo")
+    figuard_client = FiGuardClient(api_key="fg_live_demo")
     budget = figuard_client.create_budget(user_id="user_123", total_limit=500.00, ...)
 
     @guarded_anthropic_tool(

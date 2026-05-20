@@ -41,7 +41,7 @@ public class OpenApiConfig {
                     .type(SecurityScheme.Type.APIKEY)
                     .in(SecurityScheme.In.HEADER)
                     .name("X-Agent-Budget-Key")
-                    .description("Tenant API key. Prefix: `ab_live_`. " +
+                    .description("Tenant API key. Prefix: `fg_live_`. " +
                                  "Create one via `POST /api/v1/api-keys` or seed one with the quickstart script.")))
             .addSecurityItem(new SecurityRequirement().addList(API_KEY_SCHEME));
     }
