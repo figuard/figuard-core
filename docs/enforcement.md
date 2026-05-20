@@ -111,6 +111,11 @@ FiGuard fires webhooks asynchronously for the following event types. Configure e
 | `VELOCITY_LIMIT_EXCEEDED` | A velocity window limit is exceeded (fires once per window; subsequent violations in the same window are silently denied) |
 | `LEDGER_INTEGRITY_VIOLATION` | LedgerIntegrityService detected a balance invariant breach |
 | `DELEGATION_TOKEN_REVOKED` | A delegation token was explicitly revoked |
+| `ENTITLEMENT_STATE_CHANGED` | Entitlement item transitioned NORMAL → APPROACHING (at `warnAtPercentage`%). One webhook per (item, state) per period |
+| `ENTITLEMENT_LIMIT_REACHED` | Entitlement item transitioned to LIMIT_REACHED (100% consumed). BLOCK policy will deny further spend on linked budgets |
+| `ENTITLEMENT_RENEWED` | Renewal sweep reset `currentPeriodConsumed` to zero and advanced `nextRenewalAt` — new period started |
+| `ENTITLEMENT_PAUSED` | Subscription was paused — all linked budgets will receive HTTP 402 on next authorize |
+| `ENTITLEMENT_RESUMED` | Paused subscription was resumed — linked budgets unblocked |
 | `RENEWAL_TOKEN_DELIVERY_FAILED` | An `entitlement.renewed` webhook has failed 3+ sweep retries — operator must call `POST /entitlements/{id}/rotate-tokens` to issue fresh tokens |
 
 All payloads include `eventType`, `budgetId`, `totalLimit`, `availableQuantity`, `percentUsed`, and `timestamp`. The `X-Webhook-Signature` header carries an HMAC-SHA256 signature computed from the raw payload body using the secret you provided at webhook registration.

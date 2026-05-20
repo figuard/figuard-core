@@ -8,7 +8,7 @@ Works with LangChain, CrewAI, LangGraph, and the OpenAI Agents SDK.
 
 [![CI](https://github.com/figuard/figuard-core/actions/workflows/ci.yml/badge.svg)](https://github.com/figuard/figuard-core/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-624%20passing-brightgreen)](#)
+[![Tests](https://img.shields.io/badge/tests-610%20passing-brightgreen)](#)
 [![PyPI](https://img.shields.io/pypi/v/figuard)](https://pypi.org/project/figuard/)
 [![npm](https://img.shields.io/npm/v/figuard?label=npm%20(ts-sdk)&color=cb3837)](https://www.npmjs.com/package/figuard)
 [![npm](https://img.shields.io/npm/v/figuard-mcp?label=figuard-mcp&color=cb3837)](https://www.npmjs.com/package/figuard-mcp)
@@ -211,7 +211,7 @@ None of this is architecturally exotic. It's the same set of problems that payme
 
 ## Docs
 
-- **Interactive API docs:** http://localhost:8080/swagger-ui.html (local) · https://sandbox.figuard.io/swagger-ui.html (live sandbox)
+- **Interactive API docs:** http://localhost:8080/swagger-ui/index.html (local) · https://figuard-sandbox-1.onrender.com/swagger-ui/index.html (live sandbox)
 - [API Reference](docs/api-reference.md) — full endpoint reference with payloads
 - [Pick Your Pattern](docs/pick-your-pattern.md) — decision tree: find your scenario, get the exact create + authorize calls
 - [Budget Configuration](docs/budget-configuration.md) — full parameter reference for all four configuration layers
@@ -241,7 +241,7 @@ None of this is architecturally exotic. It's the same set of problems that payme
 
 ### V2
 - **Row Level Security** — PostgreSQL RLS policies as a second enforcement layer for operators running FiGuard in shared multi-tenant mode
-- **Velocity counter table** — replace live `COUNT`/`SUM` queries with an atomically-incremented counter table per budget per window, removing the `spend_events` scan from the authorize hot path
+- **Velocity counter table** — replace live `COUNT`/`SUM` scans in the current velocity controls with an atomically-incremented counter table per budget per window, removing the `spend_events` scan from the authorize hot path at scale
 - **Overdraft policies** — per-budget policy flag controlling behaviour when budget is exhausted: `REJECT` (current default), `ALLOW_IF_AVAILABLE` (use remaining funds, deny the rest), `ALLOW_WITH_OVERDRAFT` (permit and record overdraft for later settlement)
 
 ### V3

@@ -135,6 +135,47 @@ const budget = await client.resumeBudget({
 });
 ```
 
+## Delegation tokens (multi-agent fleets)
+
+Delegate a capped slice of a fleet budget to a sub-agent. The sub-agent gets its own `sessionToken` scoped to specific categories and limits — it cannot exceed its caps even if the parent budget still has funds.
+
+```typescript
+// Parent agent creates the fleet budget
+const fleetBudget = await client.createBudget({
+  userId: "user_123",
+  totalLimit: 2000,
+  expiresIn: "8h",
+  currency: "USD",
+  allocations: [
+    { category: "flights", limit: 1000 },
+    { category: "hotels", limit: 1000 },
+  ],
+});
+
+// Issue a scoped token for a sub-agent (e.g. a flight-booking specialist)
+const token = await client.createDelegationToken({
+  budgetId: fleetBudget.id,
+  label: "flight-agent",
+  caps: [{ category: "flights", limit: 300 }],
+});
+// Hand token.sessionToken to the sub-agent
+const flightAgentToken = token.sessionToken!;
+
+// Sub-agent authorizes against its cap — cannot exceed $300 flights
+const result = (await subClient.authorize({
+  sessionToken: flightAgentToken,
+  agentId: "flight-specialist",
+  actionType: "PURCHASE",
+  description: "NYC flight",
+  requestedQuantity: 250,
+  idempotencyKey: "flight-nyc-001",
+  claimedCategory: "flights",
+})).raiseIfDenied();
+
+// Revoke at any time
+await client.revokeDelegationToken(token.id);
+```
+
 ## Error handling
 
 ```typescript

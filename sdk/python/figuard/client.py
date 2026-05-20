@@ -44,16 +44,20 @@ from .exceptions import FiGuardApiError, FiGuardConnectionError
 from .models import (
     AllocationResponse,
     AllocationSnapshot,
+    ApiKey,
     AuthorizationResult,
     Budget,
+    BudgetFundingResult,
     BudgetSnapshot,
     BudgetToken,
     DelegationToken,
     DelegationTokenAllocation,
+    EntitlementItem,
     LedgerPage,
     SpendEventResponse,
     SpendTree,
     SpendTreeNode,
+    Subscription,
     VoidResult,
 )
 
@@ -258,6 +262,202 @@ class FiGuardClient:
             "POST", "/api/v1/budgets/cancel-batch", json=body, retryable=False
         )
         return [_parse_budget(b) for b in data]
+
+    # -----------------------------------------------------------------------
+    # Fund budget
+    # -----------------------------------------------------------------------
+
+    def fund_budget(
+        self,
+        budget_id: str,
+        operation: str,
+        amount: float,
+        reason: Optional[str] = None,
+    ) -> BudgetFundingResult:
+        """
+        Adjust a budget's totalLimit in-place.
+
+        :param operation:
+            - ``CREDIT``      — add *amount* to totalLimit.
+            - ``DEBIT``       — subtract *amount* from totalLimit (rejected if result
+              would drop below quantitySpent).
+            - ``RESET``       — set totalLimit to exactly *amount*.
+            - ``RESET_SPENT`` — zero quantitySpent and set totalLimit to *amount*;
+              reactivates EXHAUSTED budgets.
+        :param amount: Must be positive.
+        :param reason: Optional note recorded for audit purposes.
+        """
+        body: Dict[str, Any] = {"operation": operation, "amount": amount}
+        if reason is not None:
+            body["reason"] = reason
+        data = self._request("POST", f"/api/v1/budgets/{budget_id}/fund", json=body)
+        return BudgetFundingResult(
+            budget_id=data.get("budgetId", budget_id),
+            operation=data["operation"],
+            amount=float(data["amount"]),
+            previous_total_limit=float(data["previousTotalLimit"]),
+            total_limit=float(data["totalLimit"]),
+            quantity_spent=float(data["quantitySpent"]),
+            quantity_reserved=float(data["quantityReserved"]),
+            available_quantity=float(data["availableQuantity"]),
+            status=data["status"],
+            reason=data.get("reason"),
+            updated_at=data.get("updatedAt"),
+            trace_id=data.get("traceId"),
+        )
+
+    # -----------------------------------------------------------------------
+    # API keys
+    # -----------------------------------------------------------------------
+
+    def list_api_keys(self) -> List[ApiKey]:
+        """List all API keys for this tenant. Raw key values are never returned here."""
+        data = self._request("GET", "/api/v1/api-keys")
+        return [_parse_api_key(k) for k in data]
+
+    def create_api_key(self, description: Optional[str] = None) -> ApiKey:
+        """
+        Create a new API key. The ``raw_key`` field is populated **once** in the
+        returned object — store it securely. All subsequent reads return ``None``.
+        """
+        body: Dict[str, Any] = {}
+        if description is not None:
+            body["description"] = description
+        data = self._request("POST", "/api/v1/api-keys", json=body)
+        return _parse_api_key(data)
+
+    def revoke_api_key(self, key_id: str) -> ApiKey:
+        """Revoke an API key. Idempotent. Row retained for audit."""
+        data = self._request("POST", f"/api/v1/api-keys/{key_id}/revoke")
+        return _parse_api_key(data)
+
+    def rotate_api_key(self, key_id: str) -> ApiKey:
+        """
+        Revoke the current key and issue a replacement atomically.
+        The new ``raw_key`` is returned once in the response.
+        """
+        data = self._request("POST", f"/api/v1/api-keys/{key_id}/rotate")
+        return _parse_api_key(data)
+
+    # -----------------------------------------------------------------------
+    # Subscriptions & Entitlements
+    # -----------------------------------------------------------------------
+
+    def list_subscriptions(self) -> List[Subscription]:
+        """List all subscriptions for this tenant."""
+        data = self._request("GET", "/api/v1/subscriptions")
+        return [_parse_subscription(s) for s in data]
+
+    def create_subscription(
+        self,
+        external_subscriber_id: str,
+        plan: str,
+        renewal_period: str,
+        starts_at: Optional[str] = None,
+    ) -> Subscription:
+        """
+        Create a subscription.
+
+        :param external_subscriber_id: Your user/customer ID.
+        :param plan: Arbitrary plan label (e.g. ``"pro"``, ``"starter"``).
+        :param renewal_period: ``MONTHLY`` | ``QUARTERLY`` | ``ANNUALLY``.
+        :param starts_at: ISO 8601. Defaults to now.
+        """
+        body: Dict[str, Any] = {
+            "externalSubscriberId": external_subscriber_id,
+            "plan": plan,
+            "renewalPeriod": renewal_period,
+        }
+        if starts_at is not None:
+            body["startsAt"] = starts_at
+        data = self._request("POST", "/api/v1/subscriptions", json=body)
+        return _parse_subscription(data)
+
+    def get_subscription(self, subscription_id: str) -> Subscription:
+        """Get a subscription by its FiGuard ID."""
+        data = self._request("GET", f"/api/v1/subscriptions/{subscription_id}")
+        return _parse_subscription(data)
+
+    def get_subscription_by_subscriber(self, external_subscriber_id: str) -> Subscription:
+        """Look up a subscription by your own subscriber ID."""
+        data = self._request(
+            "GET", f"/api/v1/subscriptions/by-subscriber/{external_subscriber_id}"
+        )
+        return _parse_subscription(data)
+
+    def pause_subscription(self, subscription_id: str) -> Subscription:
+        """
+        Pause a subscription. All linked budgets will receive HTTP 402
+        (``SUBSCRIPTION_PAUSED``) on the next authorize call.
+        """
+        data = self._request("POST", f"/api/v1/subscriptions/{subscription_id}/pause")
+        return _parse_subscription(data)
+
+    def resume_subscription(self, subscription_id: str) -> Subscription:
+        """Resume a paused subscription."""
+        data = self._request("POST", f"/api/v1/subscriptions/{subscription_id}/resume")
+        return _parse_subscription(data)
+
+    def cancel_subscription(self, subscription_id: str) -> Subscription:
+        """Cancel a subscription."""
+        data = self._request("POST", f"/api/v1/subscriptions/{subscription_id}/cancel")
+        return _parse_subscription(data)
+
+    def list_entitlements(self, subscription_id: str) -> List[EntitlementItem]:
+        """List all entitlement items for a subscription."""
+        data = self._request("GET", f"/api/v1/subscriptions/{subscription_id}/entitlements")
+        return [_parse_entitlement(e) for e in data]
+
+    def add_entitlement(
+        self,
+        subscription_id: str,
+        category: str,
+        period_limit: float,
+        overage_policy: str = "BLOCK",
+        renewal_period: str = "MONTHLY",
+        warn_at_percentage: Optional[float] = None,
+    ) -> EntitlementItem:
+        """
+        Add an entitlement item to a subscription.
+
+        :param category: Spend category this entitlement tracks (e.g. ``"api_calls"``).
+        :param period_limit: Maximum quantity per renewal period.
+        :param overage_policy: ``BLOCK`` (deny at limit) | ``WARN_ONLY`` (fire webhook but allow).
+        :param renewal_period: ``MONTHLY`` | ``QUARTERLY`` | ``ANNUALLY``.
+        :param warn_at_percentage: Fire ``ENTITLEMENT_STATE_CHANGED`` webhook when this
+            percentage of the limit is consumed. E.g. ``80`` = warn at 80%.
+        """
+        body: Dict[str, Any] = {
+            "category": category,
+            "periodLimit": period_limit,
+            "overagePolicy": overage_policy,
+            "renewalPeriod": renewal_period,
+        }
+        if warn_at_percentage is not None:
+            body["warnAtPercentage"] = warn_at_percentage
+        data = self._request(
+            "POST", f"/api/v1/subscriptions/{subscription_id}/entitlements", json=body
+        )
+        return _parse_entitlement(data)
+
+    def get_entitlement(self, subscription_id: str, entitlement_item_id: str) -> EntitlementItem:
+        """Get a single entitlement item including current consumption and state."""
+        data = self._request(
+            "GET",
+            f"/api/v1/subscriptions/{subscription_id}/entitlements/{entitlement_item_id}",
+        )
+        return _parse_entitlement(data)
+
+    def reset_entitlement(self, subscription_id: str, entitlement_item_id: str) -> EntitlementItem:
+        """
+        Manually reset an entitlement item's consumed counter to zero and advance
+        ``nextRenewalAt``. Use for mid-period corrections or manual billing period control.
+        """
+        data = self._request(
+            "POST",
+            f"/api/v1/subscriptions/{subscription_id}/entitlements/{entitlement_item_id}/reset",
+        )
+        return _parse_entitlement(data)
 
     # -----------------------------------------------------------------------
     # Delegation tokens
@@ -1150,6 +1350,49 @@ def _parse_delegation_token(data: Dict[str, Any]) -> DelegationToken:
         session_token=data.get("sessionToken"),
         revoked_at=data.get("revokedAt"),
         created_at=data.get("createdAt"),
+    )
+
+
+def _parse_api_key(data: Dict[str, Any]) -> ApiKey:
+    return ApiKey(
+        id=data["id"],
+        key_prefix=data["keyPrefix"],
+        active=data["active"],
+        description=data.get("description"),
+        created_at=data.get("createdAt"),
+        last_used_at=data.get("lastUsedAt"),
+        raw_key=data.get("rawKey"),
+    )
+
+
+def _parse_entitlement(data: Dict[str, Any]) -> EntitlementItem:
+    return EntitlementItem(
+        id=data["id"],
+        category=data["category"],
+        period_limit=float(data["periodLimit"]),
+        overage_policy=data["overagePolicy"],
+        renewal_period=data["renewalPeriod"],
+        current_period_consumed=float(data.get("currentPeriodConsumed", 0)),
+        current_period_reserved=float(data.get("currentPeriodReserved", 0)),
+        state=data.get("state", "NORMAL"),
+        warn_at_percentage=data.get("warnAtPercentage"),
+        next_renewal_at=data.get("nextRenewalAt"),
+        created_at=data.get("createdAt"),
+    )
+
+
+def _parse_subscription(data: Dict[str, Any]) -> Subscription:
+    entitlements = [_parse_entitlement(e) for e in data.get("entitlements", [])]
+    return Subscription(
+        id=data["id"],
+        external_subscriber_id=data["externalSubscriberId"],
+        plan=data["plan"],
+        status=data["status"],
+        renewal_period=data["renewalPeriod"],
+        entitlements=entitlements,
+        starts_at=data.get("startsAt"),
+        created_at=data.get("createdAt"),
+        updated_at=data.get("updatedAt"),
     )
 
 

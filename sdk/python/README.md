@@ -166,6 +166,46 @@ budget = client.resume_budget(
 )
 ```
 
+## Delegation tokens (multi-agent fleets)
+
+Delegate a capped slice of a fleet budget to a sub-agent. The sub-agent gets its own `session_token` scoped to specific categories and limits — it cannot exceed its caps even if the parent budget still has funds.
+
+```python
+# Parent agent creates the fleet budget
+fleet_budget = client.create_budget(
+    user_id="user_123",
+    total_limit=2000.00,
+    expires_in="8h",
+    allocations=[
+        {"category": "flights", "limit": 1000.00},
+        {"category": "hotels", "limit": 1000.00},
+    ],
+)
+
+# Issue a scoped token for a sub-agent (e.g. a flight-booking specialist)
+token = client.create_delegation_token(
+    budget_id=fleet_budget.id,
+    label="flight-agent",
+    caps=[{"category": "flights", "limit": 300.00}],
+)
+# Hand token.session_token to the sub-agent
+flight_agent_token = token.session_token
+
+# Sub-agent authorizes against its cap — cannot exceed $300 flights
+result = sub_client.authorize(
+    session_token=flight_agent_token,
+    agent_id="flight-specialist",
+    action_type="PURCHASE",
+    description="NYC flight",
+    requested_quantity=250.00,
+    idempotency_key="flight-nyc-001",
+    claimed_category="flights",
+).raise_if_denied()
+
+# Revoke at any time
+client.revoke_delegation_token(token.id)
+```
+
 ## Error handling
 
 ```python

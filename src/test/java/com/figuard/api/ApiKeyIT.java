@@ -29,7 +29,7 @@ class ApiKeyIT extends IntegrationTestBase {
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.id").isNotEmpty())
             .andExpect(jsonPath("$.rawKey").isNotEmpty())
-            .andExpect(jsonPath("$.rawKey", startsWith("ab_")))
+            .andExpect(jsonPath("$.rawKey", startsWith("fg_live_")))
             .andExpect(jsonPath("$.keyPrefix").isNotEmpty())
             .andExpect(jsonPath("$.description").value("CI pipeline"))
             .andExpect(jsonPath("$.active").value(true))

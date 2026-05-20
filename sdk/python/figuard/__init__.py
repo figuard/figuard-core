@@ -44,13 +44,17 @@ except ImportError:
 from .models import (
     AllocationResponse,
     AllocationSnapshot,
+    ApiKey,
     AuthorizationResult,
     Budget,
+    BudgetFundingResult,
     BudgetSnapshot,
+    EntitlementItem,
     LedgerPage,
     SpendEventResponse,
     SpendTree,
     SpendTreeNode,
+    Subscription,
     VoidResult,
 )
 
@@ -73,6 +77,10 @@ __all__ = [
     "BudgetSnapshot",
     "AllocationSnapshot",
     "AllocationResponse",
+    "BudgetFundingResult",
+    "ApiKey",
+    "EntitlementItem",
+    "Subscription",
     # Multi-resource
     "CompositeGuard",
     "GuardedResource",
