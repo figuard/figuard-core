@@ -25,6 +25,15 @@ public interface DelegatedTokenRepository extends JpaRepository<DelegatedToken, 
 
     List<DelegatedToken> findByParentBudgetIdAndStatus(UUID parentBudgetId, DelegatedTokenStatus status);
 
+    /**
+     * Label idempotency lookup — used at token creation time to detect whether
+     * a label is already in use on this budget. Only ACTIVE tokens are considered;
+     * REVOKED tokens with the same label are ignored so the label can be reused
+     * after revocation.
+     */
+    @Query("SELECT t FROM DelegatedToken t WHERE t.parentBudget.id = :budgetId AND t.label = :label AND t.status = 'ACTIVE'")
+    Optional<DelegatedToken> findActiveByBudgetIdAndLabel(@Param("budgetId") UUID budgetId, @Param("label") String label);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT t FROM DelegatedToken t WHERE t.id = :id")
     Optional<DelegatedToken> findByIdWithLock(@Param("id") UUID id);

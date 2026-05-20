@@ -24,5 +24,9 @@ public enum DenialCode {
     ENTITY_ALREADY_AUTHORIZED,      // entityId already has an AUTHORIZED or CONFIRMED event on this budget (dedup)
     DELEGATE_CAP_EXCEEDED,          // delegation token's per-category cap has no remaining capacity
     DELEGATION_TOKEN_REVOKED,       // the delegation token was explicitly revoked
-    VELOCITY_LIMIT_EXCEEDED         // rolling-window rate limit (per-minute, hourly amount, or per-day) reached
+    VELOCITY_LIMIT_EXCEEDED,        // rolling-window rate limit (per-minute, hourly amount, or per-day) reached
+    ENTITLEMENT_LIMIT_REACHED,      // entitlement item balance exhausted; BLOCK overage policy
+    ENTITLEMENT_NOT_FOUND,          // subscriptionId in session token has no matching entitlement item
+    SUBSCRIPTION_PAUSED,            // subscription is paused — no spend allowed
+    SUBSCRIPTION_CANCELLED          // subscription has been cancelled
 }

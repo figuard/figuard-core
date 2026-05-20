@@ -272,3 +272,82 @@ class DelegationToken:
     @property
     def is_revoked(self) -> bool:
         return self.status == "REVOKED"
+
+
+# ---------------------------------------------------------------------------
+# Fund budget
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class BudgetFundingResult:
+    """Returned by fund_budget(). Shows state before and after the operation."""
+    budget_id: str
+    operation: str  # CREDIT | DEBIT | RESET | RESET_SPENT
+    amount: float
+    previous_total_limit: float
+    total_limit: float
+    quantity_spent: float
+    quantity_reserved: float
+    available_quantity: float
+    status: str
+    reason: Optional[str] = None
+    updated_at: Optional[str] = None
+    trace_id: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# API keys
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ApiKey:
+    """
+    Represents a tenant API key.
+
+    ``raw_key`` is only populated immediately after creation or rotation.
+    Store it securely — it cannot be retrieved again.
+    """
+    id: str
+    key_prefix: str
+    active: bool
+    description: Optional[str] = None
+    created_at: Optional[str] = None
+    last_used_at: Optional[str] = None
+    # fg_live_... — returned ONCE at creation/rotation. None on all subsequent reads.
+    raw_key: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Subscriptions & Entitlements
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class EntitlementItem:
+    id: str
+    category: str
+    period_limit: float
+    overage_policy: str          # BLOCK | WARN_ONLY
+    renewal_period: str          # MONTHLY | QUARTERLY | ANNUALLY
+    current_period_consumed: float
+    current_period_reserved: float
+    state: str                   # NORMAL | APPROACHING | LIMIT_REACHED
+    warn_at_percentage: Optional[float] = None
+    next_renewal_at: Optional[str] = None
+    created_at: Optional[str] = None
+
+    @property
+    def available(self) -> float:
+        return max(0.0, self.period_limit - self.current_period_consumed - self.current_period_reserved)
+
+
+@dataclass(frozen=True)
+class Subscription:
+    id: str
+    external_subscriber_id: str
+    plan: str
+    status: str                  # ACTIVE | PAUSED | CANCELLED
+    renewal_period: str
+    entitlements: List[EntitlementItem]
+    starts_at: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
