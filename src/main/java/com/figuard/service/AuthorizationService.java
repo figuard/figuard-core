@@ -18,9 +18,12 @@ import com.figuard.domain.entity.BudgetAnomalyBaseline;
 import com.figuard.domain.repository.AgentBudgetRepository;
 import com.figuard.domain.repository.BudgetAllocationRepository;
 import com.figuard.domain.repository.BudgetAnomalyBaselineRepository;
+import com.figuard.domain.entity.EntitlementItem;
 import com.figuard.domain.repository.DelegatedTokenAllocationRepository;
 import com.figuard.domain.repository.DelegatedTokenRepository;
+import com.figuard.domain.repository.EntitlementItemRepository;
 import com.figuard.domain.repository.SpendEventRepository;
+import com.figuard.domain.repository.SubscriptionRepository;
 import com.figuard.security.TraceIdFilter;
 import com.figuard.service.model.MatchResult;
 import io.micrometer.core.instrument.Counter;
@@ -59,6 +62,8 @@ public class AuthorizationService {
     private final BudgetAnomalyBaselineRepository anomalyBaselineRepository;
     private final DelegatedTokenRepository delegatedTokenRepository;
     private final DelegatedTokenAllocationRepository delegatedTokenAllocationRepository;
+    private final EntitlementEnforcementService entitlementEnforcementService;
+    private final SubscriptionRepository subscriptionRepository;
     private final MeterRegistry meterRegistry;
 
     @Value("${agent-billing.authorization.confirmation-timeout-seconds:300}")
@@ -110,6 +115,28 @@ public class AuthorizationService {
             budget = budgetRepository.findByIdWithLock(delegatedToken.getParentBudget().getId())
                 .orElseThrow(() -> new ResponseStatusException(
                     HttpStatus.INTERNAL_SERVER_ERROR, "Parent budget missing for delegation token"));
+        }
+
+        // Step 1b — Lock entitlement item (entitlement-backed budgets only).
+        // Lock acquired immediately after budget lock to maintain consistent ordering:
+        //   budget → entitlement item → delegate cap → fleet allocation.
+        // Null for standalone budgets (unknown-user path — existing behavior unchanged).
+        EntitlementItem entitlementItem = null;
+        if (budget.getEntitlementItemId() != null) {
+            entitlementItem = entitlementEnforcementService.loadWithLock(budget.getEntitlementItemId());
+
+            // Subscription-level status gate — check subscription is active before going further
+            if (budget.getSubscriptionId() != null) {
+                subscriptionRepository.findById(budget.getSubscriptionId()).ifPresent(sub -> {
+                    switch (sub.getStatus()) {
+                        case PAUSED    -> throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED,
+                                DenialCode.SUBSCRIPTION_PAUSED.name());
+                        case CANCELLED -> throw new ResponseStatusException(HttpStatus.PAYMENT_REQUIRED,
+                                DenialCode.SUBSCRIPTION_CANCELLED.name());
+                        default -> { /* ACTIVE — continue */ }
+                    }
+                });
+            }
         }
 
         // Step 2 — Idempotency check (skipped for dry-run — nothing was ever written)
@@ -189,6 +216,20 @@ public class AuthorizationService {
                 delegatedToken);
         }
 
+        // Step 5c — Entitlement balance check (entitlement-backed budgets only).
+        // Runs after expiry/status checks and before velocity/category/funds checks.
+        // WARN_ONLY policy: limit reached but spend continues; no denial returned.
+        // BLOCK policy: returns denial immediately.
+        if (entitlementItem != null) {
+            EntitlementEnforcementService.CheckResult entitlementResult =
+                    entitlementEnforcementService.check(entitlementItem, request.getRequestedQuantity());
+            if (entitlementResult.isDenied()) {
+                EntitlementEnforcementService.CheckResult.Denied denied =
+                        (EntitlementEnforcementService.CheckResult.Denied) entitlementResult;
+                return deny(budget, null, request, null, denied.code(), denied.message(), delegatedToken);
+            }
+        }
+
         // Step 5b — Velocity controls (rolling-window rate limits)
         // Checked after expiry/grace and before category/currency matching.
         // All authorize attempts count toward the window regardless of outcome.
@@ -254,9 +295,10 @@ public class AuthorizationService {
         // Step 11 — Category matching and funds check
         if (!allocations.isEmpty()) {
             return authorizeWithAllocations(budget, allocations, request, parentEvent,
-                effectiveReserved, delegatedToken);
+                effectiveReserved, delegatedToken, entitlementItem);
         } else {
-            return authorizeFlat(budget, request, parentEvent, effectiveReserved, delegatedToken);
+            return authorizeFlat(budget, request, parentEvent, effectiveReserved, delegatedToken,
+                entitlementItem);
         }
     }
 
@@ -283,7 +325,8 @@ public class AuthorizationService {
                                                             AuthorizeSpendRequest request,
                                                             SpendEvent parentEvent,
                                                             BigDecimal effectiveReserved,
-                                                            DelegatedToken delegatedToken) {
+                                                            DelegatedToken delegatedToken,
+                                                            EntitlementItem entitlementItem) {
         MatchResult matchResult = categoryMatchingService.findMatch(
             allocations, request.getClaimedCategory(), request.getClaimedItemType());
 
@@ -375,7 +418,7 @@ public class AuthorizationService {
                 }
 
                 yield approve(budget, lockedAllocation, request, parentEvent, delegatedToken,
-                    lockedDelegateCap);
+                    lockedDelegateCap, entitlementItem);
             }
         };
     }
@@ -386,7 +429,8 @@ public class AuthorizationService {
 
     private AuthorizationResponse authorizeFlat(AgentBudget budget, AuthorizeSpendRequest request,
                                                  SpendEvent parentEvent, BigDecimal effectiveReserved,
-                                                 DelegatedToken delegatedToken) {
+                                                 DelegatedToken delegatedToken,
+                                                 EntitlementItem entitlementItem) {
         // Intent scope check — only on flat budgets. Allocated budgets enforce intent via
         // claimedCategory; this check would be redundant and is intentionally skipped there.
         if (!intentScopeValidator.isInScope(budget.getIntentTags(), request.getIntentContext())) {
@@ -425,7 +469,8 @@ public class AuthorizationService {
                 "Budget has " + budget.availableQuantityWith(effectiveReserved) + " available, requested " +
                 request.getRequestedQuantity(), delegatedToken);
         }
-        return approve(budget, null, request, parentEvent, delegatedToken, lockedDelegateCap);
+        return approve(budget, null, request, parentEvent, delegatedToken, lockedDelegateCap,
+            entitlementItem);
     }
 
     // -------------------------------------------------------------------------
@@ -437,7 +482,8 @@ public class AuthorizationService {
                                           AuthorizeSpendRequest request,
                                           SpendEvent parentEvent,
                                           DelegatedToken delegatedToken,
-                                          DelegatedTokenAllocation delegateCap) {
+                                          DelegatedTokenAllocation delegateCap,
+                                          EntitlementItem entitlementItem) {
         OffsetDateTime now = OffsetDateTime.now();
         SpendEvent event = buildEvent(budget, allocation, request, parentEvent, SpendDecision.AUTHORIZED,
             null, null, null, delegatedToken);
@@ -479,12 +525,19 @@ public class AuthorizationService {
 
         SpendEvent saved = spendEventRepository.save(event);
 
-        log.info("AUTHORIZED: budgetId={} alloc={} quantity={} key={} delegated={}",
+        // Consume from entitlement item (entitlement-backed budgets only).
+        // Must happen after SpendEvent is saved so the event ID is available for linking.
+        if (entitlementItem != null) {
+            entitlementEnforcementService.consume(entitlementItem, request.getRequestedQuantity(), saved);
+        }
+
+        log.info("AUTHORIZED: budgetId={} alloc={} quantity={} key={} delegated={} entitlement={}",
             budget.getId(),
             allocation != null ? allocation.getCategory() : "flat",
             request.getRequestedQuantity(),
             request.getIdempotencyKey(),
-            delegatedToken != null ? delegatedToken.getId() : "false");
+            delegatedToken != null ? delegatedToken.getId() : "false",
+            entitlementItem != null ? entitlementItem.getId() : "none");
 
         // Dispatch threshold webhooks asynchronously — must not block the authorize response
         dispatchThresholdWebhooks(budget, prevAvailable);

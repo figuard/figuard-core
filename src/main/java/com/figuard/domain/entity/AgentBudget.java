@@ -42,6 +42,17 @@ public class AgentBudget {
 
     private String externalReference;
 
+    /**
+     * Set when this budget is entitlement-backed (known-user path).
+     * Null = standalone budget (anonymous/unknown-user path — existing behavior).
+     * When set, enforcement happens at the EntitlementItem level, not at totalLimit.
+     */
+    @Column
+    private UUID subscriptionId;
+
+    @Column
+    private UUID entitlementItemId;
+
     @Column(nullable = false, length = 1000)
     private String intentContext;
 
