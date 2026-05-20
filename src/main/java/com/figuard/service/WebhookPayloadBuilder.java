@@ -3,7 +3,9 @@ package com.figuard.service;
 import com.figuard.domain.entity.AgentBudget;
 import com.figuard.domain.entity.BudgetAllocation;
 import com.figuard.domain.entity.DelegatedToken;
+import com.figuard.domain.entity.EntitlementItem;
 import com.figuard.domain.entity.SpendEvent;
+import com.figuard.domain.enums.EntitlementState;
 import com.figuard.domain.enums.WebhookEventType;
 import org.springframework.stereotype.Component;
 
@@ -206,6 +208,50 @@ public class WebhookPayloadBuilder {
         payload.put("label",          token.getLabel());
         payload.put("revokedAt",      token.getRevokedAt() != null ? token.getRevokedAt().toString() : null);
         payload.put("timestamp",      OffsetDateTime.now().toString());
+        return payload;
+    }
+
+    // -------------------------------------------------------------------------
+
+    // -------------------------------------------------------------------------
+    // Entitlement payloads
+    // -------------------------------------------------------------------------
+
+    public Map<String, Object> buildEntitlementStateChangedPayload(
+            EntitlementItem item, EntitlementState from, EntitlementState to) {
+        Map<String, Object> payload = baseEntitlementPayload(
+                to == EntitlementState.LIMIT_REACHED
+                        ? WebhookEventType.ENTITLEMENT_LIMIT_REACHED
+                        : WebhookEventType.ENTITLEMENT_STATE_CHANGED,
+                item);
+        payload.put("fromState",          from.name());
+        payload.put("toState",            to.name());
+        payload.put("consumedPercentage", item.consumedPercentage());
+        return payload;
+    }
+
+    public Map<String, Object> buildEntitlementRenewedPayload(EntitlementItem item,
+                                                               java.math.BigDecimal periodConsumed) {
+        Map<String, Object> payload = baseEntitlementPayload(WebhookEventType.ENTITLEMENT_RENEWED, item);
+        payload.put("previousPeriodConsumed", periodConsumed);
+        payload.put("newPeriodLimit",         item.getLimitQuantity());
+        payload.put("nextRenewalAt",          item.getNextRenewalAt().toString());
+        return payload;
+    }
+
+    private Map<String, Object> baseEntitlementPayload(WebhookEventType eventType, EntitlementItem item) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("eventType",             eventType.name());
+        payload.put("entitlementItemId",     item.getId());
+        payload.put("subscriptionId",        item.getSubscription().getId());
+        payload.put("tenantId",              item.getSubscription().getTenant().getId());
+        payload.put("entitlementName",       item.getName());
+        payload.put("limitUnit",             item.getLimitUnit());
+        payload.put("limitQuantity",         item.getLimitQuantity());
+        payload.put("currentPeriodConsumed", item.getCurrentPeriodConsumed());
+        payload.put("remaining",             item.remaining());
+        payload.put("state",                 item.getState().name());
+        payload.put("timestamp",             OffsetDateTime.now().toString());
         return payload;
     }
 
