@@ -44,6 +44,7 @@ public class PaymentLifecycleService {
     private final WebhookPayloadBuilder webhookPayloadBuilder;
     private final BudgetMapper budgetMapper;
     private final AnomalyBaselineService anomalyBaselineService;
+    private final EntitlementEnforcementService entitlementEnforcementService;
     private final MeterRegistry meterRegistry;
 
     // -------------------------------------------------------------------------
@@ -97,6 +98,11 @@ public class PaymentLifecycleService {
         event.setConfirmedQuantity(confirmed);
         event.setExternalTransactionId(request.getExternalTransactionId());
         eventRepository.save(event);
+
+        // Adjust entitlement consumed if partial confirmation (confirmed < reserved)
+        if (event.getEntitlementItemId() != null) {
+            entitlementEnforcementService.adjust(event.getEntitlementItemId(), reserved, confirmed);
+        }
 
         log.info("Event CONFIRMED: id={} budgetId={} confirmed={}",
             event.getId(), budget.getId(), confirmed);
@@ -157,6 +163,11 @@ public class PaymentLifecycleService {
         event.setDecision(SpendDecision.FAILED);
         event.setFailureReason(request.getReason());
         eventRepository.save(event);
+
+        // Release entitlement reservation on failure
+        if (event.getEntitlementItemId() != null) {
+            entitlementEnforcementService.release(event.getEntitlementItemId(), reserved);
+        }
 
         log.info("Event FAILED: id={} budgetId={} reason={}", event.getId(), budget.getId(), request.getReason());
 
@@ -244,6 +255,11 @@ public class PaymentLifecycleService {
         event.setFailureReason(request.getReason());
         eventRepository.save(event);
 
+        // Release entitlement reservation on void
+        if (event.getEntitlementItemId() != null) {
+            entitlementEnforcementService.release(event.getEntitlementItemId(), reserved);
+        }
+
         log.info("Event VOIDED: id={} budgetId={} descendants={} reason={}",
             event.getId(), budget.getId(),
             request.isVoidChildEvents() ? authorizedDescendants.size() : 0,
@@ -305,6 +321,11 @@ public class PaymentLifecycleService {
         event.setDecision(SpendDecision.VOIDED);
         event.setFailureReason(reason);
         eventRepository.save(event);
+
+        // Release entitlement reservation for this descendant
+        if (event.getEntitlementItemId() != null) {
+            entitlementEnforcementService.release(event.getEntitlementItemId(), event.getRequestedQuantity());
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -343,6 +364,11 @@ public class PaymentLifecycleService {
             event.setDecision(SpendDecision.VOIDED);
             event.setFailureReason("CONFIRMATION_TIMEOUT");
             eventRepository.save(event);
+
+            // Release entitlement reservation on auto-void
+            if (event.getEntitlementItemId() != null) {
+                entitlementEnforcementService.release(event.getEntitlementItemId(), reserved);
+            }
 
             log.info("Event auto-voided (timeout): id={} budgetId={} timeoutAt={}",
                 event.getId(), budget.getId(), event.getConfirmationTimeoutAt());
