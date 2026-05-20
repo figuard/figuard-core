@@ -18,5 +18,12 @@ public enum WebhookEventType {
     WEBHOOK_TEST,                // synthetic event fired by POST /webhooks/{id}/test
     DELEGATION_TOKEN_REVOKED,    // a delegation token was explicitly revoked via DELETE /delegation-tokens/{id}
     VELOCITY_LIMIT_EXCEEDED,     // a rolling-window rate limit was hit (first violation per window)
-    RENEWAL_TOKEN_DELIVERY_FAILED // entitlement.renewed webhook failed 3+ sweep retries — operator must call rotate-tokens
+    RENEWAL_TOKEN_DELIVERY_FAILED,  // entitlement.renewed webhook failed 3+ sweep retries — operator must call rotate-tokens
+
+    // Entitlement / subscription events
+    ENTITLEMENT_STATE_CHANGED,      // NORMAL → APPROACHING or APPROACHING → LIMIT_REACHED
+    ENTITLEMENT_LIMIT_REACHED,      // hard limit hit; BLOCK policy will deny further spend
+    ENTITLEMENT_RENEWED,            // balance reset at renewal; new period started
+    ENTITLEMENT_PAUSED,             // entitlement item manually paused by operator
+    ENTITLEMENT_RESUMED             // paused entitlement item manually resumed
 }
