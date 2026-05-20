@@ -31,18 +31,26 @@
 import { FiGuardApiError, FiGuardConnectionError } from "./errors";
 import {
   AllocationResponse,
+  ApiKey,
   AuthorizationResult,
   Budget,
+  BudgetFundingResult,
   DelegationToken,
+  EntitlementItem,
   LedgerPage,
   SpendEventResponse,
   SpendTree,
+  Subscription,
   VoidResult,
-  makeBudget,
+  makeApiKey,
   makeAuthorizationResult,
+  makeBudget,
+  makeBudgetFundingResult,
   makeDelegationToken,
+  makeEntitlementItem,
   makeSpendEvent,
   makeSpendTreeNode,
+  makeSubscription,
 } from "./models";
 
 const MAX_RETRIES = 3;
@@ -294,6 +302,170 @@ export class FiGuardClient {
   }
 
   // -------------------------------------------------------------------------
+  // Fund budget
+  // -------------------------------------------------------------------------
+
+  /**
+   * Adjust a budget's totalLimit in-place.
+   *
+   * @param operation
+   *   - `CREDIT`      — add amount to totalLimit.
+   *   - `DEBIT`       — subtract amount from totalLimit (rejected if result < quantitySpent).
+   *   - `RESET`       — set totalLimit to exactly amount.
+   *   - `RESET_SPENT` — zero quantitySpent and set totalLimit to amount; reactivates EXHAUSTED budgets.
+   */
+  async fundBudget(options: {
+    budgetId: string;
+    operation: "CREDIT" | "DEBIT" | "RESET" | "RESET_SPENT";
+    amount: number;
+    reason?: string;
+  }): Promise<BudgetFundingResult> {
+    const { budgetId, ...body } = options;
+    const data = await this.request("POST", `/api/v1/budgets/${budgetId}/fund`, { body });
+    return makeBudgetFundingResult(data as Record<string, unknown>);
+  }
+
+  // API keys
+  // -------------------------------------------------------------------------
+
+  /** List all API keys for this tenant. rawKey is never returned here. */
+  async listApiKeys(): Promise<ApiKey[]> {
+    const data = await this.request("GET", "/api/v1/api-keys");
+    return (data as unknown as Record<string, unknown>[]).map(makeApiKey);
+  }
+
+  /**
+   * Create a new API key. `rawKey` is populated once in the returned object — store it.
+   * All subsequent reads return `undefined`.
+   */
+  async createApiKey(options: { description?: string } = {}): Promise<ApiKey> {
+    const data = await this.request("POST", "/api/v1/api-keys", { body: options });
+    return makeApiKey(data as Record<string, unknown>);
+  }
+
+  /** Revoke an API key. Idempotent. Row retained for audit. */
+  async revokeApiKey(keyId: string): Promise<ApiKey> {
+    const data = await this.request("POST", `/api/v1/api-keys/${keyId}/revoke`);
+    return makeApiKey(data as Record<string, unknown>);
+  }
+
+  /**
+   * Revoke the current key and issue a replacement atomically.
+   * The new `rawKey` is returned once in the response.
+   */
+  async rotateApiKey(keyId: string): Promise<ApiKey> {
+    const data = await this.request("POST", `/api/v1/api-keys/${keyId}/rotate`);
+    return makeApiKey(data as Record<string, unknown>);
+  }
+
+  // Subscriptions & Entitlements
+  // -------------------------------------------------------------------------
+
+  /** List all subscriptions for this tenant. */
+  async listSubscriptions(): Promise<Subscription[]> {
+    const data = await this.request("GET", "/api/v1/subscriptions");
+    return (data as unknown as Record<string, unknown>[]).map(makeSubscription);
+  }
+
+  /** Create a subscription. */
+  async createSubscription(options: {
+    externalSubscriberId: string;
+    plan: string;
+    /** MONTHLY | QUARTERLY | ANNUALLY */
+    renewalPeriod: string;
+    startsAt?: string;
+  }): Promise<Subscription> {
+    const data = await this.request("POST", "/api/v1/subscriptions", { body: options });
+    return makeSubscription(data as Record<string, unknown>);
+  }
+
+  /** Get a subscription by its FiGuard ID. */
+  async getSubscription(subscriptionId: string): Promise<Subscription> {
+    const data = await this.request("GET", `/api/v1/subscriptions/${subscriptionId}`);
+    return makeSubscription(data as Record<string, unknown>);
+  }
+
+  /** Look up a subscription by your own subscriber ID. */
+  async getSubscriptionBySubscriber(externalSubscriberId: string): Promise<Subscription> {
+    const data = await this.request(
+      "GET",
+      `/api/v1/subscriptions/by-subscriber/${externalSubscriberId}`,
+    );
+    return makeSubscription(data as Record<string, unknown>);
+  }
+
+  /**
+   * Pause a subscription. All linked budgets will receive HTTP 402
+   * (`SUBSCRIPTION_PAUSED`) on the next authorize call.
+   */
+  async pauseSubscription(subscriptionId: string): Promise<Subscription> {
+    const data = await this.request("POST", `/api/v1/subscriptions/${subscriptionId}/pause`);
+    return makeSubscription(data as Record<string, unknown>);
+  }
+
+  /** Resume a paused subscription. */
+  async resumeSubscription(subscriptionId: string): Promise<Subscription> {
+    const data = await this.request("POST", `/api/v1/subscriptions/${subscriptionId}/resume`);
+    return makeSubscription(data as Record<string, unknown>);
+  }
+
+  /** Cancel a subscription. */
+  async cancelSubscription(subscriptionId: string): Promise<Subscription> {
+    const data = await this.request("POST", `/api/v1/subscriptions/${subscriptionId}/cancel`);
+    return makeSubscription(data as Record<string, unknown>);
+  }
+
+  /** List all entitlement items for a subscription. */
+  async listEntitlements(subscriptionId: string): Promise<EntitlementItem[]> {
+    const data = await this.request(
+      "GET",
+      `/api/v1/subscriptions/${subscriptionId}/entitlements`,
+    );
+    return (data as unknown as Record<string, unknown>[]).map(makeEntitlementItem);
+  }
+
+  /** Add an entitlement item to a subscription. */
+  async addEntitlement(options: {
+    subscriptionId: string;
+    category: string;
+    periodLimit: number;
+    /** BLOCK (deny at limit) | WARN_ONLY (fire webhook but allow). Default: BLOCK. */
+    overagePolicy?: "BLOCK" | "WARN_ONLY";
+    /** MONTHLY | QUARTERLY | ANNUALLY. Default: MONTHLY. */
+    renewalPeriod?: string;
+    /** Fire ENTITLEMENT_STATE_CHANGED webhook at this % consumed. E.g. 80. */
+    warnAtPercentage?: number;
+  }): Promise<EntitlementItem> {
+    const { subscriptionId, ...body } = options;
+    const data = await this.request(
+      "POST",
+      `/api/v1/subscriptions/${subscriptionId}/entitlements`,
+      { body },
+    );
+    return makeEntitlementItem(data as Record<string, unknown>);
+  }
+
+  /** Get a single entitlement item including current consumption and state. */
+  async getEntitlement(subscriptionId: string, entitlementItemId: string): Promise<EntitlementItem> {
+    const data = await this.request(
+      "GET",
+      `/api/v1/subscriptions/${subscriptionId}/entitlements/${entitlementItemId}`,
+    );
+    return makeEntitlementItem(data as Record<string, unknown>);
+  }
+
+  /**
+   * Manually reset an entitlement item's consumed counter to zero and advance nextRenewalAt.
+   * Use for mid-period corrections or manual billing period control.
+   */
+  async resetEntitlement(subscriptionId: string, entitlementItemId: string): Promise<EntitlementItem> {
+    const data = await this.request(
+      "POST",
+      `/api/v1/subscriptions/${subscriptionId}/entitlements/${entitlementItemId}/reset`,
+    );
+    return makeEntitlementItem(data as Record<string, unknown>);
+  }
+
   // Delegation tokens
   // -------------------------------------------------------------------------
 

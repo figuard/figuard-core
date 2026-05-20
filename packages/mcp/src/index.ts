@@ -32,6 +32,7 @@ import {
   handleResumeBudget,
   handleExtendBudget,
   handleCancelBatch,
+  handleFundBudget,
   handleCreateDelegationToken,
   handleRevokeDelegationToken,
   handleGetDelegationToken,
@@ -114,6 +115,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         break;
       case "figuard_cancel_batch":
         result = await handleCancelBatch(client, args as Record<string, unknown>);
+        break;
+      case "figuard_fund_budget":
+        result = await handleFundBudget(client, args as Record<string, unknown>);
         break;
       case "figuard_create_delegation_token":
         result = await handleCreateDelegationToken(client, args as Record<string, unknown>);

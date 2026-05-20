@@ -25,7 +25,7 @@ public class ApiKeyService {
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int KEY_BYTES = 24;   // 192 bits → 32-char Base64url without padding
-    private static final String KEY_PREFIX_LABEL = "ab_";
+    private static final String KEY_PREFIX_LABEL = "fg_live_";
 
     private final ApiKeyRepository apiKeyRepository;
 

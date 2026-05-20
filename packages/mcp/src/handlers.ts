@@ -333,3 +333,25 @@ export async function handleCancelBatch(client: FiGuardClient, args: Args): Prom
     message: `${budgets.length} budget(s) processed. Already-terminal budgets are included without error.`,
   };
 }
+
+export async function handleFundBudget(client: FiGuardClient, args: Args): Promise<unknown> {
+  const result = await client.fundBudget({
+    budgetId: str(args, "budget_id"),
+    operation: str(args, "operation") as "CREDIT" | "DEBIT" | "RESET" | "RESET_SPENT",
+    amount: num(args, "amount"),
+    reason: optStr(args, "reason"),
+  });
+
+  return {
+    budget_id: result.budgetId,
+    operation: result.operation,
+    amount: result.amount,
+    previous_total_limit: result.previousTotalLimit,
+    total_limit: result.totalLimit,
+    quantity_spent: result.quantitySpent,
+    available_quantity: result.availableQuantity,
+    status: result.status,
+    reason: result.reason,
+    message: `Budget ${result.operation} applied. New totalLimit: ${result.totalLimit}, available: ${result.availableQuantity}.`,
+  };
+}

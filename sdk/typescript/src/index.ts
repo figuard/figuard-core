@@ -61,13 +61,17 @@ export {
 export type {
   AllocationResponse,
   AllocationSnapshot,
+  ApiKey,
   AuthorizationResult,
   Budget,
+  BudgetFundingResult,
   BudgetSnapshot,
+  EntitlementItem,
   LedgerPage,
   SpendEventResponse,
   SpendTree,
   SpendTreeNode,
+  Subscription,
   VoidResult,
 } from "./models";
 
