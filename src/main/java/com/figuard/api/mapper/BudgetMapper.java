@@ -173,6 +173,9 @@ public class BudgetMapper {
         budget.setVelocityMaxPerDay(request.getVelocityMaxPerDay());
         budget.setExpiresAt(request.getExpiresAt());
         budget.setMetadata(request.getMetadata());
+        if (request.getEntitlementItemId() != null) {
+            budget.setEntitlementItemId(request.getEntitlementItemId());
+        }
         return budget;
     }
 

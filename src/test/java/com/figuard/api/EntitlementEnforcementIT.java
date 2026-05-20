@@ -125,7 +125,7 @@ class EntitlementEnforcementIT extends IntegrationTestBase {
         JsonNode auth = objectMapper.readTree(authResp);
 
         assertThat(auth.get("decision").asText()).isEqualTo("DENIED");
-        assertThat(auth.get("denialCode").asText()).isEqualTo("ENTITLEMENT_LIMIT_REACHED");
+        assertThat(auth.get("denialReason").asText()).isEqualTo("ENTITLEMENT_LIMIT_REACHED");
     }
 
     @Test
@@ -146,7 +146,7 @@ class EntitlementEnforcementIT extends IntegrationTestBase {
         JsonNode auth = objectMapper.readTree(authResp);
 
         assertThat(auth.get("decision").asText()).isEqualTo("DENIED");
-        assertThat(auth.get("denialCode").asText()).isEqualTo("ENTITLEMENT_LIMIT_REACHED");
+        assertThat(auth.get("denialReason").asText()).isEqualTo("ENTITLEMENT_LIMIT_REACHED");
     }
 
     @Test
@@ -220,11 +220,19 @@ class EntitlementEnforcementIT extends IntegrationTestBase {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("PAUSED"));
 
-        // Authorization should be denied while paused
-        String authResp = authorize(sessionToken, 100, UUID.randomUUID().toString());
-        JsonNode auth = objectMapper.readTree(authResp);
-        assertThat(auth.get("decision").asText()).isEqualTo("DENIED");
-        assertThat(auth.get("denialCode").asText()).isEqualTo("SUBSCRIPTION_PAUSED");
+        // Authorization should be blocked while paused — returns 402 PAYMENT_REQUIRED
+        mockMvc.perform(post("/api/v1/authorize")
+                .header("X-Session-Token", sessionToken)
+                .header("X-Agent-Budget-Key", TEST_API_KEY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                    "agentId", "agent_pause_test",
+                    "actionType", "API_CALL",
+                    "description", "test api call",
+                    "requestedQuantity", 100,
+                    "idempotencyKey", UUID.randomUUID().toString()))))
+            .andExpect(status().isPaymentRequired())
+            .andExpect(jsonPath("$.error").value("SUBSCRIPTION_PAUSED"));
     }
 
 }
