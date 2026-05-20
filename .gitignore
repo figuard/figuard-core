@@ -37,6 +37,7 @@ build/
 ### Planning docs (never push) ###
 figuard-dayplan.md
 agent-billing-sdk-spec.md
+PRERELEASE_CHECKLIST.md
 
 ### Competitive/positioning docs (not ready to publish) ###
 docs/figuard-vs-stripe-agent-toolkit.md
