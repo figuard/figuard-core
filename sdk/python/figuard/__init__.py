@@ -56,7 +56,9 @@ from .models import (
     SpendTreeNode,
     Subscription,
     VoidResult,
+    VoidTreeResult,
 )
+from .context import figuard_scope, figuard_run_in_executor, get_current_event_id
 
 __all__ = [
     "__version__",
@@ -71,6 +73,7 @@ __all__ = [
     "AuthorizationResult",
     "SpendEventResponse",
     "VoidResult",
+    "VoidTreeResult",
     "LedgerPage",
     "SpendTree",
     "SpendTreeNode",
@@ -81,6 +84,10 @@ __all__ = [
     "ApiKey",
     "EntitlementItem",
     "Subscription",
+    # Context propagation
+    "figuard_scope",
+    "figuard_run_in_executor",
+    "get_current_event_id",
     # Multi-resource
     "CompositeGuard",
     "GuardedResource",

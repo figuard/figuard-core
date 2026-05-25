@@ -109,6 +109,35 @@ public class SpendEvent {
     @Column(length = 255)
     private String traceId;
 
+    // -------------------------------------------------------------------------
+    // Causal chain tracking — per-chain spend cap
+    // -------------------------------------------------------------------------
+
+    /**
+     * Denormalized pointer to the root of this causal chain.
+     *
+     * Root events (parentEvent == null): chainRootEventId = this.id (self-referential)
+     * Child events:                       chainRootEventId = parentEvent.chainRootEventId
+     *
+     * Null only for events created before migration V23 (legacy events with no chain root).
+     * The subtree cap check skips events where chainRootEventId is null, so legacy
+     * chains are unaffected.
+     */
+    @Column(name = "chain_root_event_id")
+    private UUID chainRootEventId;
+
+    /**
+     * Optional per-chain spend cap, set by the caller on root authorize() calls.
+     *
+     * When set, all AUTHORIZED + CONFIRMED events sharing the same chainRootEventId
+     * are summed before each authorization. If the projected total would exceed this
+     * value, the request is denied with SUBTREE_CAP_EXCEEDED.
+     *
+     * Only meaningful on root events (chainRootEventId == id). Always null on child events.
+     */
+    @Column(precision = 19, scale = 4)
+    private BigDecimal maxSubtreeQuantity;
+
     /**
      * Set when this event was authorized via a DelegatedToken rather than a direct budget token.
      * Used by the lifecycle service (confirm/fail/void) to update the per-token category cap counters.
@@ -142,5 +171,7 @@ public class SpendEvent {
 
     public boolean canBeConfirmed() { return decision == SpendDecision.AUTHORIZED; }
     public boolean canBeFailed()    { return decision == SpendDecision.AUTHORIZED; }
-    public boolean canBeVoided()    { return decision == SpendDecision.AUTHORIZED; }
+    // AUTHORIZED: normal reservation rollback
+    // CONFIRMED: downstream system rollback (payment processor reversal, etc.)
+    public boolean canBeVoided()    { return decision == SpendDecision.AUTHORIZED || decision == SpendDecision.CONFIRMED; }
 }

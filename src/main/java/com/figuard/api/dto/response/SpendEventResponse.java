@@ -38,6 +38,7 @@ public class SpendEventResponse {
     private DenialCode denialReason;
     private String failureReason;
     private UUID parentEventId;
+    private UUID chainRootEventId;
     private String traceId;
     private OffsetDateTime createdAt;
     private Map<String, Object> metadata;

@@ -40,7 +40,16 @@ from typing import Any, Dict, List, Optional, Union
 import requests
 from requests import Response
 
+from .context import _set_current_event_id, get_current_event_id
 from .exceptions import FiGuardApiError, FiGuardConnectionError
+from .telemetry import (
+    authorize_span,
+    finish_authorize_span,
+    lifecycle_span,
+    void_tree_span,
+    finish_void_tree_span,
+    get_current_trace_id,
+)
 from .models import (
     AllocationResponse,
     AllocationSnapshot,
@@ -59,6 +68,7 @@ from .models import (
     SpendTreeNode,
     Subscription,
     VoidResult,
+    VoidTreeResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -788,6 +798,7 @@ class FiGuardClient:
         agent_type: Optional[str] = None,
         trace_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        max_subtree_quantity: Optional[float] = None,
         dry_run: bool = False,
         **kwargs: Any,
     ) -> AuthorizationResult:
@@ -812,6 +823,18 @@ class FiGuardClient:
         if not idempotency_key or not idempotency_key.strip():
             idempotency_key = str(uuid.uuid4())
 
+        # Instrumentation precedence (highest → lowest):
+        #   1. Explicit parent_event_id kwarg — caller declared it
+        #   2. Ambient ContextVar — set by a prior authorize() in this execution context
+        # Framework callback inference (LangChain run_id mapping) sits between these two
+        # and is handled in the integration layer before this call.
+        effective_parent_id = parent_event_id or get_current_event_id()
+
+        # Forward the active OTEL trace ID to the server so ledger entries can be
+        # correlated to the originating distributed trace. Caller-supplied trace_id
+        # takes precedence; OTEL is used only as a fallback.
+        effective_trace_id = trace_id or get_current_trace_id()
+
         body: Dict[str, Any] = {
             "agentId": agent_id,
             "actionType": action_type,
@@ -831,28 +854,45 @@ class FiGuardClient:
             body["claimedCategory"] = claimed_category
         if claimed_item_type is not None:
             body["claimedItemType"] = claimed_item_type
-        if parent_event_id is not None:
-            body["parentEventId"] = parent_event_id
-        if trace_id is not None:
-            body["traceId"] = trace_id
+        if effective_parent_id is not None:
+            body["parentEventId"] = effective_parent_id
+        if effective_trace_id is not None:
+            body["traceId"] = effective_trace_id
         if metadata is not None:
             body["metadata"] = metadata
+        if max_subtree_quantity is not None:
+            body["maxSubtreeQuantity"] = max_subtree_quantity
         if dry_run:
             body["dryRun"] = True
 
         # Log only the prefix — the raw token must never appear in logs
         token_prefix = session_token[:8] if len(session_token) >= 8 else "???"
         logger.debug(
-            "authorize: agentId=%s quantity=%s key=%s token_prefix=%s",
+            "authorize: agentId=%s quantity=%s key=%s token_prefix=%s parent=%s",
             agent_id, requested_quantity, idempotency_key, token_prefix,
+            effective_parent_id,
         )
 
         headers = {"X-Session-Token": session_token}
-        # authorize is retryable because idempotency_key guarantees idempotency
-        data = self._request(
-            "POST", "/api/v1/authorize", json=body, headers=headers, retryable=True
-        )
-        return _parse_authorization_result(data)
+        with authorize_span(
+            agent_id, action_type, requested_quantity,
+            claimed_category, effective_parent_id, dry_run,
+        ) as span:
+            # authorize is retryable because idempotency_key guarantees idempotency
+            data = self._request(
+                "POST", "/api/v1/authorize", json=body, headers=headers, retryable=True
+            )
+            result = _parse_authorization_result(data)
+            finish_authorize_span(span, result)
+
+        # Propagate event_id into ambient context so nested authorize() calls
+        # automatically receive this as their parent_event_id without any
+        # parameter threading. Only set on AUTHORIZED — denied events don't
+        # become parents.
+        if result.is_authorized and not dry_run:
+            _set_current_event_id(result.event_id)
+
+        return result
 
     # -----------------------------------------------------------------------
     # Payment lifecycle
@@ -875,9 +915,11 @@ class FiGuardClient:
         if external_transaction_id is not None:
             body["externalTransactionId"] = external_transaction_id
 
-        data = self._request(
-            "POST", f"/api/v1/events/{event_id}/confirm", json=body, retryable=True
-        )
+        with lifecycle_span("figuard.confirm", event_id) as span:
+            span.set_attribute("figuard.confirmed_quantity", float(confirmed_quantity))
+            data = self._request(
+                "POST", f"/api/v1/events/{event_id}/confirm", json=body, retryable=True
+            )
         return _parse_spend_event(data)
 
     def fail_event(
@@ -895,9 +937,11 @@ class FiGuardClient:
         if error_message is not None:
             body["errorMessage"] = error_message
 
-        data = self._request(
-            "POST", f"/api/v1/events/{event_id}/fail", json=body, retryable=True
-        )
+        with lifecycle_span("figuard.fail", event_id) as span:
+            span.set_attribute("figuard.reason", reason)
+            data = self._request(
+                "POST", f"/api/v1/events/{event_id}/fail", json=body, retryable=True
+            )
         return _parse_spend_event(data)
 
     def void_event(
@@ -920,6 +964,39 @@ class FiGuardClient:
             "POST", f"/api/v1/events/{event_id}/void", json=body, retryable=True
         )
         return VoidResult(event=_parse_spend_event(data))
+
+    def void_tree(self, event_id: str, reason: str) -> VoidTreeResult:
+        """
+        Atomically void a root event and every ``AUTHORIZED`` descendant in its
+        causal subtree — in a single server-side transaction.
+
+        Use this when an orchestration job is cancelled and you want to release
+        all child agent reservations at once instead of voiding each individually.
+
+        ``CONFIRMED`` and already-``VOIDED`` descendants are left untouched.
+        Raises HTTP 409 if any descendant has an ``externalTransactionId`` set
+        (that event must be refunded before the tree can be voided).
+
+        :param event_id: Root event ID — the orchestrator's authorization.
+        :param reason:   Reason code written to every voided event's audit log.
+        :returns: ``VoidTreeResult`` with total events voided and quantity released.
+        """
+        with void_tree_span(event_id, reason) as span:
+            data = self._request(
+                "POST", f"/api/v1/events/{event_id}/void-tree",
+                json={"reason": reason},
+                retryable=True,
+            )
+            result = VoidTreeResult(
+                root_event_id=data["rootEventId"],
+                voided_count=data["voidedCount"],
+                total_quantity_released=float(data["totalQuantityReleased"]),
+                voided_event_ids=data["voidedEventIds"],
+                reason=data["reason"],
+                currency=data.get("currency"),
+            )
+            finish_void_tree_span(span, result)
+        return result
 
     # -----------------------------------------------------------------------
     # Ledger & reporting

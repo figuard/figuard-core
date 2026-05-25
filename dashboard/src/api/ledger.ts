@@ -4,6 +4,7 @@ import type {
   SpendEventResponse,
   SpendDecision,
   SpendTreeResponse,
+  ChainDetailResponse,
 } from "../lib/types";
 
 export interface LedgerParams {
@@ -30,4 +31,8 @@ export async function getLedger(
 
 export async function getSpendTree(budgetId: string): Promise<SpendTreeResponse> {
   return apiFetch<SpendTreeResponse>(`/api/v1/budgets/${budgetId}/tree`);
+}
+
+export async function getChainDetail(chainRootEventId: string): Promise<ChainDetailResponse> {
+  return apiFetch<ChainDetailResponse>(`/api/v1/events/${chainRootEventId}/chain`);
 }

@@ -25,11 +25,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.figuard.api.dto.request.VoidTreeRequest;
+import com.figuard.api.dto.response.VoidTreeResponse;
+
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -202,7 +206,7 @@ public class PaymentLifecycleService {
         }
 
         // Collect all AUTHORIZED descendants (recursive, depth-first)
-        List<SpendEvent> authorizedDescendants = collectAuthorizedDescendants(eventId);
+        List<SpendEvent> authorizedDescendants = collectVoidableDescendants(eventId);
 
         if (!request.isVoidChildEvents() && !authorizedDescendants.isEmpty()) {
             // Guard: cannot void a parent while children hold live reservations.
@@ -275,17 +279,147 @@ public class PaymentLifecycleService {
         return budgetMapper.toResponse(event);
     }
 
+    // -------------------------------------------------------------------------
+    // Void tree (cascading void)
+    // -------------------------------------------------------------------------
+
     /**
-     * Recursively collect all AUTHORIZED descendants of a given event ID, in BFS order.
-     * Only AUTHORIZED events are included — CONFIRMED/DENIED/VOIDED children are skipped.
+     * Atomically void an entire causal subtree rooted at {@code rootEventId}.
+     *
+     * <p>Finds every AUTHORIZED descendant via the parentEventId chain, validates none
+     * carry an externalTransactionId (which would require a refund first), then voids
+     * them all deepest-first in a single transaction before voiding the root.
+     *
+     * <p>CONFIRMED, DENIED, and already-VOIDED descendants are left untouched — only
+     * live AUTHORIZED reservations are released.
+     *
+     * @return a summary of every event voided and the total quantity released back to the budget.
      */
-    private List<SpendEvent> collectAuthorizedDescendants(UUID parentId) {
+    @Transactional
+    public VoidTreeResponse voidTree(UUID rootEventId, VoidTreeRequest request, Tenant tenant) {
+        SpendEvent root = loadEventWithLock(rootEventId, tenant);
+
+        if (!root.canBeVoided()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Root event cannot be voided (current: " + root.getDecision() + ")");
+        }
+
+        if (root.getExternalTransactionId() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "VOID_REQUIRES_REFUND: root event has externalTransactionId="
+                    + root.getExternalTransactionId());
+        }
+
+        // Collect all voidable (AUTHORIZED or CONFIRMED) descendants — BFS order, root not included
+        List<SpendEvent> descendants = collectVoidableDescendants(rootEventId);
+
+        // Validate all descendants upfront — fail atomically if any require a refund
+        for (SpendEvent desc : descendants) {
+            if (desc.getExternalTransactionId() != null) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "VOID_REQUIRES_REFUND: descendant event " + desc.getId()
+                        + " has externalTransactionId=" + desc.getExternalTransactionId());
+            }
+        }
+
+        AgentBudget budget = loadBudgetWithLock(root);
+
+        // Void descendants deepest-first so budget arithmetic is consistent
+        // (children release their reservations before the parent does)
+        for (int i = descendants.size() - 1; i >= 0; i--) {
+            voidSingleEventWithRelease(descendants.get(i), request.getReason(), budget);
+        }
+
+        // Void the root — arithmetic depends on whether it was AUTHORIZED or CONFIRMED
+        BigDecimal rootQty = root.getDecision() == SpendDecision.CONFIRMED
+            ? root.getConfirmedQuantity()    // confirmed: undo quantitySpent
+            : root.getRequestedQuantity();   // authorized: undo quantityReserved
+
+        if (root.getDecision() == SpendDecision.CONFIRMED) {
+            budget.setQuantitySpent(budget.getQuantitySpent().subtract(rootQty));
+        } else {
+            budget.setQuantityReserved(budget.getQuantityReserved().subtract(rootQty));
+        }
+        budgetRepository.save(budget);
+
+        if (root.getAllocation() != null) {
+            BudgetAllocation alloc = loadAllocationWithLock(root.getAllocation().getId());
+            if (root.getDecision() == SpendDecision.CONFIRMED) {
+                alloc.setQuantitySpent(alloc.getQuantitySpent().subtract(rootQty));
+            } else {
+                alloc.setQuantityReserved(alloc.getQuantityReserved().subtract(rootQty));
+            }
+            allocationRepository.save(alloc);
+        }
+
+        if (root.getDelegatedTokenId() != null && root.getAllocation() != null) {
+            boolean confirmed = root.getDecision() == SpendDecision.CONFIRMED;
+            delegatedTokenAllocationRepository
+                .findByTokenIdAndCategoryWithLock(root.getDelegatedTokenId(),
+                    root.getAllocation().getCategory())
+                .ifPresent(delegateAlloc -> {
+                    if (confirmed) {
+                        delegateAlloc.setQuantitySpent(delegateAlloc.getQuantitySpent().subtract(rootQty));
+                    } else {
+                        delegateAlloc.setQuantityReserved(delegateAlloc.getQuantityReserved().subtract(rootQty));
+                    }
+                    delegatedTokenAllocationRepository.save(delegateAlloc);
+                });
+        }
+
+        root.setDecision(SpendDecision.VOIDED);
+        root.setFailureReason(request.getReason());
+        eventRepository.save(root);
+
+        if (root.getEntitlementItemId() != null) {
+            entitlementEnforcementService.release(root.getEntitlementItemId(), rootQty);
+        }
+
+        // Build the summary
+        int totalVoided = 1 + descendants.size();
+        BigDecimal totalReleased = descendants.stream()
+            .map(e -> e.getDecision() == SpendDecision.CONFIRMED ? e.getConfirmedQuantity() : e.getRequestedQuantity())
+            .reduce(rootQty, BigDecimal::add);
+
+        List<UUID> voidedIds = new ArrayList<>();
+        voidedIds.add(root.getId());
+        descendants.stream().map(SpendEvent::getId).forEach(voidedIds::add);
+
+        log.info("Tree VOIDED: rootId={} budgetId={} totalVoided={} totalReleased={} reason={}",
+            root.getId(), budget.getId(), totalVoided, totalReleased, request.getReason());
+
+        Counter.builder("figuard.event.tree_voided")
+            .tag("voided_count", String.valueOf(totalVoided))
+            .register(meterRegistry).increment();
+
+        webhookDispatcher.dispatch(
+            budget.getTenant().getId(),
+            WebhookEventType.SPEND_TREE_VOIDED,
+            webhookPayloadBuilder.buildSpendTreeVoidedPayload(
+                budget, root, totalVoided, totalReleased, voidedIds));
+
+        return VoidTreeResponse.builder()
+            .rootEventId(root.getId())
+            .voidedCount(totalVoided)
+            .totalQuantityReleased(totalReleased)
+            .currency(root.getCurrency())
+            .voidedEventIds(voidedIds)
+            .reason(request.getReason())
+            .build();
+    }
+
+    /**
+     * Recursively collect all voidable (AUTHORIZED or CONFIRMED) descendants of a given
+     * event ID, in BFS order. DENIED and already-VOIDED children are skipped.
+     */
+    private List<SpendEvent> collectVoidableDescendants(UUID parentId) {
         List<SpendEvent> result = new ArrayList<>();
         List<SpendEvent> directChildren = eventRepository.findByParentEventId(parentId);
         for (SpendEvent child : directChildren) {
-            if (child.getDecision() == SpendDecision.AUTHORIZED) {
+            if (child.getDecision() == SpendDecision.AUTHORIZED
+                    || child.getDecision() == SpendDecision.CONFIRMED) {
                 result.add(child);
-                result.addAll(collectAuthorizedDescendants(child.getId()));
+                result.addAll(collectVoidableDescendants(child.getId()));
             }
         }
         return result;
@@ -296,24 +430,39 @@ public class PaymentLifecycleService {
      * The caller must save the budget after the loop to batch writes.
      */
     private void voidSingleEventWithRelease(SpendEvent event, String reason, AgentBudget budget) {
-        // Release reservation from the budget (accumulates; caller saves budget after loop)
-        budget.setQuantityReserved(budget.getQuantityReserved().subtract(event.getRequestedQuantity()));
+        // Arithmetic depends on whether the event was AUTHORIZED (reserved) or CONFIRMED (spent)
+        boolean wasConfirmed = event.getDecision() == SpendDecision.CONFIRMED;
+        BigDecimal qty = wasConfirmed ? event.getConfirmedQuantity() : event.getRequestedQuantity();
 
-        // Release reservation from the allocation if applicable
+        if (wasConfirmed) {
+            budget.setQuantitySpent(budget.getQuantitySpent().subtract(qty));
+        } else {
+            budget.setQuantityReserved(budget.getQuantityReserved().subtract(qty));
+        }
+
+        // Release from the allocation if applicable
         if (event.getAllocation() != null) {
             BudgetAllocation alloc = loadAllocationWithLock(event.getAllocation().getId());
-            alloc.setQuantityReserved(alloc.getQuantityReserved().subtract(event.getRequestedQuantity()));
+            if (wasConfirmed) {
+                alloc.setQuantitySpent(alloc.getQuantitySpent().subtract(qty));
+            } else {
+                alloc.setQuantityReserved(alloc.getQuantityReserved().subtract(qty));
+            }
             allocationRepository.save(alloc);
         }
 
-        // Release reservation on delegation token allocation (if any)
+        // Release on delegation token allocation (if any)
         if (event.getDelegatedTokenId() != null && event.getAllocation() != null) {
             delegatedTokenAllocationRepository
                 .findByTokenIdAndCategoryWithLock(event.getDelegatedTokenId(),
                     event.getAllocation().getCategory())
                 .ifPresent(delegateAlloc -> {
-                    delegateAlloc.setQuantityReserved(
-                        delegateAlloc.getQuantityReserved().subtract(event.getRequestedQuantity()));
+                    if (wasConfirmed) {
+                        delegateAlloc.setQuantitySpent(delegateAlloc.getQuantitySpent().subtract(qty));
+                    } else {
+                        delegateAlloc.setQuantityReserved(
+                            delegateAlloc.getQuantityReserved().subtract(qty));
+                    }
                     delegatedTokenAllocationRepository.save(delegateAlloc);
                 });
         }
@@ -322,9 +471,9 @@ public class PaymentLifecycleService {
         event.setFailureReason(reason);
         eventRepository.save(event);
 
-        // Release entitlement reservation for this descendant
+        // Release entitlement for this event
         if (event.getEntitlementItemId() != null) {
-            entitlementEnforcementService.release(event.getEntitlementItemId(), event.getRequestedQuantity());
+            entitlementEnforcementService.release(event.getEntitlementItemId(), qty);
         }
     }
 

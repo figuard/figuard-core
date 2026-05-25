@@ -281,6 +281,30 @@ public class AuthorizationService {
             parentEvent = validateParentEvent(request.getParentEventId(), budget.getId());
         }
 
+        // Step 8b — Per-chain subtree spend cap
+        // When the root of this causal chain has maxSubtreeQuantity set, verify that
+        // authorizing this request would not push the chain total over the cap.
+        // Checked after parent validation so chainRootEventId is available via parentEvent.
+        // Only runs for non-root events (parentEvent != null) where the chain root is known.
+        if (parentEvent != null && parentEvent.getChainRootEventId() != null) {
+            UUID chainRootId = parentEvent.getChainRootEventId();
+            SpendEvent chainRoot = spendEventRepository.findById(chainRootId).orElse(null);
+            if (chainRoot != null && chainRoot.getMaxSubtreeQuantity() != null) {
+                BigDecimal subtreeTotal = spendEventRepository.sumSubtreeQuantity(
+                    chainRootId, List.of(SpendDecision.AUTHORIZED, SpendDecision.CONFIRMED));
+                BigDecimal projected = subtreeTotal.add(request.getRequestedQuantity());
+                if (projected.compareTo(chainRoot.getMaxSubtreeQuantity()) > 0) {
+                    BigDecimal remaining = chainRoot.getMaxSubtreeQuantity()
+                        .subtract(subtreeTotal).max(BigDecimal.ZERO);
+                    return deny(budget, null, request, parentEvent,
+                        DenialCode.SUBTREE_CAP_EXCEEDED,
+                        "chain total " + projected + " would exceed chain cap of " +
+                        chainRoot.getMaxSubtreeQuantity() + "; remaining capacity: " + remaining,
+                        delegatedToken);
+                }
+            }
+        }
+
         // Step 9 — Resolve effective reserved quantity
         // When authorizationExpirySeconds is set, exclude stale AUTHORIZED events
         // from the capacity calculation. This implements lazy auto-expiry: orphaned
@@ -525,6 +549,13 @@ public class AuthorizationService {
 
         SpendEvent saved = spendEventRepository.save(event);
 
+        // Root events (no parent) self-reference chainRootEventId, but the ID is only
+        // available after the first save. Patch and re-save for root events only.
+        if (parentEvent == null) {
+            saved.setChainRootEventId(saved.getId());
+            saved = spendEventRepository.save(saved);
+        }
+
         // Consume from entitlement item (entitlement-backed budgets only).
         // Must happen after SpendEvent is saved so the event ID is available for linking.
         if (entitlementItem != null) {
@@ -566,6 +597,12 @@ public class AuthorizationService {
         }
 
         SpendEvent saved = spendEventRepository.save(event);
+
+        // Root events self-reference chainRootEventId — patch after first save.
+        if (parentEvent == null) {
+            saved.setChainRootEventId(saved.getId());
+            saved = spendEventRepository.save(saved);
+        }
 
         log.info("DENIED: budgetId={} code={} key={}",
             budget.getId(), code, request.getIdempotencyKey());
@@ -881,6 +918,17 @@ public class AuthorizationService {
         if (delegatedToken != null) {
             event.setDelegatedTokenId(delegatedToken.getId());
         }
+
+        // Causal chain tracking — child events can be assigned now; root events need a
+        // two-step save because the ID isn't available until after the first persist.
+        // Root events are patched in the callers (approve/deny) after the first save.
+        if (parentEvent != null) {
+            event.setChainRootEventId(parentEvent.getChainRootEventId());
+        }
+        if (parentEvent == null && request.getMaxSubtreeQuantity() != null) {
+            event.setMaxSubtreeQuantity(request.getMaxSubtreeQuantity());
+        }
+
         return event;
     }
 

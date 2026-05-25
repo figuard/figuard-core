@@ -79,10 +79,6 @@ export function App() {
           {/* Per-budget sub-nav when inside a budget */}
           {currentBudgetId && <BudgetSubNav budgetId={currentBudgetId} />}
 
-          <NavLink to="/users" className={({ isActive }) => navItem(isActive)}>
-            Users
-          </NavLink>
-
           <NavLink to="/webhooks" className={({ isActive }) => navItem(isActive)}>
             Webhooks
             {failedCount > 0 && (

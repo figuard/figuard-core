@@ -163,6 +163,34 @@ export interface VoidResult {
 }
 
 // ---------------------------------------------------------------------------
+// Void tree
+// ---------------------------------------------------------------------------
+
+export interface VoidTreeResult {
+  readonly rootEventId: string;
+  /** Total events voided: root + all authorized descendants. */
+  readonly voidedCount: number;
+  /** Sum of requestedQuantity across all voided events. */
+  readonly totalQuantityReleased: number;
+  /** Undefined for unit-based (resource) budgets. */
+  readonly currency?: string;
+  /** Root first, then descendants in BFS order. */
+  readonly voidedEventIds: string[];
+  readonly reason: string;
+}
+
+export function makeVoidTreeResult(data: Record<string, unknown>): VoidTreeResult {
+  return {
+    rootEventId: data["rootEventId"] as string,
+    voidedCount: data["voidedCount"] as number,
+    totalQuantityReleased: data["totalQuantityReleased"] as number,
+    currency: data["currency"] as string | undefined,
+    voidedEventIds: (data["voidedEventIds"] as string[]) ?? [],
+    reason: data["reason"] as string,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Ledger
 // ---------------------------------------------------------------------------
 

@@ -117,6 +117,7 @@ public class BudgetMapper {
             .failureReason(event.getFailureReason())
             .parentEventId(event.getParentEvent() != null
                 ? event.getParentEvent().getId() : null)
+            .chainRootEventId(event.getChainRootEventId())
             .traceId(event.getTraceId())
             .createdAt(event.getCreatedAt())
             .metadata(event.getMetadata())

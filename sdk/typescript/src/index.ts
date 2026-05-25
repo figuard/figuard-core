@@ -45,6 +45,7 @@ export type {
   ConfirmEventOptions,
   FailEventOptions,
   VoidEventOptions,
+  VoidTreeOptions,
   ResumeBudgetOptions,
   GetLedgerOptions,
 } from "./client";
@@ -73,6 +74,7 @@ export type {
   SpendTreeNode,
   Subscription,
   VoidResult,
+  VoidTreeResult,
 } from "./models";
 
 // Multi-resource

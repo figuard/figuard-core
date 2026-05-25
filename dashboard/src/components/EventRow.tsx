@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { DenialBadge } from "./DenialBadge";
 import { formatAmount, formatDateTime, shortId } from "../lib/format";
 import type { SpendEventResponse } from "../lib/types";
@@ -80,6 +81,19 @@ export function EventRow({ event, currency, unit }: Props) {
               )}
               {event.intentContext && (
                 <Detail label="Intent context" value={event.intentContext} />
+              )}
+              {event.chainRootEventId && (
+                <div className="flex items-center gap-1">
+                  <span className="text-gray-400">Chain root: </span>
+                  <span className="font-mono text-gray-800 break-all">{event.chainRootEventId}</span>
+                  <Link
+                    to={`/chains/${event.chainRootEventId}`}
+                    className="ml-1 text-blue-500 hover:text-blue-700 transition-colors whitespace-nowrap"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    View →
+                  </Link>
+                </div>
               )}
               {event.description && (
                 <div className="col-span-2 md:col-span-3">

@@ -26,7 +26,7 @@ Session tokens are returned **once** when a budget is created. Store them secure
 |---|---|
 | `BudgetStatus` | `ACTIVE` `PAUSED` `EXHAUSTED` `EXPIRED` `CANCELLED` |
 | `SpendDecision` | `AUTHORIZED` `DENIED` `CONFIRMED` `FAILED` `VOIDED` |
-| `DenialCode` | `INSUFFICIENT_FUNDS` `BUDGET_EXHAUSTED` `BUDGET_PAUSED` `BUDGET_EXPIRED` `BUDGET_CANCELLED` `CURRENCY_MISMATCH` `NO_MATCHING_ALLOCATION` `ALLOCATION_EXHAUSTED` `FORBIDDEN_ITEM_TYPE` `MISSING_CLAIMED_CATEGORY` `EXCEEDS_QUANTITY_LIMIT` `INTENT_SCOPE_VIOLATION` `ANOMALY_DETECTED` `VELOCITY_LIMIT_EXCEEDED` `ENTITY_ALREADY_AUTHORIZED` `DELEGATE_CAP_EXCEEDED` `DELEGATION_TOKEN_REVOKED` `DUPLICATE_REQUEST` `INVALID_PARENT_EVENT` |
+| `DenialCode` | `INSUFFICIENT_FUNDS` `BUDGET_EXHAUSTED` `BUDGET_PAUSED` `BUDGET_EXPIRED` `BUDGET_CANCELLED` `CURRENCY_MISMATCH` `NO_MATCHING_ALLOCATION` `ALLOCATION_EXHAUSTED` `FORBIDDEN_ITEM_TYPE` `MISSING_CLAIMED_CATEGORY` `EXCEEDS_QUANTITY_LIMIT` `INTENT_SCOPE_VIOLATION` `ANOMALY_DETECTED` `VELOCITY_LIMIT_EXCEEDED` `ENTITY_ALREADY_AUTHORIZED` `DELEGATE_CAP_EXCEEDED` `DELEGATION_TOKEN_REVOKED` `DUPLICATE_REQUEST` `INVALID_PARENT_EVENT` `SUBTREE_CAP_EXCEEDED` |
 | `EnforcementMode` | `OPEN` `CATEGORY_CONSTRAINED` `STRICT` |
 | `FundingOperation` | `CREDIT` `DEBIT` `RESET` `RESET_SPENT` |
 | `AllocationStatus` | `ACTIVE` `EXHAUSTED` |
@@ -381,6 +381,7 @@ Pre-flight check: reserves quantity and returns AUTHORIZED or DENIED before the 
   "agentType": "langchain",         // optional — audit label
   "entityId": "booking-ref-99",     // optional — dedup across calls when entityDedupEnabled
   "parentEventId": "evt_...",       // optional — links to a parent event (causal chain)
+  "maxSubtreeQuantity": 1000.00,    // optional — per-chain spend cap; only on root calls (no parentEventId)
   "intentContext": "business trip", // optional — stored for audit, not enforced
   "traceId": "trc_...",             // optional — correlates multiple related calls
   "dryRun": false,                  // optional — default false; skips all writes when true
@@ -519,6 +520,52 @@ Cancel the authorization. Use when the action was abandoned by the user or agent
 
 ---
 
+### `POST /api/v1/events/{id}/void-tree`
+
+Atomically void the target event and every `AUTHORIZED` descendant in its causal chain — in a single transaction.
+
+Use this when an orchestration job is cancelled or fails mid-run and you want to release all child agent reservations at once. Without this, child events would stay as live reservations until they expire, freezing budget capacity.
+
+`CONFIRMED` and already-`VOIDED` descendants are left untouched — only live `AUTHORIZED` reservations are released. If any descendant has an `externalTransactionId` (a committed payment), the entire operation fails — that event must be refunded before the tree can be voided.
+
+**Request body**
+
+```jsonc
+{
+  "reason": "ORCHESTRATION_JOB_CANCELLED"   // required
+}
+```
+
+**Response `200 OK`**
+
+```jsonc
+{
+  "rootEventId": "evt_abc123",
+  "voidedCount": 4,                          // root + all voided descendants
+  "totalQuantityReleased": 270.00,           // sum of requestedQuantity across all voided events
+  "currency": "USD",                         // null for unit-based budgets
+  "voidedEventIds": [
+    "evt_abc123",                            // root first
+    "evt_def456",                            // descendants in BFS order
+    "evt_ghi789",
+    "evt_jkl012"
+  ],
+  "reason": "ORCHESTRATION_JOB_CANCELLED"
+}
+```
+
+**Error cases**
+
+| HTTP | When |
+|---|---|
+| `404` | Root event not found or not owned by this tenant |
+| `409` | Root event is not in `AUTHORIZED` state |
+| `409` | `VOID_REQUIRES_REFUND` — root or a descendant has `externalTransactionId` set |
+
+Fires a `SPEND_TREE_VOIDED` webhook with the same summary.
+
+---
+
 ## Delegation Tokens
 
 Fleet budgets can issue scoped sub-tokens to delegate a capped portion of the budget to a sub-agent.
@@ -608,6 +655,7 @@ Register a URL to receive event notifications.
     "SPEND_DENIED",
     "SPEND_CONFIRMED",
     "SPEND_VOIDED",
+    "SPEND_TREE_VOIDED",
     "SPEND_PAYMENT_FAILED",
     "ANOMALY_DETECTED",
     "VELOCITY_LIMIT_EXCEEDED",

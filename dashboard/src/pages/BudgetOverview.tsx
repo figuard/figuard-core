@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useParams, useLocation } from "react-router-dom";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import {
   AreaChart,
   Area,
@@ -17,7 +17,8 @@ import { ExpiryBadge } from "../components/ExpiryBadge";
 import { AddFundsModal } from "../components/AddFundsModal";
 import { BUDGET_STATUS_BADGE } from "../lib/colors";
 import { formatDateTime, formatAmount, shortId } from "../lib/format";
-import { resumeBudget, patchBudget } from "../api/budgets";
+import { resumeBudget, patchBudget, listDelegationTokens } from "../api/budgets";
+import type { DelegationTokenResponse } from "../lib/types";
 
 // Build 24-hour hourly spend buckets from ledger events.
 function buildSparkline(
@@ -81,6 +82,26 @@ export function BudgetOverview() {
     },
   });
 
+  const { data: delegationTokens, isLoading: tokensLoading } = useQuery({
+    queryKey: ["delegation-tokens", id],
+    queryFn: () => listDelegationTokens(id!),
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+
+  const location = useLocation();
+  const createdState = location.state as {
+    justCreated?: boolean;
+    templateId?: string;
+    templateName?: string;
+    nextStep?: string;
+    sessionToken?: string;
+    workerSessionToken?: string;
+    workerTokenId?: string;
+  } | null;
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const showBanner = !!createdState?.justCreated && !bannerDismissed;
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-400">
@@ -104,6 +125,70 @@ export function BudgetOverview() {
 
   return (
     <div className="space-y-6">
+      {/* Just-created onboarding banner */}
+      {showBanner && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 space-y-3">
+              <div>
+                <p className="text-sm font-semibold text-emerald-900">
+                  Budget created
+                  {createdState?.templateName ? ` · ${createdState.templateName}` : ""}
+                </p>
+                {createdState?.nextStep && (
+                  <p className="text-xs text-emerald-700 mt-1 leading-snug">
+                    {createdState.nextStep}
+                  </p>
+                )}
+              </div>
+
+              {/* Fleet: show two tokens with clear labels */}
+              {createdState?.templateId === "agent-fleet" ? (
+                <div className="space-y-2.5">
+                  {createdState.sessionToken && (
+                    <CreatedTokenRow
+                      label="Fleet token — orchestrator only"
+                      sublabel="Use this to create more delegation tokens via the API. Do NOT give it to worker agents."
+                      token={createdState.sessionToken}
+                      variant="muted"
+                    />
+                  )}
+                  {createdState.workerSessionToken ? (
+                    <CreatedTokenRow
+                      label="Worker token (example) — give this to a worker agent"
+                      sublabel="This is what your worker agents should receive. Create one per worker via POST /budgets/{id}/delegation-tokens."
+                      token={createdState.workerSessionToken}
+                      variant="highlight"
+                    />
+                  ) : (
+                    <div className="rounded-lg border border-emerald-200 bg-white px-3 py-2.5 text-xs text-emerald-700">
+                      No per-worker cap was set, so no example delegation token was created.{" "}
+                      Create them via{" "}
+                      <code className="font-mono bg-emerald-50 px-1 rounded">
+                        POST /budgets/{"{id}"}/delegation-tokens
+                      </code>
+                    </div>
+                  )}
+                </div>
+              ) : createdState?.sessionToken ? (
+                <CreatedTokenRow
+                  label="Session token — visible once, copy it now"
+                  token={createdState.sessionToken}
+                  variant="highlight"
+                />
+              ) : null}
+            </div>
+            <button
+              onClick={() => setBannerDismissed(true)}
+              className="shrink-0 text-emerald-400 hover:text-emerald-600 transition-colors text-lg leading-none mt-0.5"
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -123,6 +208,11 @@ export function BudgetOverview() {
               ? budget.allocations[0].enforcementMode
               : "OPEN"}
           </span>
+          {delegationTokens && delegationTokens.length > 0 && (
+            <span className="inline-flex items-center rounded bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 border border-indigo-100">
+              Fleet budget · {delegationTokens.filter(t => t.status !== "REVOKED").length} tokens
+            </span>
+          )}
           <ExpiryBadge expiresAt={budget.expiresAt} createdAt={budget.createdAt} budgetStatus={budget.status} />
           <button
             onClick={() => setAddFundsOpen(true)}
@@ -389,8 +479,216 @@ export function BudgetOverview() {
         )}
       </div>
 
+      {/* Delegation tokens — only shown when tokens exist */}
+      {!tokensLoading && delegationTokens && delegationTokens.length > 0 && (
+        <DelegationTokensSection
+          tokens={delegationTokens}
+          currency={budget.currency}
+          unit={budget.unit}
+        />
+      )}
+
       {addFundsOpen && (
         <AddFundsModal budget={budget} onClose={() => setAddFundsOpen(false)} />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Delegation tokens section
+// ---------------------------------------------------------------------------
+
+function DelegationTokensSection({
+  tokens,
+  currency,
+  unit,
+}: {
+  tokens: DelegationTokenResponse[];
+  currency: string;
+  unit: string | null | undefined;
+}) {
+  const activeTokens = tokens.filter((t) => t.status !== "REVOKED");
+  const revokedTokens = tokens.filter((t) => t.status === "REVOKED");
+  const fmt = (n: number) => formatAmount(n, currency, unit);
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-semibold text-gray-700">Delegation Tokens</h2>
+        <span className="text-xs text-gray-400">
+          {activeTokens.length} active{revokedTokens.length > 0 ? ` · ${revokedTokens.length} revoked` : ""}
+        </span>
+      </div>
+
+      <div className="space-y-2">
+        {activeTokens.map((token) => (
+          <TokenRow key={token.id} token={token} fmt={fmt} />
+        ))}
+      </div>
+
+      {revokedTokens.length > 0 && (
+        <details className="mt-3">
+          <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600 select-none">
+            {revokedTokens.length} revoked token{revokedTokens.length !== 1 ? "s" : ""}
+          </summary>
+          <div className="mt-2 space-y-2">
+            {revokedTokens.map((token) => (
+              <TokenRow key={token.id} token={token} fmt={fmt} />
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CreatedTokenRow — shows a session token in the just-created banner
+// ---------------------------------------------------------------------------
+
+function CreatedTokenRow({
+  label,
+  sublabel,
+  token,
+  variant,
+}: {
+  label: string;
+  sublabel?: string;
+  token: string;
+  variant: "highlight" | "muted";
+}) {
+  const [visible, setVisible] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    navigator.clipboard.writeText(token).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  const isMuted = variant === "muted";
+
+  return (
+    <div>
+      <p className={`text-xs font-medium mb-1 ${isMuted ? "text-emerald-600" : "text-emerald-800"}`}>
+        {label}
+      </p>
+      {sublabel && (
+        <p className="text-xs text-emerald-600 mb-1.5 leading-snug">{sublabel}</p>
+      )}
+      <div className="flex items-center gap-2">
+        <div
+          className={`flex-1 rounded-lg border px-3 py-1.5 font-mono text-xs overflow-x-auto ${
+            isMuted
+              ? "border-emerald-100 bg-emerald-50/50 text-gray-500"
+              : "border-emerald-200 bg-white text-gray-700"
+          }`}
+        >
+          {visible ? token : token.substring(0, 8) + "••••••••••••••••••••••••"}
+        </div>
+        <button
+          onClick={() => setVisible((v) => !v)}
+          className="shrink-0 rounded-lg border border-emerald-200 bg-white px-2.5 py-1.5 text-xs text-emerald-700 hover:bg-emerald-100 transition-colors"
+        >
+          {visible ? "Hide" : "Show"}
+        </button>
+        <button
+          onClick={copy}
+          className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-white transition-colors ${
+            isMuted
+              ? "bg-emerald-400 hover:bg-emerald-500"
+              : "bg-emerald-600 hover:bg-emerald-700"
+          }`}
+        >
+          {copied ? "Copied!" : "Copy"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function TokenRow({
+  token,
+  fmt,
+}: {
+  token: DelegationTokenResponse;
+  fmt: (n: number) => string;
+}) {
+  const isRevoked = token.status === "REVOKED";
+
+  return (
+    <div
+      className={`rounded-lg border border-gray-100 bg-gray-50 p-3 ${
+        isRevoked ? "opacity-50" : ""
+      }`}
+    >
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="font-mono text-xs text-gray-400" title={token.id}>
+          {shortId(token.id)}
+        </span>
+
+        {token.label && (
+          <span className="text-xs font-medium text-gray-700">{token.label}</span>
+        )}
+
+        <span
+          className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${
+            isRevoked
+              ? "bg-gray-100 text-gray-500"
+              : "bg-green-50 text-green-700"
+          }`}
+        >
+          {token.status}
+        </span>
+
+        <span className="text-xs text-gray-400 ml-auto">
+          Created {formatDateTime(token.createdAt)}
+        </span>
+      </div>
+
+      {token.caps && token.caps.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {token.caps.map((cap) => {
+            const capPct =
+              cap.totalLimit > 0
+                ? Math.min(100, (cap.quantitySpent / cap.totalLimit) * 100)
+                : 0;
+            return (
+              <div
+                key={cap.id}
+                className="rounded border border-violet-100 bg-violet-50 px-2.5 py-1.5 min-w-[140px]"
+              >
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="text-xs font-medium text-violet-700">
+                    {cap.category}
+                  </span>
+                  <span className="text-xs text-violet-500 tabular-nums">
+                    {fmt(cap.quantitySpent)} / {fmt(cap.totalLimit)}
+                  </span>
+                </div>
+                <div className="h-1 rounded-full bg-violet-100 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${
+                      capPct >= 95
+                        ? "bg-red-500"
+                        : capPct >= 75
+                        ? "bg-amber-400"
+                        : "bg-violet-500"
+                    }`}
+                    style={{ width: `${capPct}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-violet-400">
+                  {fmt(cap.availableQuantity)} remaining
+                </p>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

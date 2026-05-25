@@ -6,6 +6,24 @@ Find your situation in the tree. Each leaf shows the budget creation call and th
 
 ---
 
+## Session tokens
+
+Every `create_budget` call returns a `tokens` list. There are two ways to access them:
+
+```python
+# Simple budgets (no named allocations) — one token, category="default"
+budget.primary_token.session_token
+
+# Multi-category budgets (allocations) — one token per category
+tokens = {t.category: t.session_token for t in budget.tokens}
+tokens["flight"]   # session token scoped to the flight allocation
+tokens["hotel"]    # session token scoped to the hotel allocation
+```
+
+Tokens are returned **once at creation and never again**. Store them before the response leaves scope.
+
+---
+
 ## What are you controlling?
 
 ```
@@ -45,9 +63,6 @@ budget = client.create_budget(
 At runtime, the agent authorizes each spend:
 
 ```python
-# budget.tokens is a list — one entry per dimension so agents have full context
-# on all spending dimensions. For simple budgets: one entry with category="default".
-# Use primary_token as a convenience accessor.
 auth = client.authorize(
     session_token=budget.primary_token.session_token,
     agent_id="travel_agent",
@@ -98,9 +113,6 @@ budget = client.create_budget(
 At runtime, the agent declares `claimed_category` on every authorize call. Without it, the request is denied with `MISSING_CLAIMED_CATEGORY`.
 
 ```python
-# budget.tokens is a list — one entry per dimension so agents have full context
-# on all spending dimensions. For budgets with named allocations (flight, hotel),
-# build a map by category. For simple budgets, primary_token is the convenience accessor.
 tokens = {t.category: t.session_token for t in budget.tokens}
 
 # Flight spend
@@ -143,8 +155,6 @@ fleet = client.create_budget(
     expires_in="8h",
 )
 
-# fleet.tokens is a list — one entry per dimension so agents have full context
-# on all spending dimensions. For simple fleet budgets use primary_token.
 fleet_session_token = fleet.primary_token.session_token
 
 # Orchestrator issues a delegation token for each sub-agent
@@ -258,7 +268,6 @@ budget = client.create_budget(
 At runtime, declare which category each call belongs to:
 
 ```python
-# budget.tokens is a list — one entry per dimension. Build a map by category.
 tokens = {t.category: t.session_token for t in budget.tokens}
 
 # Inference call
@@ -352,7 +361,6 @@ budget = client.create_budget(
 At runtime:
 
 ```python
-# budget.tokens is a list — one entry per dimension. Build a map by category.
 tokens = {t.category: t.session_token for t in budget.tokens}
 
 # Email call

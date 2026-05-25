@@ -39,6 +39,7 @@ public class SpendTreeNode {
     private DenialCode denialReason;
     private String failureReason;
     private UUID parentEventId;
+    private UUID chainRootEventId;
     private OffsetDateTime createdAt;
     private Map<String, Object> metadata;
 

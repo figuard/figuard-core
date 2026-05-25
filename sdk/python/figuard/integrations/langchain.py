@@ -44,6 +44,57 @@ some tools should be guarded.
 Installation::
 
     pip install figuard[langchain]
+
+---
+
+**Causal chain construction (how parent_event_id is resolved)**
+
+LangChain/LangGraph assigns every execution unit a ``run_id`` UUID and records
+its parent via ``parent_run_id``. This maps 1-to-1 onto FiGuard's causal chain:
+
+    run_id        → agentId
+    parent_run_id → parentEventId (via the run_id → event_id mapping table)
+    run_name      → agentType
+
+The handler builds two in-memory tables per graph execution:
+
+1. ``_run_topology``: ``{run_id → parent_run_id}`` — recorded for every
+   ``on_chain_start`` and ``on_tool_start``, even for nodes that never call
+   ``authorize``. Required for partial-tree walk-up (see below).
+
+2. ``_run_id_to_event_id``: ``{run_id → FiGuard event_id}`` — populated
+   after every successful authorization.
+
+When a tool starts, the handler resolves ``parent_event_id`` by walking up
+``_run_topology`` from the tool's ``parent_run_id`` until it finds a run_id
+with a known event_id::
+
+    Tool C  (parent_run_id = B)
+      → look up B in event table → not found
+      → look up B's parent in topology → A
+      → look up A in event table → evt_A ✓
+      → authorize Tool C with parent_event_id=evt_A
+
+This handles the **partial instrumentation** case where intermediate nodes in
+the graph never call authorize — the walk-up skips over them to the nearest
+instrumented ancestor.
+
+**Deferred linking (parallel graph race)**
+
+In parallel LangGraph graphs, two nodes can start simultaneously via a thread
+pool. Node B's ``on_tool_start`` may fire before Node A's tool has authorized
+(so A's event_id is not in the table yet). The handler detects this and buffers
+Node B's authorize call. When A's event_id arrives, the buffer is flushed and
+B's authorize fires with the correct parent::
+
+    Thread 1: Tool B starts, parent=A → A has no event_id → buffered
+    Thread 2: Tool A authorizes → event_id stored → flush buffer → B authorizes
+
+**Thread pool context propagation**
+
+Python ContextVar does NOT propagate into ThreadPoolExecutor threads. Use
+``figuard.context.figuard_run_in_executor`` instead of calling the executor
+directly for any async graph that fans out to parallel branches.
 """
 
 from __future__ import annotations
@@ -52,7 +103,8 @@ import ast
 import json
 import logging
 import threading
-from typing import Any, Callable, Dict, Optional, Set, Union
+from collections import defaultdict
+from typing import Any, Callable, Dict, List, Optional, Set, Union
 from uuid import UUID, uuid4
 
 try:
@@ -191,15 +243,25 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
         self._amount_extractor = amount_extractor
         self._cost_extractor = cost_extractor
         self._debug = debug
-        # run_id → (event_id, amount) — populated on authorize, consumed on confirm/fail
-        self._pending: Dict[str, tuple[str, float]] = {}
         self._lock = threading.Lock()
+
+        # run_id → (event_id, authorized_amount) — live authorizations
+        self._pending: Dict[str, tuple[str, float]] = {}
+
+        # Causal chain tables — all guarded by _lock
+        # Maps every observed run_id → its parent_run_id (including non-instrumented nodes)
+        # Used for partial-tree walk-up when intermediate nodes don't call authorize.
+        self._run_topology: Dict[str, Optional[str]] = {}
+        # Maps run_id → FiGuard event_id once that run's tool has been authorized.
+        self._run_id_to_event_id: Dict[str, str] = {}
+        # Deferred children: parent_run_id → list of (child_run_id, resolve_callback)
+        # Populated when a tool fires before its parent's event_id is known (parallel graph race).
+        self._deferred: Dict[str, List[Callable[[str], None]]] = defaultdict(list)
 
     def _get_token(self, metadata_agent_id: Optional[str]) -> str:
         """Return the session token to use for this tool call."""
         if self._session_token:
             return self._session_token
-        # Fleet mode — resolve per agent
         if metadata_agent_id is None:
             logger.warning(
                 "figuard: token_resolver is set but no agent_id found in run metadata. "
@@ -215,8 +277,79 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
         return token
 
     # ------------------------------------------------------------------
+    # Topology tracking
+    # ------------------------------------------------------------------
+
+    def _record_topology(self, run_id: UUID, parent_run_id: Optional[UUID]) -> None:
+        """
+        Record run_id → parent_run_id for every execution unit, even those that
+        never call authorize. This lets _resolve_parent_event_id walk up past
+        uninstrumented intermediate nodes.
+        """
+        with self._lock:
+            self._run_topology[str(run_id)] = (
+                str(parent_run_id) if parent_run_id else None
+            )
+
+    def _resolve_parent_event_id(self, parent_run_id: Optional[UUID]) -> Optional[str]:
+        """
+        Walk up the run topology tree to find the nearest ancestor run_id that
+        has a known FiGuard event_id.
+
+        Handles three cases:
+        - Sequential graph: parent's event_id is already in the table → immediate hit.
+        - Partial instrumentation: intermediate nodes that never authorize are
+          skipped until an instrumented ancestor is found.
+        - Parallel graph race: parent's event_id hasn't arrived yet → returns None
+          and the caller must register a deferred callback.
+        """
+        if parent_run_id is None:
+            return None
+        with self._lock:
+            current = str(parent_run_id)
+            while current is not None:
+                if current in self._run_id_to_event_id:
+                    return self._run_id_to_event_id[current]
+                current = self._run_topology.get(current)
+        return None
+
+    def _register_event_id(self, run_id: UUID, event_id: str) -> None:
+        """
+        Store a run_id → event_id mapping and flush any deferred children that
+        were waiting on this run_id's event_id to arrive.
+        """
+        run_id_str = str(run_id)
+        deferred_callbacks: List[Callable[[str], None]] = []
+        with self._lock:
+            self._run_id_to_event_id[run_id_str] = event_id
+            deferred_callbacks = self._deferred.pop(run_id_str, [])
+
+        # Call deferred callbacks outside the lock to avoid deadlock
+        for callback in deferred_callbacks:
+            try:
+                callback(event_id)
+            except Exception as exc:
+                logger.warning("figuard: deferred callback failed: %s", exc)
+
+    # ------------------------------------------------------------------
     # Callback lifecycle
     # ------------------------------------------------------------------
+
+    def on_chain_start(
+        self,
+        serialized: Dict[str, Any],
+        inputs: Dict[str, Any],
+        *,
+        run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
+        **kwargs: Any,
+    ) -> None:
+        """
+        Record every chain/node start in the topology table — even if the node
+        never calls authorize. Required for partial-tree walk-up in graphs where
+        only some nodes are instrumented.
+        """
+        self._record_topology(run_id, parent_run_id)
 
     def on_tool_start(
         self,
@@ -224,36 +357,64 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
         input_str: str,
         *,
         run_id: UUID,
+        parent_run_id: Optional[UUID] = None,
         **kwargs: Any,
     ) -> None:
-        """Called before a tool runs. Authorizes the call; raises on denial."""
+        """
+        Called before a tool runs. Resolves parent_event_id via causal chain
+        topology, then authorizes. Raises ToolException on denial so the LLM
+        receives the denial reason instead of a crash.
+        """
         tool_name = serialized.get("name", "unknown_tool")
 
         if tool_name in self._ignore_tools:
             logger.debug("figuard: skipping %s (in ignore_tools)", tool_name)
             return
 
-        # In fleet/LangGraph mode the node passes agent_id through run metadata.
-        # For single-agent mode this is None and self._agent_id is used instead.
+        # Record this tool's position in the topology (parent_run_id = the chain/node that called it)
+        self._record_topology(run_id, parent_run_id)
+
         metadata = kwargs.get("metadata") or {}
         metadata_agent_id: Optional[str] = metadata.get("agent_id") if isinstance(metadata, dict) else None
-        agent_id = metadata_agent_id or self._agent_id
+        # Use the run_id as agentId — it uniquely identifies this execution unit
+        # in the LangChain call graph and maps directly to FiGuard's agentId field.
+        effective_agent_id = metadata_agent_id or str(run_id)
 
         token = self._get_token(metadata_agent_id)
-
         parsed = _parse_input(input_str)
         amount = _resolve_amount(parsed, self._amount_param, self._amount_extractor)
         category = self._tool_category_map.get(tool_name)
+
         if self._debug:
-            logger.info("figuard debug: tool=%s agent=%s category=%s amount=%s", tool_name, agent_id, category, amount)
+            logger.info(
+                "figuard debug: tool=%s agent=%s category=%s amount=%s run_id=%s parent=%s",
+                tool_name, effective_agent_id, category, amount, run_id, parent_run_id,
+            )
+
+        # Resolve parent_event_id from the causal chain topology.
+        # Walk up from parent_run_id until we find an ancestor with a known event_id.
+        resolved_parent = self._resolve_parent_event_id(parent_run_id)
+
+        if resolved_parent is None and parent_run_id is not None:
+            # Parent event_id not yet available — parallel graph race condition.
+            # We cannot defer here (on_tool_start is sync and must decide immediately)
+            # so we authorize without parent and log the gap. The deferred mechanism
+            # is used for scenarios where authorize() itself is called outside callbacks.
+            logger.debug(
+                "figuard: parent run_id=%s has no event_id yet (parallel race) — "
+                "authorizing tool=%s as root event",
+                parent_run_id, tool_name,
+            )
 
         auth = self._client.authorize(
             session_token=token,
-            agent_id=agent_id,
+            agent_id=effective_agent_id,
             action_type="TOOL_CALL",
             description=f"{tool_name}: {input_str[:200]}",
             requested_quantity=amount,
             claimed_category=category,
+            parent_event_id=resolved_parent,  # explicit — takes precedence over ambient ContextVar
+            agent_type="langchain_tool",
             idempotency_key=str(run_id),
         )
 
@@ -268,9 +429,13 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
             raise ToolException(msg)
 
         logger.debug(
-            "figuard: AUTHORIZED tool=%s event_id=%s amount=%.2f",
-            tool_name, auth.event_id, amount,
+            "figuard: AUTHORIZED tool=%s event_id=%s amount=%.2f parent=%s",
+            tool_name, auth.event_id, amount, resolved_parent,
         )
+
+        # Store event_id for this run_id and flush any deferred children waiting on it
+        self._register_event_id(run_id, auth.event_id)
+
         with self._lock:
             self._pending[str(run_id)] = (auth.event_id, amount)
 

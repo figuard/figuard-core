@@ -105,7 +105,8 @@ FiGuard fires webhooks asynchronously for the following event types. Configure e
 | `ALLOCATION_EXHAUSTED` | A category allocation hit zero |
 | `SPEND_DENIED` | Any authorization is denied |
 | `SPEND_CONFIRMED` | Payment succeeded — event moved `AUTHORIZED → CONFIRMED` |
-| `SPEND_VOIDED` | An authorized event was voided |
+| `SPEND_VOIDED` | A single authorized event was voided |
+| `SPEND_TREE_VOIDED` | An entire causal subtree was atomically voided — includes `rootEventId`, `voidedCount`, `totalQuantityReleased`, and `voidedEventIds` |
 | `SPEND_PAYMENT_FAILED` | Payment failed — event moved `AUTHORIZED → FAILED` |
 | `ANOMALY_DETECTED` | Anomaly detection triggers (both advisory and auto-pause) |
 | `VELOCITY_LIMIT_EXCEEDED` | A velocity window limit is exceeded (fires once per window; subsequent violations in the same window are silently denied) |

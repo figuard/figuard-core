@@ -31,7 +31,9 @@ export type DenialCode =
   | "INTENT_SCOPE_VIOLATION"
   | "ANOMALY_DETECTED"
   | "ENTITY_ALREADY_AUTHORIZED"
-  | "VELOCITY_LIMIT_EXCEEDED";
+  | "VELOCITY_LIMIT_EXCEEDED"
+  | "DELEGATE_CAP_EXCEEDED"
+  | "SUBTREE_CAP_EXCEEDED";
 
 export type BudgetStatus =
   | "ACTIVE"
@@ -116,6 +118,7 @@ export interface SpendEventResponse {
   denialReason: DenialCode | null;
   failureReason: string | null;
   parentEventId: string | null;
+  chainRootEventId: string | null;
   traceId: string | null;
   createdAt: string;
   metadata: Record<string, unknown> | null;
@@ -151,9 +154,25 @@ export interface SpendTreeNodeResponse {
   denialReason: DenialCode | null;
   failureReason: string | null;
   parentEventId: string | null;
+  chainRootEventId: string | null;
   createdAt: string;
   metadata: Record<string, unknown> | null;
   children: SpendTreeNodeResponse[] | null;
+}
+
+export interface ChainDetailResponse {
+  chainRootEventId: string;
+  budgetId: string;
+  maxSubtreeQuantity: number | null;
+  totalChainSpend: number;
+  chainCapRemaining: number | null;
+  currency: string;
+  totalEvents: number;
+  totalAuthorized: number;
+  totalConfirmed: number;
+  chainStartedAt: string;
+  lastActivityAt: string;
+  roots: SpendTreeNodeResponse[];
 }
 
 export interface SpendTreeResponse {
@@ -344,7 +363,8 @@ export interface BudgetFundingResponse {
 export interface CreateBudgetRequest {
   userId: string;
   totalLimit: string;
-  currency: string;
+  currency?: string;
+  unit?: string;
   intentContext?: string;
   maxTransactionQuantity?: string;
   expiresAt?: string;

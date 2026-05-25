@@ -60,6 +60,15 @@ public class AuthorizeSpendRequest {
 
     private Map<String, Object> metadata;
 
+    // Optional per-chain spend cap — only meaningful on root authorize() calls
+    // (i.e. when parentEventId is null). When set, the total AUTHORIZED + CONFIRMED
+    // spend across the entire causal chain rooted at this event is checked against
+    // this ceiling on every subsequent child authorization.
+    // Denied child requests receive SUBTREE_CAP_EXCEEDED with the remaining capacity.
+    @DecimalMin(value = "0.0", inclusive = false, message = "maxSubtreeQuantity must be positive")
+    @Digits(integer = 15, fraction = 4)
+    private BigDecimal maxSubtreeQuantity;
+
     // When true, all enforcement checks run and a full AUTHORIZED/DENIED response
     // is returned, but nothing is written to the ledger and no webhooks fire.
     // Use during integration testing to verify enforcement logic without creating records.

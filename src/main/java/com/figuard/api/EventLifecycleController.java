@@ -3,8 +3,12 @@ package com.figuard.api;
 import com.figuard.api.dto.request.ConfirmEventRequest;
 import com.figuard.api.dto.request.FailEventRequest;
 import com.figuard.api.dto.request.VoidEventRequest;
+import com.figuard.api.dto.request.VoidTreeRequest;
+import com.figuard.api.dto.response.ChainDetailResponse;
 import com.figuard.api.dto.response.SpendEventResponse;
+import com.figuard.api.dto.response.VoidTreeResponse;
 import com.figuard.security.TenantContext;
+import com.figuard.service.LedgerService;
 import com.figuard.service.PaymentLifecycleService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -24,6 +28,7 @@ import java.util.UUID;
 public class EventLifecycleController {
 
     private final PaymentLifecycleService lifecycleService;
+    private final LedgerService ledgerService;
 
     @Operation(
         summary = "Confirm an event",
@@ -69,5 +74,44 @@ public class EventLifecycleController {
             @PathVariable UUID id,
             @Valid @RequestBody VoidEventRequest request) {
         return ResponseEntity.ok(lifecycleService.voidEvent(id, request, TenantContext.get()));
+    }
+
+    @Operation(
+        summary = "Void an entire causal subtree",
+        description = """
+            Atomically void the target event and every AUTHORIZED descendant in its causal chain.
+            Use this when an orchestration job is cancelled or fails and you want to release all
+            child reservations in a single call — rather than voiding each agent's event individually.
+
+            CONFIRMED and already-VOIDED descendants are left untouched.
+            Any descendant with an `externalTransactionId` (a committed payment) will cause the
+            entire operation to fail — those events must be refunded before the tree can be voided.
+
+            Returns a summary: total events voided, total quantity released, and the full list of voided IDs.
+            """
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Subtree voided, all reservations released"),
+        @ApiResponse(responseCode = "404", description = "Root event not found or not owned by this tenant"),
+        @ApiResponse(responseCode = "409", description = "Root event is not AUTHORIZED, or a descendant requires a refund before voiding")
+    })
+    @PostMapping("/{id}/void-tree")
+    public ResponseEntity<VoidTreeResponse> voidTree(
+            @PathVariable UUID id,
+            @Valid @RequestBody VoidTreeRequest request) {
+        return ResponseEntity.ok(lifecycleService.voidTree(id, request, TenantContext.get()));
+    }
+
+    @Operation(
+        summary = "Get causal chain detail",
+        description = "Returns the full causal chain rooted at the given event, including chain-level spend totals, cap metadata, and the nested event tree."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Chain detail returned"),
+        @ApiResponse(responseCode = "404", description = "Chain root event not found or not owned by this tenant")
+    })
+    @GetMapping("/{id}/chain")
+    public ResponseEntity<ChainDetailResponse> getChain(@PathVariable UUID id) {
+        return ResponseEntity.ok(ledgerService.getChainDetail(id, TenantContext.get()));
     }
 }

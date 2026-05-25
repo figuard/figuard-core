@@ -42,6 +42,7 @@ import {
   SpendTree,
   Subscription,
   VoidResult,
+  VoidTreeResult,
   makeApiKey,
   makeAuthorizationResult,
   makeBudget,
@@ -51,7 +52,16 @@ import {
   makeSpendEvent,
   makeSpendTreeNode,
   makeSubscription,
+  makeVoidTreeResult,
 } from "./models";
+import {
+  getCurrentTraceId,
+  withAuthorizeSpan,
+  finishAuthorizeSpan,
+  withLifecycleSpan,
+  withVoidTreeSpan,
+  finishVoidTreeSpan,
+} from "./telemetry";
 
 const MAX_RETRIES = 3;
 const RETRY_BACKOFF_BASE_MS = 1000;
@@ -160,6 +170,14 @@ export interface AuthorizeOptions {
   traceId?: string;
   metadata?: Record<string, unknown>;
   /**
+   * Optional per-chain spend cap. Only meaningful on root authorize() calls
+   * (i.e. when parentEventId is omitted). When set, the total AUTHORIZED +
+   * CONFIRMED spend across the entire causal chain rooted at this event is
+   * checked against this ceiling on every subsequent child authorization.
+   * Denied child requests receive SUBTREE_CAP_EXCEEDED with remaining capacity.
+   */
+  maxSubtreeQuantity?: number;
+  /**
    * When true, all enforcement checks run and a full AUTHORIZED/DENIED result
    * is returned, but nothing is written to the ledger and no webhooks fire.
    * Use during integration testing.
@@ -185,6 +203,16 @@ export interface VoidEventOptions {
   reason: string;
   /** When true, also void child events in the causal chain. */
   voidChildEvents?: boolean;
+}
+
+export interface VoidTreeOptions {
+  /**
+   * Root event ID — the orchestrator's authorization whose entire causal subtree
+   * should be voided atomically.
+   */
+  eventId: string;
+  /** Reason code written to every voided event's audit log. */
+  reason: string;
 }
 
 export interface ResumeBudgetOptions {
@@ -744,6 +772,10 @@ export class FiGuardClient {
         ? options.idempotencyKey
         : crypto.randomUUID();
 
+    // Forward the active OTEL trace ID to the server for ledger correlation.
+    // Caller-supplied traceId takes precedence; OTEL is used only as a fallback.
+    const effectiveTraceId = options.traceId ?? getCurrentTraceId();
+
     const body: Record<string, unknown> = {
       agentId: options.agentId,
       actionType: options.actionType,
@@ -758,16 +790,31 @@ export class FiGuardClient {
     if (options.claimedCategory !== undefined) body["claimedCategory"] = options.claimedCategory;
     if (options.claimedItemType !== undefined) body["claimedItemType"] = options.claimedItemType;
     if (options.parentEventId !== undefined) body["parentEventId"] = options.parentEventId;
-    if (options.traceId !== undefined) body["traceId"] = options.traceId;
+    if (effectiveTraceId !== undefined) body["traceId"] = effectiveTraceId;
     if (options.metadata !== undefined) body["metadata"] = options.metadata;
+    if (options.maxSubtreeQuantity !== undefined) body["maxSubtreeQuantity"] = options.maxSubtreeQuantity;
     if (options.dryRun) body["dryRun"] = true;
 
-    const data = await this.request("POST", "/api/v1/authorize", {
-      body,
-      headers: { "X-Session-Token": options.sessionToken },
-      retryable: true,
-    });
-    return makeAuthorizationResult(data);
+    return withAuthorizeSpan(
+      {
+        agentId: options.agentId,
+        actionType: options.actionType,
+        requestedQuantity: options.requestedQuantity,
+        claimedCategory: options.claimedCategory,
+        parentEventId: options.parentEventId,
+        dryRun: options.dryRun,
+      },
+      async (span) => {
+        const data = await this.request("POST", "/api/v1/authorize", {
+          body,
+          headers: { "X-Session-Token": options.sessionToken },
+          retryable: true,
+        });
+        const result = makeAuthorizationResult(data);
+        finishAuthorizeSpan(span, result);
+        return result;
+      },
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -777,21 +824,35 @@ export class FiGuardClient {
   async confirmEvent(options: ConfirmEventOptions): Promise<SpendEventResponse> {
     const body: Record<string, unknown> = { confirmedQuantity: options.confirmedQuantity };
     if (options.externalTransactionId !== undefined) body["externalTransactionId"] = options.externalTransactionId;
-    const data = await this.request("POST", `/api/v1/events/${options.eventId}/confirm`, {
-      body,
-      retryable: true,
-    });
-    return makeSpendEvent(data);
+    return withLifecycleSpan(
+      "figuard.confirm",
+      options.eventId,
+      { "figuard.confirmed_quantity": options.confirmedQuantity },
+      async () => {
+        const data = await this.request("POST", `/api/v1/events/${options.eventId}/confirm`, {
+          body,
+          retryable: true,
+        });
+        return makeSpendEvent(data);
+      },
+    );
   }
 
   async failEvent(options: FailEventOptions): Promise<SpendEventResponse> {
     const body: Record<string, unknown> = { reason: options.reason };
     if (options.errorMessage !== undefined) body["errorMessage"] = options.errorMessage;
-    const data = await this.request("POST", `/api/v1/events/${options.eventId}/fail`, {
-      body,
-      retryable: true,
-    });
-    return makeSpendEvent(data);
+    return withLifecycleSpan(
+      "figuard.fail",
+      options.eventId,
+      { "figuard.reason": options.reason },
+      async () => {
+        const data = await this.request("POST", `/api/v1/events/${options.eventId}/fail`, {
+          body,
+          retryable: true,
+        });
+        return makeSpendEvent(data);
+      },
+    );
   }
 
   async voidEvent(options: VoidEventOptions): Promise<VoidResult> {
@@ -805,6 +866,30 @@ export class FiGuardClient {
     });
     const event = makeSpendEvent(data);
     return { event, isVoided: event.decision === "VOIDED" };
+  }
+
+  /**
+   * Atomically void a root event and every AUTHORIZED descendant in its causal
+   * subtree — in a single server-side transaction.
+   *
+   * Use when an orchestration job is cancelled and you want to release all child
+   * agent reservations at once instead of voiding each individually.
+   *
+   * CONFIRMED and already-VOIDED descendants are left untouched.
+   * Throws HTTP 409 if any descendant has an externalTransactionId set (that
+   * event must be refunded before the tree can be voided).
+   */
+  async voidTree(options: VoidTreeOptions): Promise<VoidTreeResult> {
+    return withVoidTreeSpan(options.eventId, options.reason, async (span) => {
+      const data = await this.request(
+        "POST",
+        `/api/v1/events/${options.eventId}/void-tree`,
+        { body: { reason: options.reason }, retryable: true },
+      );
+      const result = makeVoidTreeResult(data);
+      finishVoidTreeSpan(span, result);
+      return result;
+    });
   }
 
   // -------------------------------------------------------------------------

@@ -28,5 +28,6 @@ public enum DenialCode {
     ENTITLEMENT_LIMIT_REACHED,      // entitlement item balance exhausted; BLOCK overage policy
     ENTITLEMENT_NOT_FOUND,          // subscriptionId in session token has no matching entitlement item
     SUBSCRIPTION_PAUSED,            // subscription is paused — no spend allowed
-    SUBSCRIPTION_CANCELLED          // subscription has been cancelled
+    SUBSCRIPTION_CANCELLED,         // subscription has been cancelled
+    SUBTREE_CAP_EXCEEDED            // adding this authorization would push the causal chain total over maxSubtreeQuantity
 }

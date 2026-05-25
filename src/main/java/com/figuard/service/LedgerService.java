@@ -1,5 +1,6 @@
 package com.figuard.service;
 
+import com.figuard.api.dto.response.ChainDetailResponse;
 import com.figuard.api.dto.response.SpendEventResponse;
 import com.figuard.api.dto.response.SpendTreeNode;
 import com.figuard.api.dto.response.SpendTreeResponse;
@@ -123,6 +124,7 @@ public class LedgerService {
                 ? DenialCode.valueOf(event.getDenialReason()) : null)
             .failureReason(event.getFailureReason())
             .parentEventId(event.getParentEvent() != null ? event.getParentEvent().getId() : null)
+            .chainRootEventId(event.getChainRootEventId())
             .createdAt(event.getCreatedAt())
             .metadata(event.getMetadata())
             .children(childNodes.isEmpty() ? null : childNodes)
@@ -159,5 +161,69 @@ public class LedgerService {
             }
         }
         return count;
+    }
+
+    // -------------------------------------------------------------------------
+    // Chain detail — all events sharing a chainRootEventId
+    // -------------------------------------------------------------------------
+
+    @Transactional(readOnly = true)
+    public ChainDetailResponse getChainDetail(UUID chainRootEventId, Tenant tenant) {
+        // Load the root event — validates existence and tenant ownership
+        SpendEvent root = spendEventRepository.findById(chainRootEventId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Chain root event not found"));
+
+        if (!root.getBudget().getTenant().getId().equals(tenant.getId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Chain root event not found");
+        }
+
+        // All events in this chain (including root itself)
+        List<SpendEvent> allEvents = spendEventRepository.findByChainRootEventId(chainRootEventId);
+
+        // Build tree from root
+        SpendTreeNode rootNode = buildNode(root);
+
+        // Compute chain-level totals
+        BigDecimal totalAuthorized = allEvents.stream()
+            .filter(e -> e.getDecision() == SpendDecision.AUTHORIZED
+                      || e.getDecision() == SpendDecision.CONFIRMED)
+            .map(SpendEvent::getRequestedQuantity)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalConfirmed = allEvents.stream()
+            .filter(e -> e.getDecision() == SpendDecision.CONFIRMED)
+            .map(e -> e.getConfirmedQuantity() != null ? e.getConfirmedQuantity() : e.getRequestedQuantity())
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalChainSpend = allEvents.stream()
+            .filter(e -> e.getDecision() == SpendDecision.AUTHORIZED
+                      || e.getDecision() == SpendDecision.CONFIRMED)
+            .map(SpendEvent::getRequestedQuantity)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal chainCapRemaining = root.getMaxSubtreeQuantity() != null
+            ? root.getMaxSubtreeQuantity().subtract(totalChainSpend).max(BigDecimal.ZERO)
+            : null;
+
+        java.time.OffsetDateTime lastActivityAt = allEvents.stream()
+            .map(SpendEvent::getCreatedAt)
+            .filter(t -> t != null)
+            .max(java.util.Comparator.naturalOrder())
+            .orElse(root.getCreatedAt());
+
+        return ChainDetailResponse.builder()
+            .chainRootEventId(chainRootEventId)
+            .budgetId(root.getBudget().getId())
+            .maxSubtreeQuantity(root.getMaxSubtreeQuantity())
+            .totalChainSpend(totalChainSpend)
+            .chainCapRemaining(chainCapRemaining)
+            .currency(root.getCurrency() != null ? root.getCurrency().trim() : null)
+            .totalEvents(allEvents.size())
+            .totalAuthorized(totalAuthorized)
+            .totalConfirmed(totalConfirmed)
+            .chainStartedAt(root.getCreatedAt())
+            .lastActivityAt(lastActivityAt)
+            .roots(List.of(rootNode))
+            .build();
     }
 }

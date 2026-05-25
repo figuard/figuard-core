@@ -17,7 +17,7 @@ python scenario_1_infinite_loop.py
 | 2 | **Duplicate invoice payment** — timeout + retry = double charge | retry returns same event_id, one charge | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/02_duplicate_payment.ipynb) |
 | 3 | **Concurrent fleet overspend** — 10 agents, 1 budget, $2k attempted | 5 authorized, 5 denied, $1k never exceeded | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/03_concurrent_overspend.ipynb) |
 | 4 | **Rogue sub-agent** — one hallucinating agent drains the whole fleet | delegation cap stops researcher at $200, fleet completes | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/04_rogue_subagent_fleet.ipynb) |
-| 5 | **Category violation** — hotel charged to flight budget, found at month-end | `DENIED — CATEGORY_MISMATCH` at authorization time | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/05_category_violation.ipynb) |
+| 5 | **Category violation** — hotel charged to flight budget, found at month-end | `DENIED — NO_MATCHING_ALLOCATION` at authorization time | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/05_category_violation.ipynb) |
 
 ---
 

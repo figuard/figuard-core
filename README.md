@@ -1,9 +1,9 @@
 # FiGuard
 
-**Your agent asks permission before anything moves.**  
-FiGuard says yes or no — and keeps a complete audit trail either way.
+AI agents fail in predictable ways. An agent retries a timed-out payment — you get charged twice. A quality loop runs 847 iterations — $16.94 later, someone notices. Ten agents share a budget — the first five drain it, the second five have no idea.
 
-Pre-flight authorization for money, tokens, API calls, or any bounded resource.  
+FiGuard gives agents a budget. They ask permission before spending. You get a full audit trail either way.
+
 Works with LangChain, CrewAI, LangGraph, and the OpenAI Agents SDK.
 
 [![CI](https://github.com/figuard/figuard-core/actions/workflows/ci.yml/badge.svg)](https://github.com/figuard/figuard-core/actions/workflows/ci.yml)
@@ -16,6 +16,10 @@ Works with LangChain, CrewAI, LangGraph, and the OpenAI Agents SDK.
 ---
 
 ![FiGuard demo](https://github.com/user-attachments/assets/e953a132-c379-45fe-9796-644a4ec84c5d)
+
+**Try it in 2 minutes — no setup required:**  
+→ [Run the quickstart in Colab](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/01_infinite_loop.ipynb)  
+→ [See the live dashboard](https://figuard-sandbox-1.onrender.com/ui)
 
 ---
 
@@ -64,9 +68,32 @@ print(auth.approved_quantity) # 270.0
 
 # Confirm with actual charged amount after the transaction succeeds
 client.confirm_event(auth.event_id, confirmed_quantity=267.00)
+
+# Try a second spend that exceeds what's left ($500 - $267 = $233 remaining)
+auth2 = client.authorize(
+    session_token=budget.primary_token.session_token,
+    agent_id="travel_agent",
+    action_type="PURCHASE",
+    description="Marriott Times Square 3 nights",
+    requested_quantity=350.00,
+    idempotency_key="hotel-001",
+)
+
+print(auth2.decision)       # DENIED
+print(auth2.denial_reason)  # INSUFFICIENT_FUNDS
 ```
 
-**3. Self-host** — [see self-hosting docs](docs/self-hosting.md)
+**3. See it in the dashboard**
+
+Open the sandbox dashboard — your events are already there:
+
+```
+https://figuard-sandbox-1.onrender.com/ui
+```
+
+Every authorization, denial, confirmation, and void shows up as a node in the spend tree in real time.
+
+**4. Self-host** — [see self-hosting docs](docs/self-hosting.md)
 
 ```bash
 git clone https://github.com/figuard/figuard-core
@@ -96,6 +123,15 @@ python examples/rogue_agent_scenarios/demo.py
 ---
 
 ## How It Works
+
+Four operations. Everything else is detail.
+
+| Operation | What it does |
+|---|---|
+| `authorize()` | Agent asks permission — funds reserved, nothing moved yet |
+| `confirm()` | Report what actually moved — releases the reservation |
+| `void()` | Cancel a pending authorization — reservation released |
+| `fail()` | Record a failed action — reservation released |
 
 ```
   Developer
@@ -149,6 +185,24 @@ Every authorization, denial, confirmation, and void is a row in the ledger. The 
 
 ---
 
+## Why Not Build It Yourself?
+
+You could. The authorize endpoint looks simple — check the balance, write a record. But the parts that matter are the parts that aren't obvious until you've hit them in production:
+
+**Concurrent authorization** — two agents sharing a budget can both read the same available balance, both see enough funds, and both get approved. By the time the second write lands, you're over limit. The fix is a pessimistic write lock on the budget row during authorization. Easy to know, easy to forget.
+
+**Dangling reservations** — a network timeout between the authorization write and the HTTP response leaves the agent with no event ID and the budget with a reserved amount it can't release. You need idempotency keyed to the request, not the response, so a retry finds the original authorization instead of creating a second one.
+
+**The reservation/confirmation split** — if you use a single `amountSpent` field and deduct at authorization time, two concurrent authorizations both read the same balance before either writes. The correct model is two fields: `amountReserved` (deducted at authorization) and `amountSpent` (moved from reserved at confirmation). This is the two-phase reserve-then-capture pattern that payment processors use. It's not novel — it's just usually hidden inside Stripe.
+
+**Session token security** — you need a token that scopes to exactly one budget, is returned exactly once, and is never stored in plaintext. If you store the raw token and your database is breached, every active agent session is compromised. Hash at write time, never store the raw value.
+
+**Append-only ledger** — a mutable status field on an authorization record loses history. When you need to reconstruct what happened and why a budget hit its limit, you want every state transition recorded as a separate row, not an update to the previous one.
+
+None of this is architecturally exotic. It's the same set of problems that payment infrastructure teams solved 20 years ago. FiGuard is that infrastructure applied to agent systems — already built, already tested, already handling the edge cases.
+
+---
+
 ## Create Your First Policy
 
 Pick your scenario in the interactive wizard — monetary vs non-monetary budget, single agent vs fleet, per-category limits, safety controls — and get the exact `create_budget` + `authorize` calls ready to paste.
@@ -188,24 +242,6 @@ Source: [`examples/rogue_agent_scenarios/`](examples/rogue_agent_scenarios/)
 **Not a replacement for Stripe spending controls.** Use both if you want defense in depth. FiGuard blocks at agent decision time; Stripe blocks at payment time. Different attack surfaces.
 
 **Not a security boundary against adversarial agents.** FiGuard enforces what the agent declares. An agent that lies about its category or amount bypasses category enforcement. FiGuard is designed for honest agents with bounded resources — the same threat model as a database connection pool or a rate limiter. It prevents accidental overspend and enforces organizational policies on well-behaved agents. For adversarial agent containment, pair FiGuard with a security layer like [Microsoft AGT](https://github.com/microsoft/agt).
-
----
-
-## Why Not Build It Yourself?
-
-You could. The authorize endpoint looks simple — check the balance, write a record. But the parts that matter are the parts that aren't obvious until you've hit them in production:
-
-**Concurrent authorization** — two agents sharing a budget can both read the same available balance, both see enough funds, and both get approved. By the time the second write lands, you're over limit. The fix is a pessimistic write lock on the budget row during authorization. Easy to know, easy to forget.
-
-**Dangling reservations** — a network timeout between the authorization write and the HTTP response leaves the agent with no event ID and the budget with a reserved amount it can't release. You need idempotency keyed to the request, not the response, so a retry finds the original authorization instead of creating a second one.
-
-**The reservation/confirmation split** — if you use a single `amountSpent` field and deduct at authorization time, two concurrent authorizations both read the same balance before either writes. The correct model is two fields: `amountReserved` (deducted at authorization) and `amountSpent` (moved from reserved at confirmation). This is the two-phase reserve-then-capture pattern that payment processors use. It's not novel — it's just usually hidden inside Stripe.
-
-**Session token security** — you need a token that scopes to exactly one budget, is returned exactly once, and is never stored in plaintext. If you store the raw token and your database is breached, every active agent session is compromised. Hash at write time, never store the raw value.
-
-**Append-only ledger** — a mutable status field on an authorization record loses history. When you need to reconstruct what happened and why a budget hit its limit, you want every state transition recorded as a separate row, not an update to the previous one.
-
-None of this is architecturally exotic. It's the same set of problems that payment infrastructure teams solved 20 years ago. FiGuard is that infrastructure applied to agent systems — already built, already tested, already handling the edge cases.
 
 ---
 

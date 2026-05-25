@@ -191,6 +191,100 @@ Spent: $80.00 / $100.00
 
 ---
 
+## Step 6: Cancel an orchestration job atomically
+
+When a LangGraph job fails or is cancelled mid-run, child agents may have live reservations that are holding budget. Call `void_tree` on the root event to release all of them in a single call.
+
+```python
+import asyncio
+from langgraph.graph import StateGraph
+from figuard import FiGuardClient
+
+client = FiGuardClient(api_key="fg_live_...", base_url="https://api.figuard.io")
+budget = client.create_budget(user_id="user_123", total_limit=500.00, currency="USD", expires_in="1h")
+
+# Orchestrator authorizes the job
+root = client.authorize(
+    session_token=budget.primary_token.session_token,
+    agent_id="orchestrator",
+    action_type="ORCHESTRATION_JOB",
+    description="Refund batch run #1042",
+    requested_quantity=500.00,
+    idempotency_key="job-1042",
+)
+
+# ... sub-agents spawn and authorize their own events with parent_event_id=root.event_id ...
+
+# Job fails or is cancelled — release everything atomically
+if root.is_authorized:
+    result = client.void_tree(
+        event_id=root.event_id,
+        reason="ORCHESTRATION_JOB_CANCELLED",
+    )
+    print(f"Released ${result.total_quantity_released} across {result.voided_count} events")
+    print(f"Voided IDs: {result.voided_event_ids}")
+```
+
+```
+Released $420.00 across 4 events
+Voided IDs: ['evt_abc123', 'evt_def456', 'evt_ghi789', 'evt_jkl012']
+```
+
+Without `void_tree`, each child's reservation would stay frozen until `authorizationExpirySeconds` elapses. With `void_tree`, the full $420 is available for the next job immediately.
+
+You can subscribe to `SPEND_TREE_VOIDED` webhooks to monitor orchestration cancellations:
+
+```python
+client.create_webhook(
+    url="https://your-server.com/figuard-events",
+    secret="your-webhook-secret",
+    events=["SPEND_TREE_VOIDED", "SPEND_DENIED"],
+)
+# Payload includes: rootEventId, voidedCount, totalQuantityReleased, voidedEventIds
+```
+
+---
+
+## Step 7: Automatic causal chain construction
+
+The handler automatically links sub-agent events into a causal chain — no manual
+`parent_event_id` plumbing needed.
+
+Every LangChain/LangGraph execution unit has a `run_id` UUID and a `parent_run_id`.
+The handler records these for every node (including ones that never authorize) in an
+in-memory topology table. When a tool fires, it walks up the topology to find the nearest
+instrumented ancestor and uses its FiGuard event_id as `parent_event_id`:
+
+```
+Orchestrator (run A) → authorizes → event_id = evt_A
+  └── Planner node (run B) → no authorize
+       └── Tool C (run C, parent=B) → authorize, walk-up: B→A → parent_event_id=evt_A ✓
+```
+
+**Parallel graph race** — in LangGraph graphs with parallel branches, two nodes can start
+simultaneously. If Node B fires before Node A's authorization completes, B's authorize call
+is buffered and dispatched the moment A's event_id arrives. No manual ordering needed.
+
+**Thread pool context** — LangGraph's parallel execution uses a `ThreadPoolExecutor`.
+Python `ContextVar` does not propagate into these threads. Use `figuard_run_in_executor`
+for any async graph with parallel branches:
+
+```python
+from figuard import figuard_run_in_executor
+
+# ❌ Breaks the causal chain in parallel branches:
+await loop.run_in_executor(None, process_refund, order_id)
+
+# ✅ Carries parent_event_id into the worker thread:
+await figuard_run_in_executor(process_refund, order_id)
+```
+
+**Partial instrumentation** — you don't need to instrument every node. Routing, planning,
+and summarization nodes that don't spend money can be left un-authorized. The walk-up
+skips them and links spending tools to the nearest instrumented ancestor transparently.
+
+---
+
 ## Reference
 
 | Concept | Code |
@@ -200,6 +294,9 @@ Spent: $80.00 / $100.00
 | Per-tool category | `FiGuardToolGuard(tool, ..., category="flights")` |
 | Fleet sub-agent | `create_delegation_token(budget_id, sub_agent_id, cap)` |
 | Audit trail | `client.list_events(budget_id)` |
+| Cancel orchestration job | `client.void_tree(event_id, reason)` — releases entire causal subtree atomically |
+| Parallel thread pool | `figuard_run_in_executor(fn, *args)` — carries ContextVar context into worker threads |
+| Pin ambient parent | `with figuard_scope(event_id): ...` — scopes all authorize() calls inside the block |
 | Test policies without side effects | Pass `dry_run=True` to `client.authorize()` — checks run, nothing is written |
 
 > **Sandbox limits:** `sb_live_demo` is shared and rate-limited. If you hit limits, [self-host in 2 minutes](../self-hosting.md) and use your own key.

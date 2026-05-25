@@ -64,6 +64,7 @@ from .models import (
     SpendTree,
     SpendTreeNode,
     VoidResult,
+    VoidTreeResult,
 )
 from .client import (
     _parse_authorization_result,
@@ -71,6 +72,15 @@ from .client import (
     _parse_delegation_token,
     _parse_spend_event,
     _parse_tree_node,
+)
+from .context import _set_current_event_id, get_current_event_id
+from .telemetry import (
+    authorize_span,
+    finish_authorize_span,
+    lifecycle_span,
+    void_tree_span,
+    finish_void_tree_span,
+    get_current_trace_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -520,6 +530,7 @@ class AsyncFiGuardClient:
         agent_type: Optional[str] = None,
         trace_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        max_subtree_quantity: Optional[float] = None,
         dry_run: bool = False,
         **kwargs: Any,
     ) -> AuthorizationResult:
@@ -544,6 +555,14 @@ class AsyncFiGuardClient:
         if not idempotency_key or not idempotency_key.strip():
             idempotency_key = str(uuid.uuid4())
 
+        # Instrumentation precedence: explicit > ambient ContextVar.
+        # Framework callback inference sits between these and is resolved in the
+        # integration layer before this call is made.
+        effective_parent_id = parent_event_id or get_current_event_id()
+
+        # Forward the active OTEL trace ID to the server for ledger correlation.
+        effective_trace_id = trace_id or get_current_trace_id()
+
         body: Dict[str, Any] = {
             "agentId": agent_id,
             "actionType": action_type,
@@ -563,27 +582,41 @@ class AsyncFiGuardClient:
             body["claimedCategory"] = claimed_category
         if claimed_item_type is not None:
             body["claimedItemType"] = claimed_item_type
-        if parent_event_id is not None:
-            body["parentEventId"] = parent_event_id
-        if trace_id is not None:
-            body["traceId"] = trace_id
+        if effective_parent_id is not None:
+            body["parentEventId"] = effective_parent_id
+        if effective_trace_id is not None:
+            body["traceId"] = effective_trace_id
         if metadata is not None:
             body["metadata"] = metadata
+        if max_subtree_quantity is not None:
+            body["maxSubtreeQuantity"] = max_subtree_quantity
         if dry_run:
             body["dryRun"] = True
 
         token_prefix = session_token[:8] if len(session_token) >= 8 else "???"
         logger.debug(
-            "authorize: agentId=%s quantity=%s key=%s token_prefix=%s",
+            "authorize: agentId=%s quantity=%s key=%s token_prefix=%s parent=%s",
             agent_id, requested_quantity, idempotency_key, token_prefix,
+            effective_parent_id,
         )
 
         extra_headers = {"X-Session-Token": session_token}
-        data = await self._request(
-            "POST", "/api/v1/authorize",
-            json=body, headers=extra_headers, retryable=True,
-        )
-        return _parse_authorization_result(data)
+        with authorize_span(
+            agent_id, action_type, requested_quantity,
+            claimed_category, effective_parent_id, dry_run,
+        ) as span:
+            data = await self._request(
+                "POST", "/api/v1/authorize",
+                json=body, headers=extra_headers, retryable=True,
+            )
+            result = _parse_authorization_result(data)
+            finish_authorize_span(span, result)
+
+        # Propagate authorized event_id into ambient context for nested calls.
+        if result.is_authorized and not dry_run:
+            _set_current_event_id(result.event_id)
+
+        return result
 
     # -----------------------------------------------------------------------
     # Payment lifecycle
@@ -606,9 +639,11 @@ class AsyncFiGuardClient:
         if external_transaction_id is not None:
             body["externalTransactionId"] = external_transaction_id
 
-        data = await self._request(
-            "POST", f"/api/v1/events/{event_id}/confirm", json=body, retryable=True
-        )
+        with lifecycle_span("figuard.confirm", event_id) as span:
+            span.set_attribute("figuard.confirmed_quantity", float(confirmed_quantity))
+            data = await self._request(
+                "POST", f"/api/v1/events/{event_id}/confirm", json=body, retryable=True
+            )
         return _parse_spend_event(data)
 
     async def fail_event(
@@ -626,9 +661,11 @@ class AsyncFiGuardClient:
         if error_message is not None:
             body["errorMessage"] = error_message
 
-        data = await self._request(
-            "POST", f"/api/v1/events/{event_id}/fail", json=body, retryable=True
-        )
+        with lifecycle_span("figuard.fail", event_id) as span:
+            span.set_attribute("figuard.reason", reason)
+            data = await self._request(
+                "POST", f"/api/v1/events/{event_id}/fail", json=body, retryable=True
+            )
         return _parse_spend_event(data)
 
     async def void_event(
@@ -652,6 +689,31 @@ class AsyncFiGuardClient:
             "POST", f"/api/v1/events/{event_id}/void", json=body, retryable=True
         )
         return VoidResult(event=_parse_spend_event(data))
+
+    async def void_tree(self, event_id: str, reason: str) -> VoidTreeResult:
+        """
+        Atomically void a root event and every ``AUTHORIZED`` descendant in its
+        causal subtree — in a single server-side transaction.
+
+        Use when an orchestration job is cancelled and you need to release all
+        child agent reservations at once.
+        """
+        with void_tree_span(event_id, reason) as span:
+            data = await self._request(
+                "POST", f"/api/v1/events/{event_id}/void-tree",
+                json={"reason": reason},
+                retryable=True,
+            )
+            result = VoidTreeResult(
+                root_event_id=data["rootEventId"],
+                voided_count=data["voidedCount"],
+                total_quantity_released=float(data["totalQuantityReleased"]),
+                voided_event_ids=data["voidedEventIds"],
+                reason=data["reason"],
+                currency=data.get("currency"),
+            )
+            finish_void_tree_span(span, result)
+        return result
 
     # -----------------------------------------------------------------------
     # Ledger & reporting

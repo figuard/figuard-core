@@ -1,15 +1,18 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useBudgets } from "../hooks/useBudgets";
 import { BudgetStatusBar } from "../components/BudgetStatusBar";
 import { ExpiryBadge } from "../components/ExpiryBadge";
 import { HealthBadge } from "../components/HealthBadge";
 import { NewBudgetModal } from "../components/NewBudgetModal";
+import { BudgetTemplateModal } from "../components/BudgetTemplateModal";
+import type { BudgetTemplate } from "../components/BudgetTemplateModal";
 import { BUDGET_STATUS_BADGE } from "../lib/colors";
 import { formatAmount, formatDateTime, shortId } from "../lib/format";
 import { ApiError } from "../api/client";
 import type { BudgetStatus, BudgetResponse } from "../lib/types";
-import type { ListBudgetsParams } from "../api/budgets";
+import { listBudgets, type ListBudgetsParams } from "../api/budgets";
 
 const STATUS_OPTIONS: Array<BudgetStatus | ""> = [
   "",
@@ -52,8 +55,32 @@ export function BudgetList() {
   });
   const [userIdSearch, setUserIdSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("newest");
-  const [newBudgetOpen, setNewBudgetOpen] = useState(false);
+  type ModalState =
+    | { type: "closed" }
+    | { type: "picker" }
+    | { type: "form"; template: BudgetTemplate | null };
+  const [modal, setModal] = useState<ModalState>({ type: "closed" });
   const { data, isLoading, isFetching, isError, error } = useBudgets(params);
+
+  // Lightweight status-count queries (size=1, we only need totalElements)
+  const { data: activeCountData } = useQuery({
+    queryKey: ["budgets-count", "ACTIVE"],
+    queryFn: () => listBudgets({ status: "ACTIVE", size: 1 }),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+  const { data: pausedCountData } = useQuery({
+    queryKey: ["budgets-count", "PAUSED"],
+    queryFn: () => listBudgets({ status: "PAUSED", size: 1 }),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+  const { data: exhaustedCountData } = useQuery({
+    queryKey: ["budgets-count", "EXHAUSTED"],
+    queryFn: () => listBudgets({ status: "EXHAUSTED", size: 1 }),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
 
   const filteredBudgets = useMemo(() => {
     const budgets = data?.content ?? [];
@@ -68,8 +95,42 @@ export function BudgetList() {
   const totalPages = data?.totalPages ?? 1;
   const currentPage = data?.number ?? 0;
 
+  const activeCount = activeCountData?.totalElements;
+  const pausedCount = pausedCountData?.totalElements;
+  const exhaustedCount = exhaustedCountData?.totalElements;
+
   return (
     <div className="space-y-4">
+      {/* Fleet health stat bar */}
+      {(activeCount !== undefined || pausedCount !== undefined || exhaustedCount !== undefined) && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+            <p className="text-xs text-gray-400 mb-0.5">Total budgets</p>
+            <p className="text-xl font-semibold text-gray-900 tabular-nums">
+              {data?.totalElements.toLocaleString() ?? "—"}
+            </p>
+          </div>
+          <div className="rounded-xl border border-green-100 bg-green-50 px-4 py-3 shadow-sm">
+            <p className="text-xs text-green-600 mb-0.5">Active</p>
+            <p className="text-xl font-semibold text-green-800 tabular-nums">
+              {activeCount?.toLocaleString() ?? "—"}
+            </p>
+          </div>
+          <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 shadow-sm">
+            <p className="text-xs text-amber-600 mb-0.5">Paused</p>
+            <p className="text-xl font-semibold text-amber-800 tabular-nums">
+              {pausedCount?.toLocaleString() ?? "—"}
+            </p>
+          </div>
+          <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 shadow-sm">
+            <p className="text-xs text-red-500 mb-0.5">Exhausted</p>
+            <p className="text-xl font-semibold text-red-800 tabular-nums">
+              {exhaustedCount?.toLocaleString() ?? "—"}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Budgets</h1>
@@ -91,7 +152,7 @@ export function BudgetList() {
           )}
           {/* New Budget */}
           <button
-            onClick={() => setNewBudgetOpen(true)}
+            onClick={() => setModal({ type: "picker" })}
             className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
           >
             + New Budget
@@ -275,8 +336,20 @@ export function BudgetList() {
         </>
       )}
 
-      {newBudgetOpen && (
-        <NewBudgetModal onClose={() => setNewBudgetOpen(false)} />
+      {modal.type === "picker" && (
+        <BudgetTemplateModal
+          onSelect={(tpl) => setModal({ type: "form", template: tpl })}
+          onBlank={() => setModal({ type: "form", template: null })}
+          onClose={() => setModal({ type: "closed" })}
+        />
+      )}
+
+      {modal.type === "form" && (
+        <NewBudgetModal
+          template={modal.template}
+          onBack={() => setModal({ type: "picker" })}
+          onClose={() => setModal({ type: "closed" })}
+        />
       )}
     </div>
   );

@@ -204,6 +204,20 @@ class VoidResult:
         return self.event.decision == "VOIDED"
 
 
+@dataclass(frozen=True)
+class VoidTreeResult:
+    """
+    Returned by ``void_tree()`` — summarises the entire causal subtree that was
+    atomically voided.
+    """
+    root_event_id: str
+    voided_count: int
+    total_quantity_released: float
+    voided_event_ids: List[str]
+    reason: str
+    currency: Optional[str] = None  # None for unit-based budgets
+
+
 # ---------------------------------------------------------------------------
 # Ledger
 # ---------------------------------------------------------------------------

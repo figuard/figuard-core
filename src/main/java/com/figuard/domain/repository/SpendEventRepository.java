@@ -45,6 +45,9 @@ public interface SpendEventRepository extends JpaRepository<SpendEvent, UUID> {
     // Child events sharing the same parent — used by voidChildEvents
     List<SpendEvent> findByParentEventId(UUID parentEventId);
 
+    // All events in a causal chain — used by chain detail view
+    List<SpendEvent> findByChainRootEventId(UUID chainRootEventId);
+
     // Entity dedup check — finds an existing AUTHORIZED or CONFIRMED event for the same entityId on this budget
     List<SpendEvent> findByBudgetIdAndEntityIdAndDecisionIn(UUID budgetId, String entityId, List<SpendDecision> decisions);
 
@@ -99,4 +102,12 @@ public interface SpendEventRepository extends JpaRepository<SpendEvent, UUID> {
     // Returns at most one result (newest first); caller takes get(0) when the list is non-empty.
     @Query("SELECT e FROM SpendEvent e WHERE e.budget.id = :budgetId AND e.denialReason = 'VELOCITY_LIMIT_EXCEEDED' AND e.createdAt > :cutoff ORDER BY e.createdAt DESC")
     List<SpendEvent> findVelocityDenialAfter(@Param("budgetId") UUID budgetId, @Param("cutoff") OffsetDateTime cutoff);
+
+    // Per-chain spend cap — sum of requestedQuantity for all AUTHORIZED + CONFIRMED events
+    // sharing the same chain root. Used by Step 8b of authorize() to enforce maxSubtreeQuantity.
+    // decisions should be List.of(SpendDecision.AUTHORIZED, SpendDecision.CONFIRMED).
+    @Query("SELECT COALESCE(SUM(e.requestedQuantity), 0) FROM SpendEvent e " +
+           "WHERE e.chainRootEventId = :chainRootEventId AND e.decision IN :decisions")
+    java.math.BigDecimal sumSubtreeQuantity(@Param("chainRootEventId") UUID chainRootEventId,
+                                            @Param("decisions") List<SpendDecision> decisions);
 }

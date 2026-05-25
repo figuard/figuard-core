@@ -41,6 +41,7 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from .client import FiGuardClient
+from .context import figuard_scope, get_current_event_id
 from .models import AuthorizationResult, SpendEventResponse
 
 logger = logging.getLogger(__name__)
@@ -108,19 +109,25 @@ class CompositeGuard:
         key = idempotency_key or str(uuid4())
         authorized: List[tuple[GuardedResource, AuthorizationResult]] = []
 
+        # Snapshot the ambient parent before any resource authorizes.
+        # Each resource is on an independent budget — the first resource's
+        # event_id must not leak into subsequent resources as parent_event_id.
+        pre_composite_parent = get_current_event_id()
+
         for resource in self._resources:
             qty = requested.get(resource.resource, 0.0)
             try:
-                result = resource.client.authorize(
-                    session_token=resource.primary_token.session_token,
-                    agent_id=agent_id,
-                    action_type=action_type,
-                    description=description,
-                    requested_quantity=qty,
-                    idempotency_key=f"{key}:{resource.resource}",
-                    trace_id=trace_id,
-                    **kwargs,
-                )
+                with figuard_scope(pre_composite_parent):
+                    result = resource.client.authorize(
+                        session_token=resource.session_token,
+                        agent_id=agent_id,
+                        action_type=action_type,
+                        description=description,
+                        requested_quantity=qty,
+                        idempotency_key=f"{key}:{resource.resource}",
+                        trace_id=trace_id,
+                        **kwargs,
+                    )
             except Exception as exc:
                 logger.error(
                     "CompositeGuard authorize error — resource=%s: %s",

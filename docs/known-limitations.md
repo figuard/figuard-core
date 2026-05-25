@@ -48,7 +48,7 @@ For simple budgets (no named allocations), there is one token with `category="de
 
 ## Dashboard requires local access on self-hosted
 
-The dashboard at `http://localhost:5173` is served by the FiGuard container. It is not behind any authentication — do not expose port 5173 to the internet on a self-hosted instance. The API at port 8080 requires `X-Agent-Budget-Key` on all requests.
+The dashboard at `http://localhost:8080/ui` is served by the FiGuard container. It is not behind any authentication — do not expose port 8080/ui to the internet on a self-hosted instance. The API at port 8080 requires `X-Agent-Budget-Key` on all requests.
 
 ---
 

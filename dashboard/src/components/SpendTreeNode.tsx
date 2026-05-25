@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { DECISION_BADGE, DECISION_DOT } from "../lib/colors";
 import { formatAmount, shortId } from "../lib/format";
 import type { SpendTreeNodeResponse } from "../lib/types";
@@ -71,6 +72,19 @@ function NodeCard({
           </span>
         </div>
       </div>
+
+      {/* Chain link — root nodes only (chainRootEventId === id) */}
+      {isRoot && node.chainRootEventId && (
+        <div className="px-3 pb-2 pt-1 border-t border-gray-100">
+          <Link
+            to={`/chains/${node.chainRootEventId}`}
+            className="text-xs text-blue-500 hover:text-blue-700 transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            View chain →
+          </Link>
+        </div>
+      )}
 
       {/* Expand/collapse footer — only when node has children */}
       {hasChildren && (

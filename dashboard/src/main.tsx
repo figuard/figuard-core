@@ -11,6 +11,7 @@ import { Replay } from "./pages/Replay";
 import { SpendTree } from "./pages/SpendTree";
 import { Settings } from "./pages/Settings";
 import { Webhooks } from "./pages/Webhooks";
+import { ChainDetail } from "./pages/ChainDetail";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -37,6 +38,7 @@ createRoot(root).render(
             <Route path="budgets/:id/ledger" element={<Ledger />} />
             <Route path="budgets/:id/tree" element={<SpendTree />} />
             <Route path="budgets/:id/replay" element={<Replay />} />
+            <Route path="chains/:chainRootEventId" element={<ChainDetail />} />
             <Route path="users" element={<CustomerView />} />
             <Route path="webhooks" element={<Webhooks />} />
             <Route path="settings" element={<Settings />} />

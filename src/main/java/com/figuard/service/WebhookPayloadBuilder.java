@@ -59,6 +59,21 @@ public class WebhookPayloadBuilder {
         return payload;
     }
 
+    public Map<String, Object> buildSpendTreeVoidedPayload(AgentBudget budget,
+                                                            SpendEvent rootEvent,
+                                                            int voidedCount,
+                                                            java.math.BigDecimal totalQuantityReleased,
+                                                            java.util.List<java.util.UUID> voidedEventIds) {
+        Map<String, Object> payload = basePayload(WebhookEventType.SPEND_TREE_VOIDED, budget);
+        payload.put("rootEventId",           rootEvent.getId());
+        payload.put("voidedCount",           voidedCount);
+        payload.put("totalQuantityReleased", totalQuantityReleased);
+        payload.put("voidReason",            rootEvent.getFailureReason());
+        payload.put("currency",              rootEvent.getCurrency());
+        payload.put("voidedEventIds",        voidedEventIds);
+        return payload;
+    }
+
     public Map<String, Object> buildBudgetExpiredUnusedPayload(AgentBudget budget) {
         Map<String, Object> payload = basePayload(WebhookEventType.BUDGET_EXPIRED_UNUSED, budget);
         payload.put("expiresAt",         budget.getExpiresAt());

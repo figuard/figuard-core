@@ -39,6 +39,21 @@ export async function listDelegationTokens(budgetId: string): Promise<Delegation
   return apiFetch<DelegationTokenResponse[]>(`/api/v1/budgets/${budgetId}/delegation-tokens`);
 }
 
+export interface CreateDelegationTokenRequest {
+  label?: string;
+  caps?: Array<{ category: string; limit: number }>;
+}
+
+export async function createDelegationToken(
+  budgetId: string,
+  payload: CreateDelegationTokenRequest,
+): Promise<DelegationTokenResponse> {
+  return apiFetch<DelegationTokenResponse>(
+    `/api/v1/budgets/${budgetId}/delegation-tokens`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
 export async function createBudget(
   payload: CreateBudgetRequest,
 ): Promise<BudgetResponse> {

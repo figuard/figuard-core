@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from .composite import CompositeAuthorizationResult
+from .context import figuard_scope, get_current_event_id
 from .models import SpendEventResponse
 
 logger = logging.getLogger(__name__)
@@ -72,19 +73,22 @@ class AsyncCompositeGuard:
         key = idempotency_key or str(uuid4())
         authorized = []
 
+        pre_composite_parent = get_current_event_id()
+
         for resource in self._resources:
             qty = requested.get(resource.resource, 0.0)
             try:
-                result = await resource.client.authorize(
-                    session_token=resource.primary_token.session_token,
-                    agent_id=agent_id,
-                    action_type=action_type,
-                    description=description,
-                    requested_quantity=qty,
-                    idempotency_key=f"{key}:{resource.resource}",
-                    trace_id=trace_id,
-                    **kwargs,
-                )
+                with figuard_scope(pre_composite_parent):
+                    result = await resource.client.authorize(
+                        session_token=resource.session_token,
+                        agent_id=agent_id,
+                        action_type=action_type,
+                        description=description,
+                        requested_quantity=qty,
+                        idempotency_key=f"{key}:{resource.resource}",
+                        trace_id=trace_id,
+                        **kwargs,
+                    )
             except Exception as exc:
                 logger.error(
                     "AsyncCompositeGuard authorize error — resource=%s: %s",

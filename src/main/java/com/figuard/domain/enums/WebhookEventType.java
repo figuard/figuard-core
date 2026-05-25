@@ -9,6 +9,7 @@ public enum WebhookEventType {
     ALLOCATION_EXHAUSTED,        // a category allocation hit zero — route remaining work to a different category
     SPEND_DENIED,                // an authorize call was denied
     SPEND_VOIDED,                // an authorized event was voided
+    SPEND_TREE_VOIDED,           // an entire causal subtree was atomically voided (cascading void)
     BUDGET_EXPIRED_UNUSED,       // budget expired without any authorize calls
     ANOMALY_DETECTED,            // requestedAmount exceeded the anomaly threshold
     BUDGET_RESUMED,              // paused budget was manually resumed via POST /budgets/{id}/resume
