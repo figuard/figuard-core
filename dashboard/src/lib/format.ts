@@ -92,6 +92,8 @@ const DENIAL_LABELS: Record<DenialCode, string> = {
   ANOMALY_DETECTED: "Anomaly detected",
   ENTITY_ALREADY_AUTHORIZED: "Entity already authorized",
   VELOCITY_LIMIT_EXCEEDED: "Velocity limit exceeded",
+  DELEGATE_CAP_EXCEEDED: "Delegate cap exceeded",
+  SUBTREE_CAP_EXCEEDED: "Subtree cap exceeded",
 };
 
 export function formatDenialReason(code: DenialCode | null): string {
