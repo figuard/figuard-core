@@ -215,9 +215,32 @@ Or follow the decision tree in [Pick your pattern](docs/pick-your-pattern.md) if
 
 ## Examples
 
+### FiGuard in your stack
+
+Real failure modes that happen inside LangChain, LangGraph, and CrewAI — each showing the problem and the fix side-by-side. Run in simulation mode with no API keys, or switch to real mode with your own keys.
+
+| Framework | Failure mode | FiGuard stops it at | Colab |
+|---|---|---|---|
+| **LangChain** | Payment tool times out after Stripe charges. Retry = double charge. | Idempotency key collapses retry to one event — Stripe skipped | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/framework-scenarios/01_langchain_payment_retry.ipynb) |
+| **LangGraph** | Research loop runs 30 iterations on an ambiguous query. LLM controls the exit — `max_iterations` doesn't bound cost. | Budget ceiling at $0.20 — loop exits at iteration 20 | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/framework-scenarios/02_langgraph_research_loop.ipynb) |
+| **LangGraph** | Supervisor routes a task through three sub-agents. Researcher runs up cost — shared budget has no attribution. | Delegation token per agent — researcher capped, billing and writer complete | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/framework-scenarios/03_langgraph_supervisor_fleet.ipynb) |
+| **CrewAI** | Parallel crew — market researcher makes 25 data API calls on a 5-call task. No per-agent visibility. | Delegation token per crew member — researcher capped, analyst and writer unaffected | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/framework-scenarios/04_crewai_parallel_crew.ipynb) |
+
+Source: [`examples/framework_scenarios/`](examples/framework_scenarios/)
+
+```bash
+pip install figuard
+python examples/framework_scenarios/langchain_payment_retry.py      # no keys needed
+python examples/framework_scenarios/langgraph_research_loop.py
+python examples/framework_scenarios/langgraph_supervisor_fleet.py
+python examples/framework_scenarios/crewai_parallel_crew.py
+```
+
+---
+
 ### Agent Failure Scenarios
 
-Five real failure modes — each a runnable Python file plus an interactive Colab notebook.
+Five lower-level failure modes — idempotency, concurrent overspend, rogue sub-agents, category violations.
 
 | # | Scenario | FiGuard stops it at | Colab |
 |---|----------|---------------------|-------|

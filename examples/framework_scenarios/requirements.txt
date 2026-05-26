@@ -1,0 +1,25 @@
+# FiGuard framework scenario dependencies
+# Install: pip install -r requirements.txt
+
+# Core
+figuard>=0.5.0
+
+# LangChain scenarios
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-openai>=0.1.0
+
+# LangGraph scenarios
+langgraph>=0.1.0
+
+# CrewAI scenarios
+crewai>=0.30.0
+
+# OpenAI Agents SDK scenarios
+openai>=1.30.0
+
+# Stripe (test mode — no real charges)
+stripe>=9.0.0
+
+# Utilities
+python-dotenv>=1.0.0
