@@ -39,16 +39,19 @@ public interface WebhookDeliveryRepository extends JpaRepository<WebhookDelivery
 
     // Filtered delivery list — all params optional; null = no constraint.
     //
-    // COALESCE trick for the enum param: Hibernate 6 + PostgreSQL cannot determine
-    // the SQL type of a null enum parameter in an IS NULL check, causing a runtime
-    // error ("could not determine data type of parameter"). COALESCE(:status, d.status)
-    // collapses to d.status when :status is null, making the predicate always true.
+    // COALESCE trick for all nullable params: Hibernate 6 + PostgreSQL cannot determine
+    // the SQL type of null parameters that appear only in IS NULL checks (no adjacent typed
+    // context). This causes "could not determine data type of parameter $N" at runtime.
+    //   - COALESCE(:status, d.status) = d.status   → always true when status is null
+    //   - COALESCE(:eventType, d.eventType) = d.eventType → always true when eventType is null
+    //   - d.createdAt >= COALESCE(:since, d.createdAt)  → always true when since is null
+    // In each case PostgreSQL infers the parameter type from the non-null column operand.
     @Query("""
         SELECT d FROM WebhookDelivery d
         WHERE d.webhookConfig.tenant.id = :tenantId
           AND COALESCE(:status, d.status) = d.status
-          AND (:eventType IS NULL OR d.eventType = :eventType)
-          AND (:since     IS NULL OR d.createdAt >= :since)
+          AND COALESCE(:eventType, d.eventType) = d.eventType
+          AND d.createdAt >= COALESCE(:since, d.createdAt)
         ORDER BY d.createdAt DESC
         """)
     List<WebhookDelivery> findFiltered(
