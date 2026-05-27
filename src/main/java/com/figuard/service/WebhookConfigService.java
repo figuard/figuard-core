@@ -102,7 +102,7 @@ public class WebhookConfigService {
     }
 
     @Transactional(readOnly = true)
-    public Map<String, Long> getFailedCount(Tenant tenant) {
+    public Map<String, Object> getFailedCount(Tenant tenant) {
         return Map.of("failedCount", webhookDeliveryRepository.countFailedByTenantId(tenant.getId()));
     }
 

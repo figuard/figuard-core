@@ -91,7 +91,7 @@ public class WebhookController {
 
     @Operation(summary = "Count failed deliveries", description = "Returns the count of FAILED deliveries for this tenant. Used by the dashboard to show a warning badge.")
     @GetMapping("/deliveries/failed-count")
-    public ResponseEntity<Map<String, Long>> getFailedCount() {
+    public ResponseEntity<Map<String, Object>> getFailedCount() {
         return ResponseEntity.ok(webhookConfigService.getFailedCount(TenantContext.get()));
     }
 
