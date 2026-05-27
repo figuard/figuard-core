@@ -28,7 +28,7 @@ RESET  = "\033[0m"
 
 figuard = FiGuardClient(
     api_key="fg_live_demo",            # sandbox: use "sb_live_demo"
-    base_url="http://localhost:8080",  # sandbox: use "https://figuard-sandbox-1.onrender.com"
+    base_url="http://localhost:8080",  # sandbox: use "https://figuard-sandbox-g1ha.onrender.com"
 )
 
 invoice_id = "INV-2026-0342"

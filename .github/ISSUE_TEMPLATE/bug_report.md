@@ -20,7 +20,7 @@ labels: bug
 **Deployment**
 - [ ] Self-hosted (docker-compose.prod.yml)
 - [ ] Built from source
-- [ ] Hosted sandbox (figuard-sandbox-1.onrender.com)
+- [ ] Hosted sandbox (figuard-sandbox-g1ha.onrender.com)
 
 **Relevant logs or response body**
 <!-- Paste here — redact any API keys or tokens -->

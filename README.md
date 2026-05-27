@@ -19,7 +19,7 @@ Works with LangChain, CrewAI, LangGraph, and the OpenAI Agents SDK.
 
 **Try it in 2 minutes — no setup required:**  
 → [Run the quickstart in Colab](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/01_infinite_loop.ipynb)  
-→ [See the live dashboard](https://figuard-sandbox-1.onrender.com/ui)
+→ [See the live dashboard](https://figuard-sandbox-g1ha.onrender.com/ui)
 
 ---
 
@@ -36,7 +36,7 @@ from figuard import FiGuardClient
 
 client = FiGuardClient(
     api_key="sb_live_demo",
-    base_url="https://figuard-sandbox-1.onrender.com",
+    base_url="https://figuard-sandbox-g1ha.onrender.com",
 )
 ```
 
@@ -88,7 +88,7 @@ print(auth2.denial_reason)  # INSUFFICIENT_FUNDS
 Open the sandbox dashboard — your events are already there:
 
 ```
-https://figuard-sandbox-1.onrender.com/ui
+https://figuard-sandbox-g1ha.onrender.com/ui
 ```
 
 Every authorization, denial, confirmation, and void shows up as a node in the spend tree in real time.
@@ -270,7 +270,7 @@ Source: [`examples/rogue_agent_scenarios/`](examples/rogue_agent_scenarios/)
 
 ## Docs
 
-- **Interactive API docs:** http://localhost:8080/swagger-ui/index.html (local) · https://figuard-sandbox-1.onrender.com/swagger-ui/index.html (live sandbox)
+- **Interactive API docs:** http://localhost:8080/swagger-ui/index.html (local) · https://figuard-sandbox-g1ha.onrender.com/swagger-ui/index.html (live sandbox)
 - [API Reference](docs/api-reference.md) — full endpoint reference with payloads
 - [Pick Your Pattern](docs/pick-your-pattern.md) — decision tree: find your scenario, get the exact create + authorize calls
 - [Budget Configuration](docs/budget-configuration.md) — full parameter reference for all four configuration layers

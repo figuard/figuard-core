@@ -24,7 +24,7 @@ from figuard.integrations.crewai import FiGuardCrewGuard
 # --- FiGuard setup ---
 client = FiGuardClient(
     api_key="sb_live_demo",
-    base_url="https://figuard-sandbox-1.onrender.com",
+    base_url="https://figuard-sandbox-g1ha.onrender.com",
 )
 budget = client.create_budget(
     user_id="demo_user",

@@ -37,7 +37,7 @@ python crewai_parallel_crew.py --mode real --openai-key sk-...
 
 DASHBOARD
 ---------
-https://figuard-sandbox-1.onrender.com/ui
+https://figuard-sandbox-g1ha.onrender.com/ui
 """
 
 import argparse
@@ -56,7 +56,7 @@ RESEARCHER_CALLS     = 25      # researcher makes 25 calls (expects ~5) → $2.5
 ANALYST_CALLS        = 8       # analyst: 8 × $0.10 = $0.80
 WRITER_CALLS         = 4       # writer: 4 × $0.10 = $0.40
 
-FIGUARD_BASE_URL     = "https://figuard-sandbox-1.onrender.com"
+FIGUARD_BASE_URL     = "https://figuard-sandbox-g1ha.onrender.com"
 FIGUARD_API_KEY      = "sb_live_demo"
 
 

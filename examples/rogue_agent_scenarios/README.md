@@ -52,14 +52,14 @@ python scenario_5_category_violation.py
 ```
 
 After running, open the dashboard to see your spend tree:
-https://figuard-sandbox-1.onrender.com/ui
+https://figuard-sandbox-g1ha.onrender.com/ui
 
 ---
 
 ## Sandbox Details
 
 - **API key:** `sb_live_demo`
-- **Base URL:** `https://figuard-sandbox-1.onrender.com`
-- **Dashboard:** `https://figuard-sandbox-1.onrender.com/ui`
+- **Base URL:** `https://figuard-sandbox-g1ha.onrender.com`
+- **Dashboard:** `https://figuard-sandbox-g1ha.onrender.com/ui`
 
 Data resets periodically. Safe to run repeatedly.

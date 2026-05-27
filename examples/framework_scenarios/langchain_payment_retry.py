@@ -38,7 +38,7 @@ python langchain_payment_retry.py --mode real --openai-key sk-... --stripe-key s
 
 DASHBOARD
 ---------
-https://figuard-sandbox-1.onrender.com/ui
+https://figuard-sandbox-g1ha.onrender.com/ui
 Open the printed budget ID to watch events arrive in real time.
 """
 
@@ -48,7 +48,7 @@ import uuid
 from typing import Optional
 
 # ── FiGuard sandbox ────────────────────────────────────────────────────────────
-FIGUARD_BASE_URL = "https://figuard-sandbox-1.onrender.com"
+FIGUARD_BASE_URL = "https://figuard-sandbox-g1ha.onrender.com"
 FIGUARD_API_KEY  = "sb_live_demo"
 
 

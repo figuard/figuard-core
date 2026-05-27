@@ -92,7 +92,7 @@ Point `FIGUARD_BASE_URL` at the hosted sandbox to try FiGuard without running a 
 ```json
 {
   "FIGUARD_API_KEY": "sb_live_demo",
-  "FIGUARD_BASE_URL": "https://figuard-sandbox-1.onrender.com"
+  "FIGUARD_BASE_URL": "https://figuard-sandbox-g1ha.onrender.com"
 }
 ```
 

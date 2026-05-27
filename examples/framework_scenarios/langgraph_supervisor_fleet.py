@@ -36,7 +36,7 @@ python langgraph_supervisor_fleet.py --mode real --openai-key sk-...
 
 DASHBOARD
 ---------
-https://figuard-sandbox-1.onrender.com/ui
+https://figuard-sandbox-g1ha.onrender.com/ui
 Open the fleet budget → Spend Tree to see the per-agent causal chain.
 """
 
@@ -57,7 +57,7 @@ COST_PER_CALL     = 0.50
 # How many tool calls the rogue researcher makes
 RESEARCHER_CALLS  = 9       # 9 × $0.50 = $4.50 → exceeds $3.00 cap at call 7
 
-FIGUARD_BASE_URL  = "https://figuard-sandbox-1.onrender.com"
+FIGUARD_BASE_URL  = "https://figuard-sandbox-g1ha.onrender.com"
 FIGUARD_API_KEY   = "sb_live_demo"
 
 

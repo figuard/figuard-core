@@ -24,7 +24,7 @@ RESET  = "\033[0m"
 
 figuard = FiGuardClient(
     api_key="fg_live_demo",
-    base_url="http://localhost:8080",  # sandbox: use "https://figuard-sandbox-1.onrender.com"
+    base_url="http://localhost:8080",  # sandbox: use "https://figuard-sandbox-g1ha.onrender.com"
 )
 
 def pause(n=0.35):

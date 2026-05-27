@@ -41,7 +41,7 @@ python langgraph_research_loop.py --mode real \\
 
 DASHBOARD
 ---------
-https://figuard-sandbox-1.onrender.com/ui
+https://figuard-sandbox-g1ha.onrender.com/ui
 Open the printed budget ID. Watch the reserved quantity climb each
 iteration and hit the ceiling in Part 2.
 """
@@ -62,7 +62,7 @@ COST_PER_SEARCH = 0.01
 BUDGET_LIMIT = 0.20
 
 # ── FiGuard sandbox ────────────────────────────────────────────────────────────
-FIGUARD_BASE_URL = "https://figuard-sandbox-1.onrender.com"
+FIGUARD_BASE_URL = "https://figuard-sandbox-g1ha.onrender.com"
 FIGUARD_API_KEY  = "sb_live_demo"
 
 

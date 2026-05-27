@@ -17,7 +17,7 @@ Pick your client and add the config block. No install needed — `npx` pulls the
       "args": ["figuard-mcp"],
       "env": {
         "FIGUARD_API_KEY": "sb_live_demo",
-        "FIGUARD_BASE_URL": "https://figuard-sandbox-1.onrender.com"
+        "FIGUARD_BASE_URL": "https://figuard-sandbox-g1ha.onrender.com"
       }
     }
   }

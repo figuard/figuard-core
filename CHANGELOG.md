@@ -72,7 +72,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Prometheus metrics at `/actuator/prometheus` including `figuard.*` domain counters
 - Flyway migrations (V1–V20)
 - GitHub Actions CI: Python SDK (180 tests), TypeScript SDK (29 tests), MCP server (34 tests), Java (381 tests)
-- Hosted sandbox: `https://figuard-sandbox-1.onrender.com` with shared key `sb_live_demo`
+- Hosted sandbox: `https://figuard-sandbox-g1ha.onrender.com` with shared key `sb_live_demo`
 
 ### Security
 - API keys stored as SHA-256 hashes, never persisted in plaintext

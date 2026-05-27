@@ -22,7 +22,7 @@ from figuard.integrations.openai_agents import guarded_function_tool
 # --- FiGuard setup ---
 client = FiGuardClient(
     api_key="sb_live_demo",
-    base_url="https://figuard-sandbox-1.onrender.com",
+    base_url="https://figuard-sandbox-g1ha.onrender.com",
 )
 budget = client.create_budget(
     user_id="demo_user",
@@ -180,7 +180,7 @@ from figuard.integrations.openai_agents import guarded_function_tool
 
 client = AsyncFiGuardClient(
     api_key="sb_live_demo",
-    base_url="https://figuard-sandbox-1.onrender.com",
+    base_url="https://figuard-sandbox-g1ha.onrender.com",
 )
 
 # Same decorator pattern — guarded_function_tool detects async context automatically
