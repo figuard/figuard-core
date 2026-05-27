@@ -1,15 +1,21 @@
 name: Rebuild sandbox
 
-# Triggers a Render sandbox rebuild (with cache clear) whenever figuard-core/main advances.
-# This ensures the sandbox always runs the latest core code without manual intervention.
+# Rebuilds the hosted sandbox on Render with a clean Docker layer cache.
 #
-# Required secret:
-#   RENDER_SANDBOX_DEPLOY_HOOK_URL — from Render dashboard:
-#   Service → Settings → Deploy Hook → copy URL, append &clearCache=clear
+# Triggers:
+#   - workflow_dispatch: manual trigger from GitHub Actions UI (any time)
+#   - release published: automatically on every tagged stable release
+#
+# NOT triggered on every push to main — after OSS release there will be many
+# commits that should not automatically update the live sandbox.
+#
+# Required secret (add once in figuard-core repo settings → Secrets → Actions):
+#   RENDER_SANDBOX_DEPLOY_HOOK_URL — Render deploy hook URL with clearCache=clear appended
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+  release:
+    types: [published]
 
 jobs:
   rebuild-sandbox:
@@ -17,5 +23,4 @@ jobs:
     steps:
       - name: Trigger Render sandbox rebuild (clear Docker layer cache)
         run: |
-          curl -f -X POST \
-            "${{ secrets.RENDER_SANDBOX_DEPLOY_HOOK_URL }}&clearCache=clear"
+          curl -f -X POST "${{ secrets.RENDER_SANDBOX_DEPLOY_HOOK_URL }}"
