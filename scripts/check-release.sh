@@ -22,59 +22,54 @@ red()    { echo -e "\033[0;31m✗ $*\033[0m"; }
 yellow() { echo -e "\033[0;33m! $*\033[0m"; }
 header() { echo -e "\n\033[1m── $* ──\033[0m"; }
 
-pass() { green "$1"; ((PASS++)); }
-fail() { red   "$1"; ((FAIL++)); }
+pass() { green "$1"; PASS=$((PASS+1)); }
+fail() { red   "$1"; FAIL=$((FAIL+1)); }
 warn() { yellow "$1"; }
 
 # ─────────────────────────────────────────────
-# 1. Python SDK — local vs PyPI
+# 1. Python SDK — is local version on PyPI?
 # ─────────────────────────────────────────────
 header "Python SDK"
 
-PY_LOCAL=$(grep '^version' "$REPO_ROOT/sdk/python/pyproject.toml" \
-           | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+PY_LOCAL=$(grep '__version__' "$REPO_ROOT/sdk/python/figuard/__init__.py" \
+           | head -1 | sed 's/.*"\(.*\)".*/\1/')
+echo "  local version: $PY_LOCAL"
 
-if command -v pip &>/dev/null; then
-  PY_PYPI=$(pip index versions figuard 2>/dev/null \
-            | grep -oP '(?<=Available versions: )[^,]+' | tr -d ' ' || echo "unknown")
+if command -v curl &>/dev/null; then
+  PY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              "https://pypi.org/pypi/figuard/${PY_LOCAL}/json")
+  if [ "$PY_STATUS" = "200" ]; then
+    pass "Python SDK $PY_LOCAL is published on PyPI"
+  elif [ "$PY_STATUS" = "404" ]; then
+    fail "Python SDK $PY_LOCAL is NOT on PyPI — publish before releasing"
+  else
+    warn "PyPI returned HTTP $PY_STATUS — check manually"
+  fi
 else
-  PY_PYPI="unknown (pip not found)"
-fi
-
-echo "  local:     $PY_LOCAL"
-echo "  published: $PY_PYPI"
-
-if [ "$PY_PYPI" = "unknown" ] || [ "$PY_PYPI" = "unknown (pip not found)" ]; then
-  warn "Could not fetch PyPI version — check manually"
-elif [ "$PY_LOCAL" = "$PY_PYPI" ]; then
-  pass "Python SDK $PY_LOCAL is published on PyPI"
-else
-  fail "Python SDK $PY_LOCAL is NOT published on PyPI (latest: $PY_PYPI) — publish before releasing"
+  warn "curl not found — cannot check PyPI"
 fi
 
 # ─────────────────────────────────────────────
-# 2. TypeScript SDK — local vs npm
+# 2. TypeScript SDK — is local version on npm?
 # ─────────────────────────────────────────────
 header "TypeScript SDK"
 
 TS_LOCAL=$(grep '"version"' "$REPO_ROOT/sdk/typescript/package.json" \
            | head -1 | sed 's/.*"version": *"\(.*\)".*/\1/')
+echo "  local version: $TS_LOCAL"
 
-if command -v npm &>/dev/null; then
-  TS_NPM=$(npm view figuard version 2>/dev/null || echo "unknown")
+if command -v curl &>/dev/null; then
+  TS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              "https://registry.npmjs.org/figuard/${TS_LOCAL}")
+  if [ "$TS_STATUS" = "200" ]; then
+    pass "TypeScript SDK $TS_LOCAL is published on npm"
+  elif [ "$TS_STATUS" = "404" ]; then
+    fail "TypeScript SDK $TS_LOCAL is NOT on npm — publish before releasing"
+  else
+    warn "npm registry returned HTTP $TS_STATUS — check manually"
+  fi
 else
-  TS_NPM="unknown (npm not found)"
-fi
-
-echo "  local:     $TS_LOCAL"
-echo "  published: $TS_NPM"
-
-if [ "$TS_NPM" = "unknown" ] || [[ "$TS_NPM" == *"not found"* ]]; then
-  warn "Could not fetch npm version — check manually"
-elif [ "$TS_LOCAL" = "$TS_NPM" ]; then
-  pass "TypeScript SDK $TS_LOCAL is published on npm"
-else
-  fail "TypeScript SDK $TS_LOCAL is NOT published on npm (latest: $TS_NPM) — publish before releasing"
+  warn "curl not found — cannot check npm registry"
 fi
 
 # ─────────────────────────────────────────────
@@ -100,23 +95,24 @@ else
   echo "  scanning: $NOTEBOOKS_DIR"
   NB_ISSUES=0
 
-  # Known anti-patterns with descriptions
-  declare -A PATTERNS
-  PATTERNS["tokens\[.default.\]"]="stale token extraction pattern (use budget.session_token)"
-  PATTERNS["t\.session_token for t in budget\.tokens"]="stale token extraction pattern (use budget.session_token)"
-  PATTERNS['"enforcement_mode"']="snake_case key — API expects enforcementMode"
-  PATTERNS['"allowed_categories"']="snake_case key — API expects allowedCategories"
-  PATTERNS["create_delegation_token.*session_token="]="create_delegation_token() has no session_token param"
-  PATTERNS["create_delegation_token.*expires_in="]="create_delegation_token() has no expires_in param"
-
-  for pattern in "${!PATTERNS[@]}"; do
+  check_pattern() {
+    local pattern="$1"
+    local description="$2"
+    local matches
     matches=$(grep -rl "$pattern" "$NOTEBOOKS_DIR" --include="*.ipynb" 2>/dev/null || true)
     if [ -n "$matches" ]; then
-      fail "Anti-pattern [${PATTERNS[$pattern]}] found in:"
+      fail "Anti-pattern [$description] found in:"
       echo "$matches" | sed 's/^/      /'
-      ((NB_ISSUES++))
+      NB_ISSUES=$((NB_ISSUES+1))
     fi
-  done
+  }
+
+  check_pattern 'tokens\["default"\]'                    'stale token extraction (use budget.session_token)'
+  check_pattern 't\.session_token for t in budget\.tokens' 'stale token extraction (use budget.session_token)'
+  check_pattern '"enforcement_mode"'                      'snake_case key — API expects enforcementMode'
+  check_pattern '"allowed_categories"'                    'snake_case key — API expects allowedCategories'
+  check_pattern 'create_delegation_token.*session_token=' 'create_delegation_token() has no session_token param'
+  check_pattern 'create_delegation_token.*expires_in='   'create_delegation_token() has no expires_in param'
 
   if [ "$NB_ISSUES" -eq 0 ]; then
     pass "No known anti-patterns found in notebooks"
