@@ -1,10 +1,23 @@
 # FiGuard
 
-AI agents fail in predictable ways. An agent retries a timed-out payment — you get charged twice. A quality loop runs 847 iterations — $16.94 later, someone notices. Ten agents share a budget — the first five drain it, the second five have no idea.
+A travel-booking agent hit a Stripe timeout. It retried. Then retried again. The customer's card was charged **three times for the same flight** before an engineer noticed the anomaly in the logs — 40 minutes later.
 
-FiGuard gives agents a budget. They ask permission before spending. You get a full audit trail either way.
+No alert fired. No limit existed. The agent had a valid API key and no concept of "I already did this."
+
+FiGuard gives agents a budget. They ask permission before spending. You set the ceiling, the retry rules, and the idempotency policy once. Every spend attempt — authorized or denied — lands in an audit log.
 
 Works with LangChain, CrewAI, LangGraph, and the OpenAI Agents SDK.
+
+**Tested with:**
+
+| Framework | Versions | Python |
+|---|---|---|
+| LangChain | ≥ 0.3.0 | 3.9 – 3.12 |
+| LangGraph | ≥ 0.2.0 | 3.10 – 3.12 |
+| CrewAI | ≥ 0.102 | 3.10 – 3.12 |
+| OpenAI Agents SDK | ≥ 0.0.5 | 3.10 – 3.12 |
+| TypeScript SDK | Node ≥ 18 | — |
+| MCP server | Claude Code, Cursor, Claude Desktop | — |
 
 [![CI](https://github.com/figuard/figuard-core/actions/workflows/ci.yml/badge.svg)](https://github.com/figuard/figuard-core/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -25,7 +38,7 @@ Works with LangChain, CrewAI, LangGraph, and the OpenAI Agents SDK.
 
 ## 60-Second Quickstart
 
-**1. Point at the sandbox**
+**1. Install and connect**
 
 ```bash
 pip install figuard
@@ -34,13 +47,12 @@ pip install figuard
 ```python
 from figuard import FiGuardClient
 
-client = FiGuardClient(
-    api_key="sb_live_demo",
-    base_url="https://figuard-sandbox-g1ha.onrender.com",
-)
+# Zero-config — no setup required. Connects to the shared public sandbox automatically.
+client = FiGuardClient()
 ```
 
-No setup required. The sandbox is a live FiGuard instance with a preloaded demo key.
+The sandbox is a live FiGuard instance. Data is wiped periodically — not for production.
+For production, [self-host FiGuard](https://figuard.io/docs/self-hosting) and set `FIGUARD_API_KEY` / `FIGUARD_BASE_URL`.
 
 **2. Create a budget and authorize a spend**
 
@@ -109,7 +121,7 @@ from figuard import FiGuardClient
 
 client = FiGuardClient(
     api_key="fg_live_demo",
-    base_url="http://localhost:8080",
+    base_url="http://localhost:8080",  # or set FIGUARD_API_KEY + FIGUARD_BASE_URL
 )
 ```
 

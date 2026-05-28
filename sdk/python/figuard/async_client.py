@@ -5,7 +5,7 @@ Usage::
 
     from figuard import AsyncFiGuardClient
 
-    async with AsyncFiGuardClient(api_key="fg_live_...") as client:
+    async with AsyncFiGuardClient() as client:  # zero-config: sandbox fallback
         budget = await client.create_budget(
             user_id="user_123",
             total_limit=500.00,
@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid
 from typing import Any, Dict, List, Optional, Union
 from datetime import timedelta
@@ -95,33 +96,44 @@ class AsyncFiGuardClient:
 
     Supports ``async with`` for managed session lifecycle::
 
-        async with AsyncFiGuardClient(api_key="fg_live_...") as client:
+        async with AsyncFiGuardClient() as client:  # zero-config sandbox
             budget = await client.create_budget(...)
 
     Or construct manually and call ``await client.close()`` when done::
 
-        client = AsyncFiGuardClient(api_key="fg_live_...")
+        client = AsyncFiGuardClient()
         try:
             budget = await client.create_budget(...)
         finally:
             await client.close()
 
-    :param api_key:  Your ``fg_live_...`` or ``fg_test_...`` API key.
-    :param base_url: Override for self-hosted deployments.
+    Configuration resolution order (same as ``FiGuardClient``):
+
+    1. Explicit ``api_key`` / ``base_url`` parameters
+    2. ``FIGUARD_API_KEY`` / ``FIGUARD_BASE_URL`` environment variables
+    3. Shared public sandbox (``sb_live_demo``)
+
+    :param api_key:  Your ``fg_live_...`` or ``fg_test_...`` API key. Optional.
+    :param base_url: Override for self-hosted deployments. Optional.
     :param timeout:  Per-request timeout in seconds (default 30).
     """
 
+    _SANDBOX_API_KEY = "sb_live_demo"
+    _SANDBOX_BASE_URL = "https://figuard-sandbox-g1ha.onrender.com"
+
     def __init__(
         self,
-        api_key: str,
-        base_url: str = "http://localhost:8080",
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
         timeout: int = 30,
     ) -> None:
-        self._api_key = api_key
-        self._base_url = base_url.rstrip("/")
+        resolved_key = api_key or os.environ.get("FIGUARD_API_KEY")
+        resolved_url = base_url or os.environ.get("FIGUARD_BASE_URL")
+        self._api_key = resolved_key or self._SANDBOX_API_KEY
+        self._base_url = (resolved_url or self._SANDBOX_BASE_URL).rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         self._default_headers: Dict[str, str] = {
-            "X-Agent-Budget-Key": api_key,
+            "X-Agent-Budget-Key": self._api_key,
             "Content-Type": "application/json",
             "Accept": "application/json",
         }

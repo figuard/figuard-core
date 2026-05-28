@@ -20,10 +20,7 @@ from figuard import FiGuardClient
 from figuard.integrations.openai_agents import guarded_function_tool
 
 # --- FiGuard setup ---
-client = FiGuardClient(
-    api_key="sb_live_demo",
-    base_url="https://figuard-sandbox-g1ha.onrender.com",
-)
+client = FiGuardClient()  # zero-config: connects to shared sandbox automatically
 budget = client.create_budget(
     user_id="demo_user",
     total_limit=100.00,
@@ -178,10 +175,7 @@ Both client and guard are async-compatible:
 from figuard import AsyncFiGuardClient
 from figuard.integrations.openai_agents import guarded_function_tool
 
-client = AsyncFiGuardClient(
-    api_key="sb_live_demo",
-    base_url="https://figuard-sandbox-g1ha.onrender.com",
-)
+client = AsyncFiGuardClient()  # zero-config: same sandbox fallback as FiGuardClient
 
 # Same decorator pattern — guarded_function_tool detects async context automatically
 @function_tool

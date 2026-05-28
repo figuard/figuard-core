@@ -5,6 +5,7 @@ FiGuard works with every major Python agent framework. Pick yours:
 | Framework | What you need | Guide |
 |-----------|--------------|-------|
 | **LangChain** | Callback handler — attach to `AgentExecutor`, no tool changes | [LangChain guide](integrations/langchain.md) |
+| **LangGraph** | Same callback handler — passed via graph `config` | [LangGraph guide](integrations/langgraph.md) |
 | **OpenAI Agents SDK** | Decorator on tool functions — `@guarded_function_tool` | [OpenAI Agents guide](integrations/openai-agents.md) |
 | **CrewAI** | `FiGuardCrewGuard.wrap(crew)` — one call covers all agents | [CrewAI guide](integrations/crewai.md) |
 | **Claude / Cursor / Claude Code** | MCP server — no Python needed | [MCP guide](integrations/mcp.md) |
@@ -13,7 +14,7 @@ FiGuard works with every major Python agent framework. Pick yours:
 
 ## Which pattern is right for me?
 
-**Use the callback handler (LangChain)** if you want authorization to intercept tool calls at the executor level. Works with LangGraph too — pass the handler in the agent config.
+**Use the callback handler (LangChain / LangGraph)** if you want authorization to intercept tool calls at the executor or graph level. For LangGraph, pass the handler via `config={"callbacks": [handler]}` — see the [LangGraph guide](integrations/langgraph.md) for async graphs, parallel branches, and atomic cancellation.
 
 **Use the decorator (OpenAI Agents)** if you want hard per-tool enforcement. The tool function never runs if denied — regardless of how the agent handles errors.
 
@@ -30,10 +31,7 @@ Regardless of framework, budget creation is the same:
 ```python
 from figuard import FiGuardClient
 
-client = FiGuardClient(
-    api_key="sb_live_demo",
-    base_url="https://figuard-sandbox-g1ha.onrender.com",
-)
+client = FiGuardClient()  # zero-config: connects to shared sandbox automatically
 budget = client.create_budget(
     user_id="agent_001",
     total_limit=500.00,

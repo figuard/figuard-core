@@ -22,10 +22,7 @@ from figuard import FiGuardClient
 from figuard.integrations.crewai import FiGuardCrewGuard
 
 # --- FiGuard setup ---
-client = FiGuardClient(
-    api_key="sb_live_demo",
-    base_url="https://figuard-sandbox-g1ha.onrender.com",
-)
+client = FiGuardClient()  # zero-config: connects to shared sandbox automatically
 budget = client.create_budget(
     user_id="demo_user",
     total_limit=200.00,
@@ -186,6 +183,37 @@ guard = FiGuardCrewGuard(
 ```
 
 The extractor receives the tool name and the full kwargs dict. Return the spend amount as a float.
+
+---
+
+## Step 6: Async CrewAI
+
+CrewAI supports async execution via `kickoff_async`. Use `AsyncFiGuardClient` and `await` the guard setup:
+
+```python
+import asyncio
+from figuard import AsyncFiGuardClient
+from figuard.integrations.crewai import FiGuardCrewGuard
+
+async def main():
+    async with AsyncFiGuardClient() as client:
+        budget = await client.create_budget(
+            user_id="user_123",
+            total_limit=500.00,
+            currency="USD",
+            expires_in="24h",
+        )
+        guard = FiGuardCrewGuard(
+            client=client,
+            session_token=budget.primary_token.session_token,
+        )
+        guard.wrap(crew)
+        result = await crew.kickoff_async(inputs={"topic": "book travel"})
+
+asyncio.run(main())
+```
+
+Install the async extra: `pip install "figuard[async,crewai]"`
 
 ---
 

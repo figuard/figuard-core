@@ -25,10 +25,7 @@ from figuard import FiGuardClient
 from figuard.integrations.langchain import FiGuardCallbackHandler
 
 # --- FiGuard setup ---
-client = FiGuardClient(
-    api_key="sb_live_demo",
-    base_url="https://figuard-sandbox-g1ha.onrender.com",
-)
+client = FiGuardClient()  # zero-config: connects to shared sandbox automatically
 budget = client.create_budget(
     user_id="demo_user",
     total_limit=100.00,   # $100 total
@@ -200,7 +197,7 @@ import asyncio
 from langgraph.graph import StateGraph
 from figuard import FiGuardClient
 
-client = FiGuardClient(api_key="fg_live_...", base_url="https://api.figuard.io")
+client = FiGuardClient()  # production: set FIGUARD_API_KEY + FIGUARD_BASE_URL env vars
 budget = client.create_budget(user_id="user_123", total_limit=500.00, currency="USD", expires_in="1h")
 
 # Orchestrator authorizes the job
@@ -282,6 +279,42 @@ await figuard_run_in_executor(process_refund, order_id)
 **Partial instrumentation** — you don't need to instrument every node. Routing, planning,
 and summarization nodes that don't spend money can be left un-authorized. The walk-up
 skips them and links spending tools to the nearest instrumented ancestor transparently.
+
+---
+
+## Step 8: Async LangChain / LangGraph
+
+For async agent executors or LangGraph `ainvoke`, use `AsyncFiGuardClient`:
+
+```python
+import asyncio
+from figuard import AsyncFiGuardClient
+from figuard.integrations.langchain import FiGuardCallbackHandler
+
+async def main():
+    async with AsyncFiGuardClient() as client:
+        budget = await client.create_budget(
+            user_id="user_123",
+            total_limit=500.00,
+            currency="USD",
+            expires_in="24h",
+        )
+        handler = FiGuardCallbackHandler(
+            client=client,
+            session_token=budget.primary_token.session_token,
+            agent_id="async_agent",
+        )
+        # For AgentExecutor
+        result = await executor.ainvoke({"input": "..."}, config={"callbacks": [handler]})
+        # For LangGraph
+        result = await app.ainvoke({"messages": [...]}, config={"callbacks": [handler]})
+
+asyncio.run(main())
+```
+
+Install the async extra: `pip install "figuard[async,langchain]"`
+
+For LangGraph-specific patterns (parallel branches, void_tree, per-agent caps), see the [LangGraph guide](langgraph.md).
 
 ---
 

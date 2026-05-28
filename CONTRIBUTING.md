@@ -97,6 +97,28 @@ python demo.py
 | Java SDK on Maven Central | `sdk/java/` exists at 0.3.0 but is not yet published — set up OSSRH + GPG signing in `pom.xml` |
 | Example agents | Add to `examples/` — must be self-contained and runnable |
 
+## Community project: TypeScript framework integrations
+
+The Python SDK has first-class integrations for LangChain, CrewAI, and the OpenAI Agents SDK. The TypeScript SDK has the full client but no framework wrappers yet. This is a well-scoped community project — each integration is independent and follows a clear pattern.
+
+**What to build:**
+
+| Integration | Python reference | Target framework |
+|---|---|---|
+| `FiGuardCallbackHandler` (TS) | `sdk/python/figuard/integrations/langchain.py` | [LangChain.js](https://js.langchain.com/) |
+| `FiGuardVercelGuard` | `sdk/python/figuard/integrations/langchain.py` | [Vercel AI SDK](https://sdk.vercel.ai/) |
+| `FiGuardMastraGuard` | `sdk/python/figuard/integrations/crewai.py` | [Mastra](https://mastra.ai/) |
+
+**Scope for each integration:**
+1. A wrapper/handler class that calls `client.authorize()` before each tool call and `client.confirmEvent()` after
+2. A zero-config `autoGuard(executor, { budget: 500, currency: "USD" })` one-liner (follows the Python `auto_guard_langchain` pattern in `sdk/python/figuard/integrations/langchain.py`)
+3. Unit tests following the pattern in `sdk/python/tests/integrations/`
+4. A guide in `docs/integrations/` following the format of existing guides
+
+**Getting started:** Read `sdk/python/figuard/integrations/langchain.py` for the full Python implementation, then port the core pattern to TypeScript using the published `figuard` npm package. The TypeScript client (`sdk/typescript/src/client.ts`) has the same `authorize` / `confirmEvent` / `failEvent` / `voidEvent` API surface as the Python client.
+
+Open an issue with `[typescript-integration]` in the title to claim a framework before starting work.
+
 ---
 
 ## Running the TypeScript SDK tests
