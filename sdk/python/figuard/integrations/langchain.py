@@ -682,3 +682,53 @@ def _resolve_amount(
         return float(val)
     except (TypeError, ValueError):
         return 0.0
+
+
+def auto_guard_langchain(
+    executor: Any,
+    budget: float = 500,
+    currency: str = "USD",
+    agent_id: str = "langchain_agent",
+    amount_param: str = "amount",
+    client: Optional[FiGuardClient] = None,
+) -> Any:
+    """
+    One-line FiGuard wiring for a LangChain AgentExecutor.
+
+    Creates a FiGuardClient (zero-config), provisions a 24-hour budget, attaches
+    a FiGuardCallbackHandler, and returns the same executor — ready to run.
+
+    Usage::
+
+        from figuard.integrations.langchain import auto_guard_langchain
+
+        executor = auto_guard_langchain(executor, budget=500, currency="USD")
+        result = executor.invoke({"input": "Book a flight to NYC"})
+
+    :param executor:    LangChain AgentExecutor to wire up. Modified in-place.
+    :param budget:      Total spend limit in ``currency`` units (default 500).
+    :param currency:    ISO 4217 currency code (default "USD").
+    :param agent_id:    Agent identifier written to the FiGuard audit ledger.
+    :param amount_param: Tool input key that contains the spend amount (default "amount").
+    :param client:      Optional pre-built FiGuardClient. Pass one to reuse an existing
+                        client or to override sandbox fallback in tests.
+    :returns:           The same ``executor`` with FiGuardCallbackHandler wired in.
+    """
+    _client = client or FiGuardClient()
+    _budget = _client.create_budget(
+        user_id=str(uuid4()),
+        total_limit=budget,
+        currency=currency,
+        expires_in="24h",
+    )
+    handler = FiGuardCallbackHandler(
+        client=_client,
+        session_token=_budget.primary_token.session_token,
+        agent_id=agent_id,
+        amount_param=amount_param,
+    )
+    if not hasattr(executor, "callbacks") or executor.callbacks is None:
+        executor.callbacks = [handler]
+    else:
+        executor.callbacks = list(executor.callbacks) + [handler]
+    return executor

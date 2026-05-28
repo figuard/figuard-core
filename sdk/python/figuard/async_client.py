@@ -40,7 +40,7 @@ import asyncio
 import logging
 import os
 import uuid
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional, Union
 from datetime import timedelta
 
 try:
@@ -763,6 +763,44 @@ class AsyncFiGuardClient:
             page=data.get("number", page),
             size=data.get("size", size),
         )
+
+    async def iter_events(
+        self,
+        budget_id: str,
+        decision: Optional[str] = None,
+        trace_id: Optional[str] = None,
+        page_size: int = 100,
+    ) -> AsyncIterator[SpendEventResponse]:
+        """
+        Async iterator over every spend event for a budget, paginating automatically.
+
+        Yields events newest-first::
+
+            async for event in client.iter_events(budget_id):
+                await process(event)
+
+            # Collect all confirmed events:
+            confirmed = [e async for e in client.iter_events(budget_id, decision="CONFIRMED")]
+
+        :param decision: Optional filter — ``AUTHORIZED``, ``CONFIRMED``,
+            ``DENIED``, ``VOIDED``, or ``FAILED``.
+        :param trace_id: Optional filter — return only events from a specific run.
+        :param page_size: Events per page (default 100, max 500).
+        """
+        page = 0
+        while True:
+            ledger = await self.get_ledger(
+                budget_id=budget_id,
+                page=page,
+                size=page_size,
+                decision=decision,
+                trace_id=trace_id,
+            )
+            for event in ledger.events:
+                yield event
+            if not ledger.has_next:
+                break
+            page += 1
 
     async def get_spend_tree(self, budget_id: str) -> SpendTree:
         """Hierarchical view of all spend events for a budget."""

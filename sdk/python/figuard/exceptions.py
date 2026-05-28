@@ -60,3 +60,13 @@ class FiGuardDeniedException(FiGuardError):
 
 class FiGuardConnectionError(FiGuardError):
     """Network-level error (timeout, DNS failure, etc.) after all retries exhausted."""
+
+
+class FiGuardWebhookVerificationError(FiGuardError):
+    """
+    Raised by ``FiGuardClient.verify_webhook()`` when the HMAC-SHA256 signature
+    on an incoming webhook does not match the expected value.
+
+    Always raise an HTTP 400 in response to this exception — do not process
+    the payload.
+    """

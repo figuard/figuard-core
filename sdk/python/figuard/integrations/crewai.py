@@ -193,3 +193,53 @@ def _resolve_amount(
         return float(val)
     except (TypeError, ValueError):
         return 0.0
+
+
+def auto_guard_crewai(
+    tool: BaseTool,
+    budget: float = 500,
+    currency: str = "USD",
+    agent_id: str = "crewai_agent",
+    amount_key: str = "amount",
+    client: Optional[FiGuardClient] = None,
+) -> FiGuardCrewGuard:
+    """
+    One-line FiGuard wiring for a CrewAI tool.
+
+    Creates a FiGuardClient (zero-config), provisions a 24-hour budget, wraps the
+    tool's ``_run`` method in-place, and returns the guard. Pass the same tool to
+    your CrewAI Agent as normal — no other changes required.
+
+    Usage::
+
+        from figuard.integrations.crewai import auto_guard_crewai
+
+        auto_guard_crewai(book_flight_tool, budget=500, currency="USD")
+
+        travel_agent = Agent(
+            role="Travel Coordinator",
+            tools=[book_flight_tool],
+        )
+
+    :param tool:       CrewAI BaseTool to guard. Modified in-place.
+    :param budget:     Total spend limit in ``currency`` units (default 500).
+    :param currency:   ISO 4217 currency code (default "USD").
+    :param agent_id:   Agent identifier written to the FiGuard audit ledger.
+    :param amount_key: Keyword argument in tool kwargs holding the spend amount.
+    :param client:     Optional pre-built FiGuardClient (e.g. for tests).
+    :returns:          FiGuardCrewGuard that has already wrapped ``tool._run``.
+    """
+    _client = client or FiGuardClient()
+    _budget = _client.create_budget(
+        user_id=str(uuid4()),
+        total_limit=budget,
+        currency=currency,
+        expires_in="24h",
+    )
+    return FiGuardCrewGuard(
+        tool=tool,
+        client=_client,
+        session_token=_budget.primary_token.session_token,
+        agent_id=agent_id,
+        amount_key=amount_key,
+    )

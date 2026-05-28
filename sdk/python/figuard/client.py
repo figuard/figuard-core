@@ -30,18 +30,22 @@ Usage::
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import logging
+import os
 import re
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Iterator, List, Optional, Union
 
 import requests
 from requests import Response
 
 from .context import _set_current_event_id, get_current_event_id
-from .exceptions import FiGuardApiError, FiGuardConnectionError
+from .exceptions import FiGuardApiError, FiGuardConnectionError, FiGuardWebhookVerificationError
 from .telemetry import (
     authorize_span,
     finish_authorize_span,
@@ -73,6 +77,11 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
+# Sandbox defaults — used when no configuration is supplied
+_SANDBOX_API_KEY = "sb_live_demo"
+_SANDBOX_BASE_URL = "https://figuard-sandbox-g1ha.onrender.com"
+_SANDBOX_WARNING_SHOWN = False  # module-level flag: warn at most once per process
+
 # Retry configuration
 _MAX_RETRIES = 3
 _RETRY_BACKOFF_BASE = 1.0  # seconds; doubles each retry (1s, 2s, 4s)
@@ -85,24 +94,59 @@ class FiGuardClient:
     Thread-safe: the underlying ``requests.Session`` is used for connection
     pooling only; no mutable state is shared between calls.
 
+    **Zero-config usage** — no arguments required for demos and notebooks::
+
+        client = FiGuardClient()
+        # Connects to the shared public sandbox automatically.
+
+    **Configuration resolution order:**
+
+    1. Explicit constructor arguments
+    2. Environment variables: ``FIGUARD_API_KEY``, ``FIGUARD_BASE_URL``
+    3. Shared public sandbox (``sb_live_demo`` / ``figuard-sandbox-g1ha.onrender.com``)
+
+    When the sandbox fallback is used, a one-time warning is printed to stdout.
+    Suppress it with ``FIGUARD_SUPPRESS_SANDBOX_WARNING=1``.
+
     :param api_key:  Your ``fg_live_...`` or ``fg_test_...`` API key.
+                     Defaults to ``FIGUARD_API_KEY`` env var, then sandbox key.
     :param base_url: Override for self-hosted deployments.
+                     Defaults to ``FIGUARD_BASE_URL`` env var, then sandbox URL.
     :param timeout:  Per-request timeout in seconds (default 30).
     """
 
     def __init__(
         self,
-        api_key: str,
-        base_url: str = "http://localhost:8080",
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
         timeout: int = 30,
+        fail_open: bool = False,
     ) -> None:
-        self._api_key = api_key
-        self._base_url = base_url.rstrip("/")
+        global _SANDBOX_WARNING_SHOWN
+
+        resolved_key = api_key or os.environ.get("FIGUARD_API_KEY")
+        resolved_url = base_url or os.environ.get("FIGUARD_BASE_URL")
+
+        if not resolved_key:
+            resolved_key = _SANDBOX_API_KEY
+            resolved_url = resolved_url or _SANDBOX_BASE_URL
+            if not _SANDBOX_WARNING_SHOWN and not os.environ.get("FIGUARD_SUPPRESS_SANDBOX_WARNING"):
+                print(
+                    "\n\u26a0\ufe0f  FiGuard: No configuration found \u2014 connecting to the shared public sandbox.\n"
+                    "    \u2192 Data is wiped periodically. Not for production use.\n"
+                    "    \u2192 Self-host: https://figuard.io/docs/self-hosting\n"
+                    "    \u2192 Suppress this warning: set FIGUARD_SUPPRESS_SANDBOX_WARNING=1\n"
+                )
+                _SANDBOX_WARNING_SHOWN = True
+
+        self._api_key = resolved_key
+        self._base_url = (resolved_url or _SANDBOX_BASE_URL).rstrip("/")
         self._timeout = timeout
+        self._fail_open = fail_open
         self._session = requests.Session()
         self._session.headers.update(
             {
-                "X-Agent-Budget-Key": api_key,
+                "X-Agent-Budget-Key": resolved_key,
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             }
@@ -879,9 +923,25 @@ class FiGuardClient:
             claimed_category, effective_parent_id, dry_run,
         ) as span:
             # authorize is retryable because idempotency_key guarantees idempotency
-            data = self._request(
-                "POST", "/api/v1/authorize", json=body, headers=headers, retryable=True
-            )
+            try:
+                data = self._request(
+                    "POST", "/api/v1/authorize", json=body, headers=headers, retryable=True
+                )
+            except FiGuardConnectionError as exc:
+                if not self._fail_open:
+                    raise
+                logger.warning(
+                    "figuard: server unreachable (fail_open=True) — "
+                    "authorizing agent=%s action=%s quantity=%s as fallback. "
+                    "No ledger entry was created. Error: %s",
+                    agent_id, action_type, requested_quantity, exc,
+                )
+                return AuthorizationResult(
+                    event_id=f"fallback_{idempotency_key}",
+                    decision="AUTHORIZED",
+                    approved_quantity=requested_quantity,
+                    is_fallback=True,
+                )
             result = _parse_authorization_result(data)
             finish_authorize_span(span, result)
 
@@ -911,6 +971,10 @@ class FiGuardClient:
             Pass 0.0 if the action was a no-op (e.g. a tool call that returned early).
         :param external_transaction_id: Reference from your payment processor for audit.
         """
+        if event_id.startswith("fallback_"):
+            logger.debug("figuard: confirm_event skipped — fallback event_id=%s", event_id)
+            return SpendEventResponse(id=event_id, decision="CONFIRMED", requested_quantity=confirmed_quantity, created_at="")  # type: ignore[call-arg]
+
         body: Dict[str, Any] = {"confirmedQuantity": confirmed_quantity}
         if external_transaction_id is not None:
             body["externalTransactionId"] = external_transaction_id
@@ -933,6 +997,10 @@ class FiGuardClient:
 
         Releases the reserved funds back to the budget.
         """
+        if event_id.startswith("fallback_"):
+            logger.debug("figuard: fail_event skipped — fallback event_id=%s", event_id)
+            return SpendEventResponse(id=event_id, decision="FAILED", requested_quantity=0, created_at="")  # type: ignore[call-arg]
+
         body: Dict[str, Any] = {"reason": reason}
         if error_message is not None:
             body["errorMessage"] = error_message
@@ -956,6 +1024,10 @@ class FiGuardClient:
         :param void_child_events: When True, also void any child events in the
             causal chain. Raises HTTP 409 if any child has an external transaction ID.
         """
+        if event_id.startswith("fallback_"):
+            logger.debug("figuard: void_event skipped — fallback event_id=%s", event_id)
+            return VoidResult(event=SpendEventResponse(id=event_id, decision="VOIDED", requested_quantity=0, created_at=""))  # type: ignore[call-arg]
+
         body: Dict[str, Any] = {
             "reason": reason,
             "voidChildEvents": void_child_events,
@@ -1035,6 +1107,45 @@ class FiGuardClient:
             size=data.get("size", size),
         )
 
+    def iter_events(
+        self,
+        budget_id: str,
+        decision: Optional[str] = None,
+        trace_id: Optional[str] = None,
+        page_size: int = 100,
+    ) -> Iterator[SpendEventResponse]:
+        """
+        Iterate over every spend event for a budget, automatically paginating.
+
+        Yields events newest-first, one at a time. Fetches pages lazily — stops
+        as soon as you stop iterating, so you can short-circuit with ``break``
+        without pulling the full ledger::
+
+            for event in client.iter_events(budget_id):
+                process(event)
+
+            # With filters:
+            confirmed = list(client.iter_events(budget_id, decision="CONFIRMED"))
+
+        :param decision: Optional filter — ``AUTHORIZED``, ``CONFIRMED``,
+            ``DENIED``, ``VOIDED``, or ``FAILED``.
+        :param trace_id: Optional filter — return only events from a specific run.
+        :param page_size: Events per page (default 100, max 500).
+        """
+        page = 0
+        while True:
+            ledger = self.get_ledger(
+                budget_id=budget_id,
+                page=page,
+                size=page_size,
+                decision=decision,
+                trace_id=trace_id,
+            )
+            yield from ledger.events
+            if not ledger.has_next:
+                break
+            page += 1
+
     def get_spend_tree(self, budget_id: str) -> SpendTree:
         """Hierarchical view of all spend events for a budget."""
         data = self._request(
@@ -1057,6 +1168,132 @@ class FiGuardClient:
             "GET", f"/api/v1/budgets/{budget_id}/receipt", retryable=True
         )
         return str(data["receiptUrl"])
+
+    # -----------------------------------------------------------------------
+    # External events
+    # -----------------------------------------------------------------------
+
+    def record_external_event(
+        self,
+        budget_id: str,
+        agent_id: str,
+        action_type: str,
+        description: str,
+        quantity: float,
+        idempotency_key: str,
+        *,
+        claimed_category: Optional[str] = None,
+        source: str = "EXTERNAL",
+        occurred_at: Optional[datetime] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SpendEventResponse:
+        """
+        Record a spend that happened outside the normal authorize → confirm flow.
+
+        Use this when an action already occurred in an external system and you need
+        to keep FiGuard's ledger accurate. The event is created directly in CONFIRMED
+        state. Budget capacity limits are NOT enforced — the money was already spent.
+
+        A SPEND_CONFIRMED webhook fires after recording.
+
+        :param budget_id:       Budget to charge against.
+        :param agent_id:        Who performed the action (e.g. ``"finance_manager_u123"``).
+        :param action_type:     Label for the action type (e.g. ``"PAYMENT"``, ``"REFUND"``).
+        :param description:     Human-readable description for audit.
+        :param quantity:        Actual amount spent (same unit as the budget).
+        :param idempotency_key: Unique key to prevent duplicate recording. Recommend
+            using the external system's transaction ID (e.g. QuickBooks transaction ID).
+        :param claimed_category: Optional category for audit and reporting.
+        :param source:          Origin of the event: ``"HUMAN"`` for a person acting
+            outside FiGuard, ``"EXTERNAL"`` for an automated system. Defaults to ``"EXTERNAL"``.
+        :param occurred_at:     When the action actually happened. Defaults to now.
+            Use to backdate events recorded after the fact.
+        :param metadata:        Arbitrary key/value pairs for downstream consumers.
+
+        :raises FiGuardApiError: HTTP 404 if budget not found; HTTP 409 if the
+            idempotency key was already used.
+        """
+        body: Dict[str, Any] = {
+            "budgetId": budget_id,
+            "agentId": agent_id,
+            "actionType": action_type,
+            "description": description,
+            "quantity": quantity,
+            "idempotencyKey": idempotency_key,
+            "source": source,
+        }
+        if claimed_category is not None:
+            body["claimedCategory"] = claimed_category
+        if occurred_at is not None:
+            body["occurredAt"] = occurred_at.isoformat()
+        if metadata is not None:
+            body["metadata"] = metadata
+
+        data = self._request("POST", "/api/v1/events/external", json=body, retryable=False)
+        return _parse_spend_event(data)
+
+    # -----------------------------------------------------------------------
+    # Webhook verification
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def verify_webhook(
+        payload: Union[bytes, str],
+        signature_header: str,
+        secret: str,
+    ) -> Dict[str, Any]:
+        """
+        Verify the HMAC-SHA256 signature on an incoming FiGuard webhook and
+        return the parsed payload.
+
+        FiGuard signs every webhook delivery with ``X-Webhook-Signature: sha256=<hex>``.
+        Call this at the top of your webhook handler before processing the event.
+
+        :param payload:           Raw request body bytes (or UTF-8 string).
+        :param signature_header:  Value of the ``X-Webhook-Signature`` header.
+        :param secret:            Your webhook secret (from the webhook configuration).
+
+        :returns: Parsed JSON payload as a dict.
+
+        :raises FiGuardWebhookVerificationError: Signature mismatch — do NOT process
+            the payload; return HTTP 400 to the caller.
+
+        Example::
+
+            @app.post("/webhooks/figuard")
+            def handle():
+                payload = request.get_data()
+                sig = request.headers.get("X-Webhook-Signature")
+                try:
+                    event = FiGuardClient.verify_webhook(payload, sig, "whsec_...")
+                except FiGuardWebhookVerificationError:
+                    return {"error": "invalid signature"}, 400
+
+                if event["eventType"] == "SPEND_CONFIRMED":
+                    ...
+        """
+        if isinstance(payload, str):
+            payload = payload.encode("utf-8")
+
+        # Header format: "sha256=<hex_digest>"
+        if not signature_header or not signature_header.startswith("sha256="):
+            raise FiGuardWebhookVerificationError(
+                "Missing or malformed X-Webhook-Signature header — expected 'sha256=<hex>'"
+            )
+        expected_hex = signature_header[len("sha256="):]
+
+        computed = hmac.new(
+            key=secret.encode("utf-8"),
+            msg=payload,
+            digestmod=hashlib.sha256,
+        ).hexdigest()
+
+        if not hmac.compare_digest(computed, expected_hex):
+            raise FiGuardWebhookVerificationError(
+                "Webhook signature verification failed — the payload may have been tampered with"
+            )
+
+        return json.loads(payload.decode("utf-8"))
 
     # -----------------------------------------------------------------------
     # Internal HTTP layer

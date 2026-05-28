@@ -15,7 +15,7 @@
  *
  *   try {
  *     const result = (await client.authorize({
- *       sessionToken: budget.tokens![0].sessionToken!,
+ *       sessionToken: budget.primaryToken!.sessionToken!,
  *       agentId: "agent_001",
  *       actionType: "PURCHASE",
  *       description: "NYC flight",
@@ -69,6 +69,7 @@ export type {
   ApiKey,
   AuthorizationResult,
   Budget,
+  BudgetToken,
   BudgetFundingResult,
   BudgetSnapshot,
   EntitlementItem,

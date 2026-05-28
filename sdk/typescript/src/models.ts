@@ -72,9 +72,19 @@ export interface Budget {
    * For simple budgets: one entry with category="default".
    * For entitlement-backed budgets: one entry per entitlement item (future).
    *
-   * Use tokens?.[0] for the common single-token case (primaryToken pattern).
+   * Use `primaryToken` for the common single-token case.
    */
   readonly tokens?: BudgetToken[];
+  /**
+   * Shortcut for `tokens?.[0]` — the session token to hand to an agent after `createBudget()`.
+   * Undefined on all reads after the initial create response (tokens are one-time secrets).
+   *
+   * ```typescript
+   * const budget = await client.createBudget({ ... });
+   * const token = budget.primaryToken?.sessionToken;
+   * ```
+   */
+  readonly primaryToken?: BudgetToken;
   /** True when status === "ACTIVE". */
   readonly isActive: boolean;
   /** True when status === "PAUSED". */
@@ -320,6 +330,7 @@ export function makeBudget(data: Record<string, unknown>): Budget {
     cancelledAt: (data["cancelledAt"] as string | undefined) ?? undefined,
     metadata: (data["metadata"] as Record<string, unknown> | undefined) ?? undefined,
     tokens,
+    primaryToken: tokens?.[0],
     isActive: status === "ACTIVE",
     isPaused: status === "PAUSED",
     isMonetary: typeof currency === "string" && currency.trim().length > 0,

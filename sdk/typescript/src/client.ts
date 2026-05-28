@@ -1,7 +1,16 @@
 /**
  * FiGuard TypeScript client.
  *
- * Usage:
+ * Zero-config demo (no account needed):
+ *   import { FiGuardClient } from "figuard";
+ *   const client = new FiGuardClient();  // connects to shared public sandbox
+ *
+ * Configuration resolution order:
+ *   1. Explicit { apiKey, baseUrl } options
+ *   2. FIGUARD_API_KEY / FIGUARD_BASE_URL environment variables
+ *   3. Shared public sandbox (sb_live_demo / figuard-sandbox-g1ha.onrender.com)
+ *
+ * Full usage:
  *   import { FiGuardClient } from "figuard";
  *
  *   const client = new FiGuardClient({ apiKey: "fg_live_..." });
@@ -66,15 +75,40 @@ import {
 const MAX_RETRIES = 3;
 const RETRY_BACKOFF_BASE_MS = 1000;
 
+// Sandbox defaults — used when no configuration is supplied
+const SANDBOX_API_KEY = "sb_live_demo";
+const SANDBOX_BASE_URL = "https://figuard-sandbox-g1ha.onrender.com";
+let _sandboxWarnShown = false;
+
 // ---------------------------------------------------------------------------
 // Public option types
 // ---------------------------------------------------------------------------
 
 export interface FiGuardClientOptions {
-  apiKey: string;
+  /**
+   * Your `fg_live_...` or `fg_test_...` API key.
+   * Defaults to `FIGUARD_API_KEY` env var, then the shared public sandbox.
+   */
+  apiKey?: string;
+  /**
+   * Override for self-hosted deployments.
+   * Defaults to `FIGUARD_BASE_URL` env var, then the shared public sandbox URL.
+   */
   baseUrl?: string;
   /** Per-request timeout in milliseconds (default: 30_000). */
   timeoutMs?: number;
+  /**
+   * When `true`, a `FiGuardConnectionError` in `authorize()` returns a synthetic
+   * AUTHORIZED result instead of throwing, so agent pipelines keep running when
+   * FiGuard is temporarily unreachable.
+   *
+   * The returned `AuthorizationResult` will have `isFallback: true` and an `eventId`
+   * prefixed with `"fallback_"`. Subsequent `confirmEvent/failEvent/voidEvent` calls
+   * with that id are silently skipped — no ledger entry was created.
+   *
+   * Default: `false` (fail closed — throw on server errors).
+   */
+  failOpen?: boolean;
 }
 
 export interface AllocationInput {
@@ -215,6 +249,36 @@ export interface VoidTreeOptions {
   reason: string;
 }
 
+export interface RecordExternalEventOptions {
+  /** Budget to charge against. */
+  budgetId: string;
+  /** Who performed the action (e.g. "finance_manager_u123"). */
+  agentId: string;
+  /** Label for the action type (e.g. "PAYMENT", "REFUND"). */
+  actionType: string;
+  description: string;
+  /** Actual amount spent (same unit as the budget). */
+  quantity: number;
+  /**
+   * Unique key to prevent duplicate recording. Recommend using the external
+   * system's transaction ID (e.g. QuickBooks transaction ID).
+   */
+  idempotencyKey: string;
+  /** Optional category for audit and reporting. */
+  claimedCategory?: string;
+  /**
+   * Origin: "HUMAN" for a person acting outside FiGuard, "EXTERNAL" for an
+   * automated system. Defaults to "EXTERNAL".
+   */
+  source?: string;
+  /**
+   * When the action actually happened (ISO 8601). Defaults to now.
+   * Use to backdate events recorded after the fact.
+   */
+  occurredAt?: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface ResumeBudgetOptions {
   budgetId: string;
   /** Required human-readable reason for the override. */
@@ -239,11 +303,48 @@ export class FiGuardClient {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
+  private readonly _failOpen: boolean;
 
-  constructor({ apiKey, baseUrl = "http://localhost:8080", timeoutMs = 30_000 }: FiGuardClientOptions) {
-    this.apiKey = apiKey;
-    this.baseUrl = baseUrl.replace(/\/$/, "");
+  /**
+   * Create a FiGuardClient.
+   *
+   * Configuration resolution order:
+   * 1. Explicit `apiKey` / `baseUrl` options
+   * 2. `FIGUARD_API_KEY` / `FIGUARD_BASE_URL` environment variables
+   * 3. Shared public sandbox (zero-config demo mode)
+   *
+   * When the sandbox fallback is used, a one-time warning is printed to stdout.
+   * Suppress it with `FIGUARD_SUPPRESS_SANDBOX_WARNING=1`.
+   */
+  constructor({ apiKey, baseUrl, timeoutMs = 30_000, failOpen = false }: FiGuardClientOptions = {}) {
+    const resolvedKey =
+      apiKey ??
+      (typeof process !== "undefined" ? process.env["FIGUARD_API_KEY"] : undefined);
+    const resolvedUrl =
+      baseUrl ??
+      (typeof process !== "undefined" ? process.env["FIGUARD_BASE_URL"] : undefined);
+
+    if (!resolvedKey) {
+      if (
+        !_sandboxWarnShown &&
+        (typeof process === "undefined" || !process.env["FIGUARD_SUPPRESS_SANDBOX_WARNING"])
+      ) {
+        console.log(
+          "\n⚠️  FiGuard: No configuration found — connecting to the shared public sandbox.\n" +
+          "    → Data is wiped periodically. Not for production use.\n" +
+          "    → Self-host: https://figuard.io/docs/self-hosting\n" +
+          "    → Suppress this warning: set FIGUARD_SUPPRESS_SANDBOX_WARNING=1\n"
+        );
+        _sandboxWarnShown = true;
+      }
+      this.apiKey = SANDBOX_API_KEY;
+      this.baseUrl = (resolvedUrl ?? SANDBOX_BASE_URL).replace(/\/$/, "");
+    } else {
+      this.apiKey = resolvedKey;
+      this.baseUrl = (resolvedUrl ?? SANDBOX_BASE_URL).replace(/\/$/, "");
+    }
     this.timeoutMs = timeoutMs;
+    this._failOpen = failOpen;
   }
 
   // -------------------------------------------------------------------------
@@ -805,12 +906,26 @@ export class FiGuardClient {
         dryRun: options.dryRun,
       },
       async (span) => {
-        const data = await this.request("POST", "/api/v1/authorize", {
-          body,
-          headers: { "X-Session-Token": options.sessionToken },
-          retryable: true,
-        });
-        const result = makeAuthorizationResult(data);
+        let result: AuthorizationResult;
+        try {
+          const data = await this.request("POST", "/api/v1/authorize", {
+            body,
+            headers: { "X-Session-Token": options.sessionToken },
+            retryable: true,
+          });
+          result = makeAuthorizationResult(data);
+        } catch (err) {
+          if (this._failOpen && err instanceof FiGuardConnectionError) {
+            console.warn(
+              `figuard: server unreachable (failOpen=true) — authorizing agent=${options.agentId} ` +
+              `action=${options.actionType} quantity=${options.requestedQuantity} as fallback. ` +
+              `No ledger entry was created. Error: ${err.message}`,
+            );
+            result = makeFallbackAuthorizationResult(idempotencyKey, options.requestedQuantity);
+          } else {
+            throw err;
+          }
+        }
         finishAuthorizeSpan(span, result);
         return result;
       },
@@ -822,6 +937,9 @@ export class FiGuardClient {
   // -------------------------------------------------------------------------
 
   async confirmEvent(options: ConfirmEventOptions): Promise<SpendEventResponse> {
+    if (options.eventId.startsWith("fallback_")) {
+      return makeFallbackSpendEvent(options.eventId, "CONFIRMED", 0);
+    }
     const body: Record<string, unknown> = { confirmedQuantity: options.confirmedQuantity };
     if (options.externalTransactionId !== undefined) body["externalTransactionId"] = options.externalTransactionId;
     return withLifecycleSpan(
@@ -839,6 +957,9 @@ export class FiGuardClient {
   }
 
   async failEvent(options: FailEventOptions): Promise<SpendEventResponse> {
+    if (options.eventId.startsWith("fallback_")) {
+      return makeFallbackSpendEvent(options.eventId, "FAILED", 0);
+    }
     const body: Record<string, unknown> = { reason: options.reason };
     if (options.errorMessage !== undefined) body["errorMessage"] = options.errorMessage;
     return withLifecycleSpan(
@@ -856,6 +977,10 @@ export class FiGuardClient {
   }
 
   async voidEvent(options: VoidEventOptions): Promise<VoidResult> {
+    if (options.eventId.startsWith("fallback_")) {
+      const event = makeFallbackSpendEvent(options.eventId, "VOIDED", 0);
+      return { event, isVoided: true };
+    }
     const body: Record<string, unknown> = {
       reason: options.reason,
       voidChildEvents: options.voidChildEvents ?? false,
@@ -893,6 +1018,103 @@ export class FiGuardClient {
   }
 
   // -------------------------------------------------------------------------
+  // External events
+  // -------------------------------------------------------------------------
+
+  /**
+   * Record a spend that happened outside the normal authorize → confirm flow.
+   *
+   * Creates a spend event directly in CONFIRMED state. Budget capacity limits are
+   * NOT enforced — the money was already spent in an external system.
+   * A SPEND_CONFIRMED webhook fires after recording.
+   *
+   * @throws FiGuardApiError HTTP 404 if budget not found; HTTP 409 on duplicate idempotency key.
+   */
+  async recordExternalEvent(options: RecordExternalEventOptions): Promise<SpendEventResponse> {
+    const body: Record<string, unknown> = {
+      budgetId: options.budgetId,
+      agentId: options.agentId,
+      actionType: options.actionType,
+      description: options.description,
+      quantity: options.quantity,
+      idempotencyKey: options.idempotencyKey,
+      source: options.source ?? "EXTERNAL",
+    };
+    if (options.claimedCategory !== undefined) body["claimedCategory"] = options.claimedCategory;
+    if (options.occurredAt !== undefined) body["occurredAt"] = options.occurredAt;
+    if (options.metadata !== undefined) body["metadata"] = options.metadata;
+
+    const data = await this.request("POST", "/api/v1/events/external", { body, retryable: false });
+    return makeSpendEvent(data);
+  }
+
+  // -------------------------------------------------------------------------
+  // Webhook verification
+  // -------------------------------------------------------------------------
+
+  /**
+   * Verify the HMAC-SHA256 signature on an incoming FiGuard webhook and return
+   * the parsed payload.
+   *
+   * FiGuard signs every webhook with `X-Webhook-Signature: sha256=<hex>`.
+   * Call this at the top of your webhook handler before processing.
+   *
+   * @param payload           Raw request body (Buffer or string).
+   * @param signatureHeader   Value of the `X-Webhook-Signature` header.
+   * @param secret            Your webhook secret from the webhook configuration.
+   *
+   * @returns Parsed JSON payload.
+   * @throws Error with message "Webhook signature verification failed" on mismatch.
+   *
+   * @example
+   * app.post("/webhooks/figuard", (req, res) => {
+   *   let event: Record<string, unknown>;
+   *   try {
+   *     event = FiGuardClient.verifyWebhook(
+   *       req.rawBody,
+   *       req.headers["x-webhook-signature"] as string,
+   *       process.env.FIGUARD_WEBHOOK_SECRET!,
+   *     );
+   *   } catch {
+   *     return res.status(400).json({ error: "invalid signature" });
+   *   }
+   *   if (event["eventType"] === "SPEND_CONFIRMED") { ... }
+   * });
+   */
+  static verifyWebhook(
+    payload: Buffer | string,
+    signatureHeader: string,
+    secret: string,
+  ): Record<string, unknown> {
+    // Dynamic import of Node's crypto so this stays tree-shakeable in browser builds
+    // that never call verifyWebhook (it's a server-side concern).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const crypto = require("crypto") as typeof import("crypto");
+
+    const body = typeof payload === "string" ? Buffer.from(payload, "utf8") : payload;
+
+    if (!signatureHeader || !signatureHeader.startsWith("sha256=")) {
+      throw new Error(
+        "Missing or malformed X-Webhook-Signature header — expected 'sha256=<hex>'"
+      );
+    }
+    const expectedHex = signatureHeader.slice("sha256=".length);
+
+    const computed = crypto
+      .createHmac("sha256", secret)
+      .update(body)
+      .digest("hex");
+
+    if (!crypto.timingSafeEqual(Buffer.from(computed, "hex"), Buffer.from(expectedHex, "hex"))) {
+      throw new Error(
+        "Webhook signature verification failed — the payload may have been tampered with"
+      );
+    }
+
+    return JSON.parse(body.toString("utf8")) as Record<string, unknown>;
+  }
+
+  // -------------------------------------------------------------------------
   // Ledger & reporting
   // -------------------------------------------------------------------------
 
@@ -919,6 +1141,45 @@ export class FiGuardClient {
       size: (data["size"] as number | undefined) ?? (options.size ?? 20),
       hasNext: page < totalPages - 1,
     };
+  }
+
+  /**
+   * Async generator that iterates over every spend event for a budget,
+   * automatically fetching pages. Yields events newest-first.
+   *
+   * @example
+   * for await (const event of client.iterEvents({ budgetId: budget.id })) {
+   *   console.log(event.decision, event.requestedQuantity);
+   * }
+   *
+   * // Collect all confirmed events:
+   * const confirmed: SpendEventResponse[] = [];
+   * for await (const e of client.iterEvents({ budgetId: id, decision: "CONFIRMED" })) {
+   *   confirmed.push(e);
+   * }
+   */
+  async *iterEvents(options: {
+    budgetId: string;
+    decision?: string;
+    traceId?: string;
+    pageSize?: number;
+  }): AsyncGenerator<SpendEventResponse> {
+    let page = 0;
+    const size = options.pageSize ?? 100;
+    while (true) {
+      const ledger = await this.getLedger({
+        budgetId: options.budgetId,
+        page,
+        size,
+        decision: options.decision,
+        traceId: options.traceId,
+      });
+      for (const event of ledger.events) {
+        yield event;
+      }
+      if (!ledger.hasNext) break;
+      page++;
+    }
   }
 
   async getSpendTree(budgetId: string): Promise<SpendTree> {
@@ -1148,4 +1409,37 @@ export function buildAllocationsFromPercentages(
   }
 
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// fail_open synthetic results (module-level helpers)
+// ---------------------------------------------------------------------------
+
+function makeFallbackAuthorizationResult(
+  idempotencyKey: string,
+  requestedQuantity: number,
+): AuthorizationResult {
+  const eventId = `fallback_${idempotencyKey}`;
+  const result: AuthorizationResult = {
+    eventId,
+    decision: "AUTHORIZED",
+    approvedQuantity: requestedQuantity,
+    isFallback: true,
+    isAuthorized: true,
+    raiseIfDenied() { return result; },
+  };
+  return result;
+}
+
+function makeFallbackSpendEvent(
+  eventId: string,
+  decision: string,
+  requestedQuantity: number,
+): SpendEventResponse {
+  return {
+    id: eventId,
+    decision,
+    requestedQuantity,
+    createdAt: "",
+  };
 }

@@ -126,6 +126,11 @@ class AuthorizationResult:
 
     Use ``is_authorized`` to check outcome; use ``raise_if_denied()`` to turn a
     denial into an exception for exception-driven control flow.
+
+    When ``FiGuardClient`` is constructed with ``fail_open=True`` and the server
+    is unreachable, ``authorize()`` returns a fallback result instead of raising.
+    Check ``is_fallback`` to detect this — fallback results have no ``event_id``
+    recorded in the ledger, so ``confirm_event()`` / ``void_event()`` are no-ops.
     """
 
     event_id: str
@@ -139,6 +144,8 @@ class AuthorizationResult:
     # Set when denial_reason == "ENTITY_ALREADY_AUTHORIZED"
     original_event_id: Optional[str] = None
     original_event_status: Optional[str] = None
+    # True when FiGuard was unreachable and fail_open=True caused a synthetic approval
+    is_fallback: bool = False
 
     @property
     def is_authorized(self) -> bool:
@@ -188,6 +195,9 @@ class SpendEventResponse:
     parent_event_id: Optional[str] = None
     trace_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+    # Set only on external events recorded via record_external_event(). None for standard events.
+    event_source: Optional[str] = None
+    occurred_at: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
