@@ -119,6 +119,11 @@ export interface AuthorizationResult {
   /** True when decision is AUTHORIZED. */
   readonly isAuthorized: boolean;
   /**
+   * True when FiGuard was unreachable and `failOpen: true` caused a synthetic approval.
+   * No ledger entry was created. `confirmEvent/failEvent/voidEvent` are no-ops for this eventId.
+   */
+  readonly isFallback?: boolean;
+  /**
    * Throw FiGuardDeniedException if denied.
    * Returns this if authorized, enabling fluent chaining:
    *   const result = (await client.authorize(...)).raiseIfDenied();
@@ -151,6 +156,10 @@ export interface SpendEventResponse {
   readonly parentEventId?: string;
   readonly traceId?: string;
   readonly metadata?: Record<string, unknown>;
+  /** Set only on external events recorded via recordExternalEvent(). Undefined for standard events. */
+  readonly eventSource?: string;
+  /** When the action actually occurred. Set only on external events. */
+  readonly occurredAt?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -398,6 +407,8 @@ export function makeSpendEvent(data: Record<string, unknown>): SpendEventRespons
     failureReason: (data["failureReason"] as string | undefined) ?? undefined,
     parentEventId: (data["parentEventId"] as string | undefined) ?? undefined,
     traceId: (data["traceId"] as string | undefined) ?? undefined,
+    eventSource: (data["eventSource"] as string | undefined) ?? undefined,
+    occurredAt: (data["occurredAt"] as string | undefined) ?? undefined,
     metadata: (data["metadata"] as Record<string, unknown> | undefined) ?? undefined,
   };
 }
@@ -573,6 +584,68 @@ export function makeSubscription(data: Record<string, unknown>): Subscription {
     updatedAt: data["updatedAt"] as string | undefined,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Denial reason constants
+// ---------------------------------------------------------------------------
+
+/**
+ * String constants for every denial reason code returned by FiGuard.
+ *
+ * Use instead of raw strings for IDE autocomplete and typo protection:
+ *
+ * ```typescript
+ * import { DenialReason } from "figuard";
+ *
+ * if (result.denialReason === DenialReason.BUDGET_EXHAUSTED) { ... }
+ * ```
+ *
+ * All values match the literal strings in `AuthorizationResult.denialReason`
+ * and `FiGuardDeniedException.denialReason`.
+ */
+export const DenialReason = {
+  // Budget-level
+  /** Total budget has no remaining capacity. `availableQuantity` is 0. */
+  BUDGET_EXHAUSTED: "BUDGET_EXHAUSTED",
+  /** Budget has passed its expiry time. Create a new budget to continue. */
+  BUDGET_EXPIRED: "BUDGET_EXPIRED",
+  /** Budget was manually paused or paused by anomaly detection. Resume with `resumeBudget()`. */
+  BUDGET_PAUSED: "BUDGET_PAUSED",
+  /** Budget was cancelled. Create a new budget to continue. */
+  BUDGET_CANCELLED: "BUDGET_CANCELLED",
+
+  // Category / allocation
+  /** A specific category allocation has no remaining capacity. Total budget may still have funds. */
+  ALLOCATION_EXHAUSTED: "ALLOCATION_EXHAUSTED",
+  /** `claimedCategory` required (STRICT mode) but not provided or didn't match any allocation. */
+  MISSING_CLAIMED_CATEGORY: "MISSING_CLAIMED_CATEGORY",
+
+  // Velocity
+  /** Too many requests within the configured velocity window. Retry after the window resets. */
+  VELOCITY_LIMIT_EXCEEDED: "VELOCITY_LIMIT_EXCEEDED",
+
+  // Idempotency / entity
+  /**
+   * The `entityId` supplied already has an active reservation.
+   * Check `result.originalEventId` to confirm or void the existing event.
+   */
+  ENTITY_ALREADY_AUTHORIZED: "ENTITY_ALREADY_AUTHORIZED",
+
+  // Session / token
+  /** Token doesn't exist, has expired, or belongs to a different tenant. */
+  INVALID_SESSION_TOKEN: "INVALID_SESSION_TOKEN",
+
+  // Causal chain
+  /** Causal chain total exceeded the `maxSubtreeQuantity` ceiling on the root event. */
+  SUBTREE_CAP_EXCEEDED: "SUBTREE_CAP_EXCEEDED",
+
+  // Subscription
+  /** The subscription linked to this budget is paused. Resume the subscription to continue. */
+  SUBSCRIPTION_PAUSED: "SUBSCRIPTION_PAUSED",
+} as const;
+
+/** Union type of all valid denial reason strings. */
+export type DenialReasonCode = typeof DenialReason[keyof typeof DenialReason];
 
 /** Coerce a Spring enum (string or {name, ordinal} object) to a plain string. */
 function coerceString(value: unknown): string | undefined {

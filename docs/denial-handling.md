@@ -2,6 +2,24 @@
 
 When FiGuard denies an authorization, your agent receives a structured denial reason instead of a boolean. This guide explains every denial code, what causes it, how each framework surfaces it to the LLM, and how to write prompt instructions that let the LLM reason about and recover from denials.
 
+Use `DenialReason` constants instead of raw strings — you get IDE autocomplete and typo protection:
+
+```python
+# Python
+from figuard import DenialReason
+
+if result.denial_reason == DenialReason.BUDGET_EXHAUSTED: ...
+if result.denial_reason == DenialReason.ALLOCATION_EXHAUSTED: ...
+```
+
+```typescript
+// TypeScript
+import { DenialReason } from "figuard";
+
+if (result.denialReason === DenialReason.BUDGET_EXHAUSTED) { ... }
+if (result.denialReason === DenialReason.ALLOCATION_EXHAUSTED) { ... }
+```
+
 ---
 
 ## Denial reason codes
@@ -52,11 +70,14 @@ The tool function never runs. The denial string is returned as the function resu
 ### Raw client
 
 ```python
+from figuard import DenialReason
+
 result = client.authorize(...)
 if not result.is_authorized:
-    # result.denial_reason — the code (e.g. "BUDGET_EXHAUSTED")
+    # result.denial_reason — use DenialReason constants for comparison
     # result.denial_message — human-readable description
-    print(result.denial_reason, result.denial_message)
+    if result.denial_reason == DenialReason.BUDGET_EXHAUSTED:
+        print("Budget exhausted:", result.denial_message)
 ```
 
 Or use `raise_if_denied()` for exception-driven flow:
@@ -131,7 +152,7 @@ The session is over budget. The right response depends on the workflow:
 
 ```python
 result = client.authorize(session_token=token, requested_quantity=amount, ...)
-if not result.is_authorized and result.denial_reason == "BUDGET_EXHAUSTED":
+if not result.is_authorized and result.denial_reason == DenialReason.BUDGET_EXHAUSTED:
     # Option 1: hard stop
     raise BudgetExceededError(f"Agent session exhausted. Spent: {budget.quantity_spent}")
 
@@ -144,7 +165,7 @@ if not result.is_authorized and result.denial_reason == "BUDGET_EXHAUSTED":
 Only the named category is exhausted — the budget may still have funds. The LLM can try a different category or offer a cheaper option:
 
 ```python
-if result.denial_reason == "ALLOCATION_EXHAUSTED":
+if result.denial_reason == DenialReason.ALLOCATION_EXHAUSTED:
     remaining = {
         alloc.category: alloc.available_quantity
         for alloc in client.get_budget(budget_id).allocations
@@ -160,7 +181,7 @@ The velocity window will reset. Safe to retry after the window expires:
 import time
 
 result = client.authorize(...)
-if result.denial_reason == "VELOCITY_LIMIT_EXCEEDED":
+if result.denial_reason == DenialReason.VELOCITY_LIMIT_EXCEEDED:
     time.sleep(60)  # or read velocity_max_per_minute from budget config
     result = client.authorize(...)  # retry with a fresh idempotency key
 ```
@@ -170,7 +191,7 @@ if result.denial_reason == "VELOCITY_LIMIT_EXCEEDED":
 The `entity_id` you passed is already reserved. FiGuard prevents double-authorization of the same entity. The original event id is in `result.original_event_id`:
 
 ```python
-if result.denial_reason == "ENTITY_ALREADY_AUTHORIZED":
+if result.denial_reason == DenialReason.ENTITY_ALREADY_AUTHORIZED:
     # The entity is already authorized — confirm or void the original
     existing = result.original_event_id
     if action_actually_happened:
@@ -184,7 +205,7 @@ if result.denial_reason == "ENTITY_ALREADY_AUTHORIZED":
 The budget was paused — either manually or by anomaly detection. It can be resumed with an override reason:
 
 ```python
-if result.denial_reason == "BUDGET_PAUSED":
+if result.denial_reason == DenialReason.BUDGET_PAUSED:
     # Alert the operator; resume only after human review
     notify_ops(budget_id=budget.id, reason="budget_paused_by_anomaly")
     # After review:
@@ -206,6 +227,6 @@ result = client.authorize(
     requested_quantity=999_999,  # more than any budget has
     dry_run=True,
 )
-assert result.denial_reason == "BUDGET_EXHAUSTED"
+assert result.denial_reason == DenialReason.BUDGET_EXHAUSTED
 # dry_run=True: nothing written to ledger, budget unaffected
 ```

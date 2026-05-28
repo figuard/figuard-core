@@ -1,7 +1,21 @@
 """
 FiGuard Python SDK — pre-flight spend authorization for AI agents.
 
-Quick start::
+Zero-config demo (no account needed)::
+
+    from figuard import FiGuardClient
+
+    client = FiGuardClient()  # connects to shared public sandbox automatically
+
+One-line framework wiring::
+
+    from figuard.integrations.langchain import auto_guard_langchain
+    executor = auto_guard_langchain(executor)  # $500 / 24h budget, auto-wired
+
+    from figuard.integrations.crewai import auto_guard_crewai
+    auto_guard_crewai(my_tool)  # wraps tool._run in-place
+
+Full quickstart::
 
     from figuard import FiGuardClient, FiGuardDeniedException
 
@@ -10,7 +24,8 @@ Quick start::
     budget = client.create_budget(
         user_id="user_123",
         total_limit=500.00,
-        expires_at="2024-12-31T23:59:59Z",
+        expires_in="24h",
+        currency="USD",
     )
 
     try:
@@ -28,11 +43,12 @@ Quick start::
         print(f"Spend denied: {e.denial_reason}")
 """
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 from .client import FiGuardClient
-from .exceptions import FiGuardApiError, FiGuardConnectionError, FiGuardDeniedException, FiGuardError
+from .exceptions import FiGuardApiError, FiGuardConnectionError, FiGuardDeniedException, FiGuardError, FiGuardWebhookVerificationError
 from .composite import CompositeGuard, GuardedResource, CompositeAuthorizationResult
+from .denial_reasons import DenialReason
 
 try:
     from .async_client import AsyncFiGuardClient  # available when aiohttp is installed
@@ -63,11 +79,14 @@ from .context import figuard_scope, figuard_run_in_executor, get_current_event_i
 __all__ = [
     "__version__",
     "FiGuardClient",
+    # Denial reasons
+    "DenialReason",
     # Exceptions
     "FiGuardError",
     "FiGuardApiError",
     "FiGuardDeniedException",
     "FiGuardConnectionError",
+    "FiGuardWebhookVerificationError",
     # Models
     "Budget",
     "AuthorizationResult",

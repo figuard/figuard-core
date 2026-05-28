@@ -58,6 +58,10 @@ export {
   FiGuardConnectionError,
 } from "./errors";
 
+// Denial reason constants
+export { DenialReason } from "./models";
+export type { DenialReasonCode } from "./models";
+
 // Models
 export type {
   AllocationResponse,
