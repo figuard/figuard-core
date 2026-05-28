@@ -73,6 +73,10 @@ from .models import (
     Subscription,
     VoidResult,
     VoidTreeResult,
+    BudgetStateSnapshot,
+    BudgetTimeline,
+    ReplayAllocationState,
+    TimelineEvent,
     WebhookConfig,
     WebhookDelivery,
     WebhookTestResult,
@@ -744,37 +748,80 @@ class FiGuardClient:
             params["pageToken"] = page_token
         return self._request("GET", f"/api/v1/budgets/{budget_id}/replay", params=params)
 
-    def get_budget_state_at(self, budget_id: str, at) -> dict:
+    def get_budget_state_at(
+        self,
+        budget_id: str,
+        at: "Union[datetime, str]",
+    ) -> "BudgetStateSnapshot":
         """
-        Project the budget state to a specific point in time.
+        Project the budget's state at an exact point in time.
 
-        :param at: A datetime or ISO 8601 string.
-        :returns: Dict with projected_at, events_applied, and state snapshot.
+        Replays all ledger events up to ``at`` and returns the resulting
+        balance snapshot. Use for incident investigation or customer support
+        queries: *"What did this budget look like at 14:32 yesterday?"*
+
+        :param budget_id: Budget to inspect.
+        :param at:        Target timestamp — a ``datetime`` object or ISO 8601 string.
+
+        :returns: ``BudgetStateSnapshot`` with ``projected_at``, ``events_applied``,
+                  running totals, ``budget_status``, and per-allocation breakdowns.
+
+        Example::
+
+            from datetime import datetime, timezone
+
+            snapshot = client.get_budget_state_at(
+                budget_id="bdg_...",
+                at=datetime(2025, 5, 28, 14, 32, tzinfo=timezone.utc),
+            )
+            print(f"{snapshot.events_applied} events applied")
+            print(f"Available at that moment: {snapshot.available}")
         """
         at_str = at.isoformat() if hasattr(at, "isoformat") else str(at)
-        return self._request(
+        data = self._request(
             "GET", f"/api/v1/budgets/{budget_id}/replay/state", params={"at": at_str}
         )
+        return _parse_budget_state_snapshot(data)
 
     def get_budget_timeline(
         self,
         budget_id: str,
         *,
-        from_time=None,
-        until=None,
-    ) -> dict:
+        from_time: "Optional[Union[datetime, str]]" = None,
+        until: "Optional[Union[datetime, str]]" = None,
+    ) -> "BudgetTimeline":
         """
-        Return events in chronological order without state snapshots.
+        Return a chronological event sequence for a budget, without state projections.
 
-        Lighter than replay_budget — use when you need the sequence and
-        timing but not the projected state at each step.
+        Lighter and faster than a full replay — use when you need to see *what
+        happened and when*, not the projected balance after each step.
+
+        :param budget_id:  Budget to inspect.
+        :param from_time:  Only include events at or after this timestamp.
+        :param until:      Only include events before or at this timestamp.
+
+        :returns: ``BudgetTimeline`` with the ordered event list and
+                  ``millis_since_previous`` so you can spot timing gaps.
+
+        Example::
+
+            from datetime import datetime, timezone
+
+            timeline = client.get_budget_timeline(
+                budget_id="bdg_...",
+                from_time=datetime(2025, 5, 28, 13, 0, tzinfo=timezone.utc),
+                until=datetime(2025, 5, 28, 15, 0, tzinfo=timezone.utc),
+            )
+            for event in timeline.timeline:
+                print(f"[{event.created_at}] {event.decision:12s} {event.requested_quantity:>8.2f}  {event.agent_id}")
         """
-        params = {}
+        params: Dict[str, Any] = {}
         if from_time is not None:
             params["from"] = from_time.isoformat() if hasattr(from_time, "isoformat") else str(from_time)
         if until is not None:
             params["until"] = until.isoformat() if hasattr(until, "isoformat") else str(until)
-        return self._request("GET", f"/api/v1/budgets/{budget_id}/replay/timeline", params=params)
+        data = self._request("GET", f"/api/v1/budgets/{budget_id}/replay/timeline", params=params or None)
+        return _parse_budget_timeline(data)
 
     def replay_counterfactual(
         self,
@@ -1847,6 +1894,56 @@ def _parse_webhook_test_result(data: Dict[str, Any]) -> "WebhookTestResult":
         response_status=data.get("responseStatus"),
         response_body=data.get("responseBody"),
         error_message=data.get("errorMessage"),
+    )
+
+
+def _parse_budget_state_snapshot(data: Dict[str, Any]) -> "BudgetStateSnapshot":
+    from .models import BudgetStateSnapshot, ReplayAllocationState
+    state = data.get("state") or data  # API wraps in {"state": {...}} or returns flat
+    allocs = [
+        ReplayAllocationState(
+            category=a.get("category", ""),
+            limit=float(a.get("limit", 0)),
+            quantity_spent=float(a.get("quantitySpent", 0)),
+            quantity_reserved=float(a.get("quantityReserved", 0)),
+            available=float(a.get("available", 0)),
+            enforcement_mode=a.get("enforcementMode", ""),
+        )
+        for a in (state.get("allocations") or [])
+    ]
+    return BudgetStateSnapshot(
+        budget_id=str(data.get("budgetId", "")),
+        projected_at=str(data.get("projectedAt", "")),
+        events_applied=int(data.get("eventsApplied", 0)),
+        total_limit=float(state.get("totalLimit", 0)),
+        quantity_spent=float(state.get("quantitySpent", 0)),
+        quantity_reserved=float(state.get("quantityReserved", 0)),
+        available=float(state.get("available", 0)),
+        budget_status=str(state.get("budgetStatus", "")),
+        allocations=allocs,
+    )
+
+
+def _parse_budget_timeline(data: Dict[str, Any]) -> "BudgetTimeline":
+    from .models import BudgetTimeline, TimelineEvent
+    events = [
+        TimelineEvent(
+            event_index=int(e.get("eventIndex", 0)),
+            event_id=str(e.get("eventId", "")),
+            decision=str(e.get("decision", "")),
+            requested_quantity=float(e.get("requestedQuantity", 0)),
+            created_at=str(e.get("createdAt", "")),
+            agent_id=e.get("agentId"),
+            claimed_category=e.get("claimedCategory"),
+            description=e.get("description"),
+            millis_since_previous=e.get("millisSincePrevious"),
+        )
+        for e in (data.get("timeline") or [])
+    ]
+    return BudgetTimeline(
+        budget_id=str(data.get("budgetId", "")),
+        total_events=int(data.get("totalEvents", len(events))),
+        timeline=events,
     )
 
 

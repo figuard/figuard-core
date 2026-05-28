@@ -41,7 +41,7 @@ import logging
 import os
 import uuid
 from typing import Any, AsyncIterator, Dict, List, Optional, Union
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 try:
     import aiohttp
@@ -59,6 +59,8 @@ from .models import (
     AuthorizationResult,
     Budget,
     BudgetSnapshot,
+    BudgetStateSnapshot,
+    BudgetTimeline,
     DelegationToken,
     LedgerPage,
     SpendEventResponse,
@@ -73,6 +75,8 @@ from .models import (
 from .client import (
     _parse_authorization_result,
     _parse_budget,
+    _parse_budget_state_snapshot,
+    _parse_budget_timeline,
     _parse_delegation_token,
     _parse_spend_event,
     _parse_tree_node,
@@ -464,27 +468,41 @@ class AsyncFiGuardClient:
             params["pageToken"] = page_token
         return await self._request("GET", f"/api/v1/budgets/{budget_id}/replay", params=params)
 
-    async def get_budget_state_at(self, budget_id: str, at) -> dict:
-        """Project the budget state to a specific point in time."""
+    async def get_budget_state_at(
+        self,
+        budget_id: str,
+        at: "Union[datetime, str]",
+    ) -> BudgetStateSnapshot:
+        """
+        Project the budget's state at an exact point in time.
+
+        See ``FiGuardClient.get_budget_state_at`` for full documentation.
+        """
         at_str = at.isoformat() if hasattr(at, "isoformat") else str(at)
-        return await self._request(
+        data = await self._request(
             "GET", f"/api/v1/budgets/{budget_id}/replay/state", params={"at": at_str}
         )
+        return _parse_budget_state_snapshot(data)
 
     async def get_budget_timeline(
         self,
         budget_id: str,
         *,
-        from_time=None,
-        until=None,
-    ) -> dict:
-        """Return events in chronological order without state snapshots."""
-        params = {}
+        from_time: "Optional[Union[datetime, str]]" = None,
+        until: "Optional[Union[datetime, str]]" = None,
+    ) -> BudgetTimeline:
+        """
+        Return a chronological event sequence for a budget, without state projections.
+
+        See ``FiGuardClient.get_budget_timeline`` for full documentation.
+        """
+        params: Dict[str, Any] = {}
         if from_time is not None:
             params["from"] = from_time.isoformat() if hasattr(from_time, "isoformat") else str(from_time)
         if until is not None:
             params["until"] = until.isoformat() if hasattr(until, "isoformat") else str(until)
-        return await self._request("GET", f"/api/v1/budgets/{budget_id}/replay/timeline", params=params)
+        data = await self._request("GET", f"/api/v1/budgets/{budget_id}/replay/timeline", params=params or None)
+        return _parse_budget_timeline(data)
 
     async def replay_counterfactual(
         self,

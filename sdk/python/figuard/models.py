@@ -378,6 +378,67 @@ class Subscription:
 
 
 # ---------------------------------------------------------------------------
+# Audit replay
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ReplayAllocationState:
+    """Per-allocation balance at a single point in a budget replay."""
+    category: str
+    limit: float
+    quantity_spent: float
+    quantity_reserved: float
+    available: float
+    enforcement_mode: str
+
+
+@dataclass(frozen=True)
+class BudgetStateSnapshot:
+    """
+    Projected budget state at an exact point in time.
+
+    Returned by ``get_budget_state_at()``. Computed by replaying ledger
+    events chronologically up to ``projected_at`` — not read from live state.
+    """
+    budget_id: str
+    projected_at: str
+    events_applied: int
+    total_limit: float
+    quantity_spent: float
+    quantity_reserved: float
+    available: float
+    budget_status: str
+    allocations: List[ReplayAllocationState]
+
+
+@dataclass(frozen=True)
+class TimelineEvent:
+    """One event row in a budget timeline, without state projections."""
+    event_index: int
+    event_id: str
+    decision: str
+    requested_quantity: float
+    created_at: str
+    agent_id: Optional[str] = None
+    claimed_category: Optional[str] = None
+    description: Optional[str] = None
+    millis_since_previous: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class BudgetTimeline:
+    """
+    Chronological event sequence for a budget.
+
+    Returned by ``get_budget_timeline()``. Lighter than a full replay —
+    includes event ordering and timing but no per-step state projections.
+    """
+    budget_id: str
+    total_events: int
+    timeline: List[TimelineEvent]
+
+
+# ---------------------------------------------------------------------------
 # Webhooks
 # ---------------------------------------------------------------------------
 

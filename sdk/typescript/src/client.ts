@@ -44,6 +44,8 @@ import {
   AuthorizationResult,
   Budget,
   BudgetFundingResult,
+  BudgetStateSnapshot,
+  BudgetTimeline,
   DelegationToken,
   EntitlementItem,
   LedgerPage,
@@ -59,6 +61,8 @@ import {
   makeAuthorizationResult,
   makeBudget,
   makeBudgetFundingResult,
+  makeBudgetStateSnapshot,
+  makeBudgetTimeline,
   makeDelegationToken,
   makeEntitlementItem,
   makeSpendEvent,
@@ -799,26 +803,54 @@ export class FiGuardClient {
   }
 
   /**
-   * Project the budget state to a specific point in time.
+   * Project the budget's state at an exact point in time.
    *
-   * @param at ISO 8601 timestamp to project state to.
+   * Replays all ledger events up to `at` and returns the resulting balance
+   * snapshot. Use for incident investigation or customer support queries:
+   * *"What did this budget look like at 14:32 yesterday?"*
+   *
+   * @param budgetId  Budget to inspect.
+   * @param at        ISO 8601 timestamp to project state to.
+   * @returns `BudgetStateSnapshot` with running totals and per-allocation breakdowns.
+   *
+   * @example
+   * const snapshot = await client.getBudgetStateAt("bdg_...", "2025-05-28T14:32:00Z");
+   * console.log(`${snapshot.eventsApplied} events applied`);
+   * console.log(`Available at that moment: ${snapshot.available}`);
    */
-  async getBudgetStateAt(budgetId: string, at: string): Promise<Record<string, unknown>> {
+  async getBudgetStateAt(budgetId: string, at: string): Promise<BudgetStateSnapshot> {
     const query = new URLSearchParams({ at }).toString();
-    return await this.request("GET", `/api/v1/budgets/${budgetId}/replay/state?${query}`, {
+    const data = await this.request("GET", `/api/v1/budgets/${budgetId}/replay/state?${query}`, {
       retryable: true,
     });
+    return makeBudgetStateSnapshot(data);
   }
 
   /**
-   * Return events in chronological order without state snapshots.
-   * Lighter than replayBudget — use when you need timing but not projected state.
+   * Return a chronological event sequence for a budget, without state projections.
+   *
+   * Lighter and faster than a full replay — use when you need to see *what
+   * happened and when*, not the projected balance after each step.
+   *
+   * @param options.from   Only include events at or after this ISO 8601 timestamp.
+   * @param options.until  Only include events before or at this ISO 8601 timestamp.
+   * @returns `BudgetTimeline` with ordered events and `millisSincePrevious` gaps.
+   *
+   * @example
+   * const tl = await client.getBudgetTimeline({
+   *   budgetId: "bdg_...",
+   *   from: "2025-05-28T13:00:00Z",
+   *   until: "2025-05-28T15:00:00Z",
+   * });
+   * for (const e of tl.timeline) {
+   *   console.log(`[${e.createdAt}] ${e.decision.padEnd(12)} ${e.requestedQuantity}`);
+   * }
    */
   async getBudgetTimeline(options: {
     budgetId: string;
     from?: string;
     until?: string;
-  }): Promise<Record<string, unknown>> {
+  }): Promise<BudgetTimeline> {
     const params: Record<string, string> = {};
     if (options.from)  params["from"]  = options.from;
     if (options.until) params["until"] = options.until;
@@ -826,7 +858,8 @@ export class FiGuardClient {
     const url = query
       ? `/api/v1/budgets/${options.budgetId}/replay/timeline?${query}`
       : `/api/v1/budgets/${options.budgetId}/replay/timeline`;
-    return await this.request("GET", url, { retryable: true });
+    const data = await this.request("GET", url, { retryable: true });
+    return makeBudgetTimeline(data);
   }
 
   /**

@@ -597,6 +597,110 @@ export function makeSubscription(data: Record<string, unknown>): Subscription {
 }
 
 // ---------------------------------------------------------------------------
+// Audit replay
+// ---------------------------------------------------------------------------
+
+/** Per-allocation balance at a single point in a budget replay. */
+export interface ReplayAllocationState {
+  readonly category: string;
+  readonly limit: number;
+  readonly quantitySpent: number;
+  readonly quantityReserved: number;
+  readonly available: number;
+  readonly enforcementMode: string;
+}
+
+/**
+ * Projected budget state at an exact point in time.
+ *
+ * Returned by `getBudgetStateAt()`. Computed by replaying ledger events
+ * chronologically up to `projectedAt` — not read from live state.
+ */
+export interface BudgetStateSnapshot {
+  readonly budgetId: string;
+  readonly projectedAt: string;
+  readonly eventsApplied: number;
+  readonly totalLimit: number;
+  readonly quantitySpent: number;
+  readonly quantityReserved: number;
+  readonly available: number;
+  readonly budgetStatus: string;
+  readonly allocations: ReplayAllocationState[];
+}
+
+/** One event row in a budget timeline, without state projections. */
+export interface TimelineEvent {
+  readonly eventIndex: number;
+  readonly eventId: string;
+  readonly decision: string;
+  readonly requestedQuantity: number;
+  readonly createdAt: string;
+  readonly agentId?: string;
+  readonly claimedCategory?: string;
+  readonly description?: string;
+  /** Milliseconds elapsed since the previous event in the sequence. */
+  readonly millisSincePrevious?: number;
+}
+
+/**
+ * Chronological event sequence for a budget.
+ *
+ * Returned by `getBudgetTimeline()`. Lighter than a full replay —
+ * includes event ordering and timing but no per-step state projections.
+ */
+export interface BudgetTimeline {
+  readonly budgetId: string;
+  readonly totalEvents: number;
+  readonly timeline: TimelineEvent[];
+}
+
+export function makeBudgetStateSnapshot(data: Record<string, unknown>): BudgetStateSnapshot {
+  const state = (data["state"] as Record<string, unknown> | undefined) ?? data;
+  const allocations: ReplayAllocationState[] = ((state["allocations"] as Record<string, unknown>[] | undefined) ?? []).map(
+    (a) => ({
+      category: a["category"] as string,
+      limit: a["limit"] as number,
+      quantitySpent: a["quantitySpent"] as number,
+      quantityReserved: a["quantityReserved"] as number,
+      available: a["available"] as number,
+      enforcementMode: (a["enforcementMode"] as string | undefined) ?? "",
+    }),
+  );
+  return {
+    budgetId: String(data["budgetId"] ?? ""),
+    projectedAt: String(data["projectedAt"] ?? ""),
+    eventsApplied: (data["eventsApplied"] as number | undefined) ?? 0,
+    totalLimit: (state["totalLimit"] as number) ?? 0,
+    quantitySpent: (state["quantitySpent"] as number) ?? 0,
+    quantityReserved: (state["quantityReserved"] as number) ?? 0,
+    available: (state["available"] as number) ?? 0,
+    budgetStatus: String(state["budgetStatus"] ?? ""),
+    allocations,
+  };
+}
+
+export function makeBudgetTimeline(data: Record<string, unknown>): BudgetTimeline {
+  const timeline: TimelineEvent[] = ((data["timeline"] as Record<string, unknown>[] | undefined) ?? []).map(
+    (e) => ({
+      eventIndex: (e["eventIndex"] as number) ?? 0,
+      eventId: String(e["eventId"] ?? ""),
+      decision: String(e["decision"] ?? ""),
+      requestedQuantity: (e["requestedQuantity"] as number) ?? 0,
+      createdAt: String(e["createdAt"] ?? ""),
+      agentId: (e["agentId"] as string | undefined) ?? undefined,
+      claimedCategory: (e["claimedCategory"] as string | undefined) ?? undefined,
+      description: (e["description"] as string | undefined) ?? undefined,
+      millisSincePrevious: (e["millisSincePrevious"] as number | undefined) ?? undefined,
+    }),
+  );
+  return {
+    budgetId: String(data["budgetId"] ?? ""),
+    totalEvents: (data["totalEvents"] as number | undefined) ?? timeline.length,
+    timeline,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Webhooks
 // ---------------------------------------------------------------------------
 
