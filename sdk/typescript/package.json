@@ -1,6 +1,6 @@
 {
   "name": "figuard",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "FiGuard TypeScript SDK — pre-flight spend authorization for AI agents",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -8,6 +8,10 @@
     ".": {
       "require": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./testing": {
+      "require": "./dist/testing.js",
+      "types": "./dist/testing.d.ts"
     }
   },
   "files": [

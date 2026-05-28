@@ -121,3 +121,7 @@ __all__ = [
 
 if _has_async:
     __all__ += ["AsyncFiGuardClient", "AsyncCompositeGuard", "AsyncGuardedResource"]
+
+# figuard.testing is a standalone module — not imported here to avoid
+# pulling test helpers into production bundles.
+# Usage: from figuard.testing import MockFiGuardClient
