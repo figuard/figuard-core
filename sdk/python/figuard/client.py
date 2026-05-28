@@ -73,6 +73,9 @@ from .models import (
     Subscription,
     VoidResult,
     VoidTreeResult,
+    WebhookConfig,
+    WebhookDelivery,
+    WebhookTestResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -1233,6 +1236,105 @@ class FiGuardClient:
         return _parse_spend_event(data)
 
     # -----------------------------------------------------------------------
+    # Webhook management
+    # -----------------------------------------------------------------------
+
+    def create_webhook(
+        self,
+        url: str,
+        secret: str,
+        events: List[str],
+    ) -> "WebhookConfig":
+        """
+        Register a new webhook endpoint for this tenant.
+
+        FiGuard will POST signed event payloads to ``url`` when any of the
+        ``events`` occur. Verify deliveries with ``verify_webhook()``.
+
+        :param url:     HTTPS URL where FiGuard will POST events.
+        :param secret:  Your chosen signing secret (min 16 chars). Store this
+                        securely — it is never returned by the API again.
+        :param events:  List of event type strings to subscribe to. See
+                        ``WebhookEventType`` values, e.g. ``["BUDGET_EXHAUSTED",
+                        "SPEND_CONFIRMED", "ANOMALY_DETECTED"]``.
+
+        :returns: ``WebhookConfig`` with the registered configuration.
+        """
+        from .models import WebhookConfig as _WebhookConfig
+        data = self._request("POST", "/api/v1/webhooks", json={
+            "url": url,
+            "secret": secret,
+            "events": events,
+        }, retryable=False)
+        return _parse_webhook_config(data)
+
+    def list_webhooks(self) -> "List[WebhookConfig]":
+        """Return all webhook configurations for this tenant."""
+        from .models import WebhookConfig as _WebhookConfig
+        data = self._request("GET", "/api/v1/webhooks", retryable=True)
+        return [_parse_webhook_config(item) for item in (data if isinstance(data, list) else [])]
+
+    def delete_webhook(self, webhook_id: str) -> None:
+        """
+        Delete a webhook config and all its delivery history.
+
+        :param webhook_id: ID of the webhook config to delete.
+        """
+        self._request("DELETE", f"/api/v1/webhooks/{webhook_id}", retryable=False)
+
+    def get_webhook_deliveries(self, webhook_id: str) -> "List[WebhookDelivery]":
+        """
+        Delivery history for a specific webhook config, newest first.
+
+        :param webhook_id: ID of the webhook config.
+        """
+        data = self._request("GET", f"/api/v1/webhooks/{webhook_id}/deliveries", retryable=True)
+        return [_parse_webhook_delivery(item) for item in (data if isinstance(data, list) else [])]
+
+    def test_webhook(self, webhook_id: str) -> "WebhookTestResult":
+        """
+        Fire a test event to the configured URL synchronously.
+
+        Returns whether the endpoint responded with 2xx. Does not create a
+        delivery record — this is a connectivity check only.
+
+        :param webhook_id: ID of the webhook config to test.
+        """
+        data = self._request("POST", f"/api/v1/webhooks/{webhook_id}/test", retryable=False)
+        return _parse_webhook_test_result(data)
+
+    def get_all_deliveries(
+        self,
+        status: Optional[str] = None,
+        event_type: Optional[str] = None,
+        since: Optional[str] = None,
+    ) -> "List[WebhookDelivery]":
+        """
+        All deliveries for this tenant across all webhook configs, newest first.
+
+        :param status:     Filter by delivery status: ``"DELIVERED"``, ``"FAILED"``, ``"PENDING"``.
+        :param event_type: Filter by event type string (e.g. ``"SPEND_CONFIRMED"``).
+        :param since:      Only include deliveries at or after this ISO-8601 timestamp.
+        """
+        params: Dict[str, Any] = {}
+        if status is not None:
+            params["status"] = status
+        if event_type is not None:
+            params["eventType"] = event_type
+        if since is not None:
+            params["since"] = since
+        data = self._request("GET", "/api/v1/webhooks/deliveries", params=params or None, retryable=True)
+        return [_parse_webhook_delivery(item) for item in (data if isinstance(data, list) else [])]
+
+    def retry_delivery(self, delivery_id: str) -> None:
+        """
+        Re-attempt a FAILED delivery. Fires asynchronously.
+
+        :param delivery_id: ID of the failed delivery to retry.
+        """
+        self._request("POST", f"/api/v1/webhooks/deliveries/{delivery_id}/retry", retryable=False)
+
+    # -----------------------------------------------------------------------
     # Webhook verification
     # -----------------------------------------------------------------------
 
@@ -1707,6 +1809,44 @@ def _parse_subscription(data: Dict[str, Any]) -> Subscription:
         starts_at=data.get("startsAt"),
         created_at=data.get("createdAt"),
         updated_at=data.get("updatedAt"),
+    )
+
+
+def _parse_webhook_config(data: Dict[str, Any]) -> "WebhookConfig":
+    from .models import WebhookConfig
+    return WebhookConfig(
+        id=str(data["id"]),
+        url=data["url"],
+        events=data.get("events") or [],
+        active=bool(data.get("active", True)),
+        created_at=data.get("createdAt"),
+    )
+
+
+def _parse_webhook_delivery(data: Dict[str, Any]) -> "WebhookDelivery":
+    from .models import WebhookDelivery
+    return WebhookDelivery(
+        id=str(data["id"]),
+        webhook_config_id=str(data["webhookConfigId"]) if data.get("webhookConfigId") else None,
+        event_type=data.get("eventType", ""),
+        target_url=data.get("targetUrl", ""),
+        status=data.get("status", ""),
+        response_status=data.get("responseStatus"),
+        response_body=data.get("responseBody"),
+        error_message=data.get("errorMessage"),
+        attempt_count=int(data.get("attemptCount", 0)),
+        created_at=data.get("createdAt"),
+        delivered_at=data.get("deliveredAt"),
+    )
+
+
+def _parse_webhook_test_result(data: Dict[str, Any]) -> "WebhookTestResult":
+    from .models import WebhookTestResult
+    return WebhookTestResult(
+        success=bool(data.get("success", False)),
+        response_status=data.get("responseStatus"),
+        response_body=data.get("responseBody"),
+        error_message=data.get("errorMessage"),
     )
 
 

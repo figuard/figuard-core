@@ -597,6 +597,87 @@ export function makeSubscription(data: Record<string, unknown>): Subscription {
 }
 
 // ---------------------------------------------------------------------------
+// Webhooks
+// ---------------------------------------------------------------------------
+
+/**
+ * A registered webhook endpoint for this tenant.
+ *
+ * `secret` is never returned by the API after creation — store it immediately
+ * when you receive it from `createWebhook()`.
+ */
+export interface WebhookConfig {
+  readonly id: string;
+  readonly url: string;
+  readonly events: string[];
+  readonly active: boolean;
+  readonly createdAt?: string;
+}
+
+/**
+ * A single delivery attempt for a webhook event.
+ *
+ * `status` is one of `"DELIVERED"`, `"FAILED"`, `"PENDING"`.
+ * Failed deliveries can be retried with `retryDelivery()`.
+ */
+export interface WebhookDelivery {
+  readonly id: string;
+  readonly webhookConfigId?: string;
+  readonly eventType: string;
+  readonly targetUrl: string;
+  readonly status: string;
+  readonly responseStatus?: number;
+  readonly responseBody?: string;
+  readonly errorMessage?: string;
+  readonly attemptCount: number;
+  readonly createdAt?: string;
+  readonly deliveredAt?: string;
+}
+
+/** Result of a `testWebhook()` call. `success` is true when the endpoint returned 2xx. */
+export interface WebhookTestResult {
+  readonly success: boolean;
+  readonly responseStatus?: number;
+  readonly responseBody?: string;
+  readonly errorMessage?: string;
+}
+
+export function makeWebhookConfig(data: Record<string, unknown>): WebhookConfig {
+  return {
+    id: String(data["id"]),
+    url: data["url"] as string,
+    events: (data["events"] as string[] | undefined) ?? [],
+    active: Boolean(data["active"] ?? true),
+    createdAt: (data["createdAt"] as string | undefined) ?? undefined,
+  };
+}
+
+export function makeWebhookDelivery(data: Record<string, unknown>): WebhookDelivery {
+  return {
+    id: String(data["id"]),
+    webhookConfigId: data["webhookConfigId"] != null ? String(data["webhookConfigId"]) : undefined,
+    eventType: (data["eventType"] as string) ?? "",
+    targetUrl: (data["targetUrl"] as string) ?? "",
+    status: (data["status"] as string) ?? "",
+    responseStatus: (data["responseStatus"] as number | undefined) ?? undefined,
+    responseBody: (data["responseBody"] as string | undefined) ?? undefined,
+    errorMessage: (data["errorMessage"] as string | undefined) ?? undefined,
+    attemptCount: (data["attemptCount"] as number | undefined) ?? 0,
+    createdAt: (data["createdAt"] as string | undefined) ?? undefined,
+    deliveredAt: (data["deliveredAt"] as string | undefined) ?? undefined,
+  };
+}
+
+export function makeWebhookTestResult(data: Record<string, unknown>): WebhookTestResult {
+  return {
+    success: Boolean(data["success"] ?? false),
+    responseStatus: (data["responseStatus"] as number | undefined) ?? undefined,
+    responseBody: (data["responseBody"] as string | undefined) ?? undefined,
+    errorMessage: (data["errorMessage"] as string | undefined) ?? undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Denial reason constants
 // ---------------------------------------------------------------------------
 

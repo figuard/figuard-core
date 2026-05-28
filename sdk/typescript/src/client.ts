@@ -52,6 +52,9 @@ import {
   Subscription,
   VoidResult,
   VoidTreeResult,
+  WebhookConfig,
+  WebhookDelivery,
+  WebhookTestResult,
   makeApiKey,
   makeAuthorizationResult,
   makeBudget,
@@ -62,6 +65,9 @@ import {
   makeSpendTreeNode,
   makeSubscription,
   makeVoidTreeResult,
+  makeWebhookConfig,
+  makeWebhookDelivery,
+  makeWebhookTestResult,
 } from "./models";
 import {
   getCurrentTraceId,
@@ -1112,6 +1118,93 @@ export class FiGuardClient {
     }
 
     return JSON.parse(body.toString("utf8")) as Record<string, unknown>;
+  }
+
+  // -------------------------------------------------------------------------
+  // Webhook management
+  // -------------------------------------------------------------------------
+
+  /**
+   * Register a new webhook endpoint for this tenant.
+   *
+   * FiGuard will POST signed event payloads to `url` when any of the `events` occur.
+   * Verify deliveries with `FiGuardClient.verifyWebhook()`.
+   *
+   * @param url     HTTPS URL where FiGuard will POST events.
+   * @param secret  Your chosen signing secret (min 16 chars). Store securely —
+   *                it is **never** returned by the API again.
+   * @param events  Event type strings to subscribe to, e.g.
+   *                `["BUDGET_EXHAUSTED", "SPEND_CONFIRMED", "ANOMALY_DETECTED"]`.
+   */
+  async createWebhook(url: string, secret: string, events: string[]): Promise<WebhookConfig> {
+    const data = await this.request("POST", "/api/v1/webhooks", {
+      body: { url, secret, events },
+      retryable: false,
+    });
+    return makeWebhookConfig(data);
+  }
+
+  /** Return all webhook configurations for this tenant. */
+  async listWebhooks(): Promise<WebhookConfig[]> {
+    const data = await this.request("GET", "/api/v1/webhooks", { retryable: true });
+    return (Array.isArray(data) ? data : []).map(makeWebhookConfig);
+  }
+
+  /**
+   * Delete a webhook config and all its delivery history.
+   * @param webhookId ID of the webhook config to delete.
+   */
+  async deleteWebhook(webhookId: string): Promise<void> {
+    await this.request("DELETE", `/api/v1/webhooks/${webhookId}`, { retryable: false });
+  }
+
+  /**
+   * Delivery history for a specific webhook config, newest first.
+   * @param webhookId ID of the webhook config.
+   */
+  async getWebhookDeliveries(webhookId: string): Promise<WebhookDelivery[]> {
+    const data = await this.request("GET", `/api/v1/webhooks/${webhookId}/deliveries`, { retryable: true });
+    return (Array.isArray(data) ? data : []).map(makeWebhookDelivery);
+  }
+
+  /**
+   * Fire a test event to the configured URL synchronously.
+   * Returns whether the endpoint responded with 2xx. Does not create a delivery record.
+   * @param webhookId ID of the webhook config to test.
+   */
+  async testWebhook(webhookId: string): Promise<WebhookTestResult> {
+    const data = await this.request("POST", `/api/v1/webhooks/${webhookId}/test`, { retryable: false });
+    return makeWebhookTestResult(data);
+  }
+
+  /**
+   * All deliveries for this tenant across all webhook configs, newest first.
+   * All filter params are optional and combinable.
+   */
+  async getAllDeliveries(options?: {
+    status?: string;
+    eventType?: string;
+    since?: string;
+  }): Promise<WebhookDelivery[]> {
+    const params = new URLSearchParams();
+    if (options?.status) params.set("status", options.status);
+    if (options?.eventType) params.set("eventType", options.eventType);
+    if (options?.since) params.set("since", options.since);
+    const qs = params.toString();
+    const data = await this.request(
+      "GET",
+      `/api/v1/webhooks/deliveries${qs ? `?${qs}` : ""}`,
+      { retryable: true },
+    );
+    return (Array.isArray(data) ? data : []).map(makeWebhookDelivery);
+  }
+
+  /**
+   * Re-attempt a FAILED delivery. Fires asynchronously.
+   * @param deliveryId ID of the failed delivery to retry.
+   */
+  async retryDelivery(deliveryId: string): Promise<void> {
+    await this.request("POST", `/api/v1/webhooks/deliveries/${deliveryId}/retry`, { retryable: false });
   }
 
   // -------------------------------------------------------------------------

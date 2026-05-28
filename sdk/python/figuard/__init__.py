@@ -73,6 +73,9 @@ from .models import (
     Subscription,
     VoidResult,
     VoidTreeResult,
+    WebhookConfig,
+    WebhookDelivery,
+    WebhookTestResult,
 )
 from .context import figuard_scope, figuard_run_in_executor, get_current_event_id
 
@@ -103,6 +106,9 @@ __all__ = [
     "ApiKey",
     "EntitlementItem",
     "Subscription",
+    "WebhookConfig",
+    "WebhookDelivery",
+    "WebhookTestResult",
     # Context propagation
     "figuard_scope",
     "figuard_run_in_executor",

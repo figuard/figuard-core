@@ -375,3 +375,52 @@ class Subscription:
     starts_at: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Webhooks
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class WebhookConfig:
+    """
+    A registered webhook endpoint for this tenant.
+
+    ``secret`` is never returned by the API after creation — store it
+    immediately when you receive it from ``create_webhook()``.
+    """
+    id: str
+    url: str
+    events: List[str]
+    active: bool
+    created_at: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class WebhookDelivery:
+    """
+    A single delivery attempt for a webhook event.
+
+    ``status`` is one of ``DELIVERED``, ``FAILED``, ``PENDING``.
+    Failed deliveries can be retried with ``retry_delivery()``.
+    """
+    id: str
+    webhook_config_id: Optional[str]
+    event_type: str
+    target_url: str
+    status: str          # DELIVERED | FAILED | PENDING
+    response_status: Optional[int] = None
+    response_body: Optional[str] = None
+    error_message: Optional[str] = None
+    attempt_count: int = 0
+    created_at: Optional[str] = None
+    delivered_at: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class WebhookTestResult:
+    """Result of a ``test_webhook()`` call. ``success`` is True when the endpoint returned 2xx."""
+    success: bool
+    response_status: Optional[int] = None
+    response_body: Optional[str] = None
+    error_message: Optional[str] = None

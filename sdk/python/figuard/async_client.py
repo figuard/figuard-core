@@ -66,6 +66,9 @@ from .models import (
     SpendTreeNode,
     VoidResult,
     VoidTreeResult,
+    WebhookConfig,
+    WebhookDelivery,
+    WebhookTestResult,
 )
 from .client import (
     _parse_authorization_result,
@@ -73,6 +76,9 @@ from .client import (
     _parse_delegation_token,
     _parse_spend_event,
     _parse_tree_node,
+    _parse_webhook_config,
+    _parse_webhook_delivery,
+    _parse_webhook_test_result,
 )
 from .context import _set_current_event_id, get_current_event_id
 from .telemetry import (
@@ -894,6 +900,64 @@ class AsyncFiGuardClient:
             "DELETE", f"/api/v1/delegation-tokens/{token_id}", retryable=False
         )
         return _parse_delegation_token(data)
+
+    # -----------------------------------------------------------------------
+    # Webhook management
+    # -----------------------------------------------------------------------
+
+    async def create_webhook(
+        self,
+        url: str,
+        secret: str,
+        events: List[str],
+    ) -> WebhookConfig:
+        """Register a webhook endpoint. See ``FiGuardClient.create_webhook`` for full docs."""
+        data = await self._request("POST", "/api/v1/webhooks", json={
+            "url": url,
+            "secret": secret,
+            "events": events,
+        }, retryable=False)
+        return _parse_webhook_config(data)
+
+    async def list_webhooks(self) -> List[WebhookConfig]:
+        """Return all webhook configurations for this tenant."""
+        data = await self._request("GET", "/api/v1/webhooks", retryable=True)
+        return [_parse_webhook_config(item) for item in (data if isinstance(data, list) else [])]
+
+    async def delete_webhook(self, webhook_id: str) -> None:
+        """Delete a webhook config and all its delivery history."""
+        await self._request("DELETE", f"/api/v1/webhooks/{webhook_id}", retryable=False)
+
+    async def get_webhook_deliveries(self, webhook_id: str) -> List[WebhookDelivery]:
+        """Delivery history for a specific webhook config, newest first."""
+        data = await self._request("GET", f"/api/v1/webhooks/{webhook_id}/deliveries", retryable=True)
+        return [_parse_webhook_delivery(item) for item in (data if isinstance(data, list) else [])]
+
+    async def test_webhook(self, webhook_id: str) -> WebhookTestResult:
+        """Fire a test event to the configured URL. Returns whether the endpoint returned 2xx."""
+        data = await self._request("POST", f"/api/v1/webhooks/{webhook_id}/test", retryable=False)
+        return _parse_webhook_test_result(data)
+
+    async def get_all_deliveries(
+        self,
+        status: Optional[str] = None,
+        event_type: Optional[str] = None,
+        since: Optional[str] = None,
+    ) -> List[WebhookDelivery]:
+        """All deliveries for this tenant across all webhook configs, newest first."""
+        params: Dict[str, Any] = {}
+        if status is not None:
+            params["status"] = status
+        if event_type is not None:
+            params["eventType"] = event_type
+        if since is not None:
+            params["since"] = since
+        data = await self._request("GET", "/api/v1/webhooks/deliveries", params=params or None, retryable=True)
+        return [_parse_webhook_delivery(item) for item in (data if isinstance(data, list) else [])]
+
+    async def retry_delivery(self, delivery_id: str) -> None:
+        """Re-attempt a FAILED delivery. Fires asynchronously."""
+        await self._request("POST", f"/api/v1/webhooks/deliveries/{delivery_id}/retry", retryable=False)
 
     # -----------------------------------------------------------------------
     # Internal HTTP layer
