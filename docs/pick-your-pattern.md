@@ -1,18 +1,5 @@
 # Pick Your Pattern
 
-| Scenario | Use |
-|---|---|
-| One user, one agent, one session | Budget |
-| Multi-step agent — each tool call needs its own cap | Budget + allocations |
-| Fleet of agents all spending against a shared pool | Fleet budget + delegation tokens |
-| Per-customer sub-agents (e.g. refund agent per order) | Fleet budget + one delegation token per customer |
-| You need to kill one sub-agent without stopping others | Delegation token (revoke just that token) |
-| You need per-agent audit trail in one ledger | Delegation token (all events share a `budget_id`) |
-| Agents are fully isolated — no shared pool | Separate budgets |
-| Agents need different currencies or expiry windows | Separate budgets |
-| Controlling LLM token usage instead of money | Budget with `unit="tokens"` |
-| Rate-limiting external API calls | Budget with `unit="api_calls"` |
-
 Find your situation in the tree below. Each leaf shows the exact creation call and the matching authorize call your agent makes at runtime.
 
 → For full parameter reference, see [Budget Configuration](budget-configuration.md).
@@ -400,6 +387,23 @@ auth = client.authorize(
 ```
 
 Once the email allocation hits 100, email calls are denied with `ALLOCATION_EXHAUSTED`. SMS and webhook allocations are unaffected.
+
+---
+
+## Quick reference
+
+| Scenario | Use |
+|---|---|
+| One user, one agent, one session | Budget |
+| Multi-step agent — each tool call needs its own cap | Budget + allocations |
+| Fleet of agents all spending against a shared pool | Fleet budget + delegation tokens |
+| Per-customer sub-agents (e.g. refund agent per order) | Fleet budget + one delegation token per customer |
+| You need to kill one sub-agent without stopping others | Delegation token (revoke just that token) |
+| You need per-agent audit trail in one ledger | Delegation token (all events share a `budget_id`) |
+| Agents are fully isolated — no shared pool | Separate budgets |
+| Agents need different currencies or expiry windows | Separate budgets |
+| Controlling LLM token usage instead of money | Budget with `unit="tokens"` |
+| Rate-limiting external API calls | Budget with `unit="api_calls"` |
 
 ---
 
