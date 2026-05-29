@@ -37,7 +37,7 @@
  *   }
  */
 
-import { FiGuardApiError, FiGuardConnectionError } from "./errors";
+import { FiGuardApiError, FiGuardConnectionError, FiGuardWebhookVerificationError } from "./errors";
 import {
   AllocationResponse,
   ApiKey,
@@ -1103,18 +1103,19 @@ export class FiGuardClient {
    * @param secret            Your webhook secret from the webhook configuration.
    *
    * @returns Parsed JSON payload.
-   * @throws Error with message "Webhook signature verification failed" on mismatch.
+   * @throws {FiGuardWebhookVerificationError} on missing/malformed header or signature mismatch.
+   *   Always respond with HTTP 400 when you catch this — do not process the payload.
    *
    * @example
    * app.post("/webhooks/figuard", (req, res) => {
    *   let event: Record<string, unknown>;
    *   try {
    *     event = FiGuardClient.verifyWebhook(
-   *       req.rawBody,
+   *       req.rawBody,   // raw Buffer — do NOT pass req.body (already parsed)
    *       req.headers["x-webhook-signature"] as string,
    *       process.env.FIGUARD_WEBHOOK_SECRET!,
    *     );
-   *   } catch {
+   *   } catch (err) {
    *     return res.status(400).json({ error: "invalid signature" });
    *   }
    *   if (event["eventType"] === "SPEND_CONFIRMED") { ... }
@@ -1133,8 +1134,9 @@ export class FiGuardClient {
     const body = typeof payload === "string" ? Buffer.from(payload, "utf8") : payload;
 
     if (!signatureHeader || !signatureHeader.startsWith("sha256=")) {
-      throw new Error(
-        "Missing or malformed X-Webhook-Signature header — expected 'sha256=<hex>'"
+      throw new FiGuardWebhookVerificationError(
+        "Missing or malformed X-Webhook-Signature header — expected 'sha256=<hex>'. " +
+        "Check that your framework passes the raw header value unchanged."
       );
     }
     const expectedHex = signatureHeader.slice("sha256=".length);
@@ -1145,8 +1147,10 @@ export class FiGuardClient {
       .digest("hex");
 
     if (!crypto.timingSafeEqual(Buffer.from(computed, "hex"), Buffer.from(expectedHex, "hex"))) {
-      throw new Error(
-        "Webhook signature verification failed — the payload may have been tampered with"
+      throw new FiGuardWebhookVerificationError(
+        "Webhook signature verification failed — the HMAC-SHA256 digest does not match. " +
+        "Common causes: wrong webhook secret, payload modified in transit, or body-parser " +
+        "middleware re-encoded the body before verification. Pass the raw Buffer."
       );
     }
 
@@ -1378,7 +1382,7 @@ export class FiGuardClient {
 
       // 5xx — retry if we have attempts left
       if (resp.status >= 500 && attempt < attempts - 1) {
-        lastError = new FiGuardApiError(resp.status, `Server error ${resp.status}`);
+        lastError = new FiGuardApiError(resp.status, `Server error ${resp.status} — retrying`);
         continue;
       }
 

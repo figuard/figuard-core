@@ -65,3 +65,20 @@ export class FiGuardConnectionError extends FiGuardError {
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+
+/**
+ * Thrown by `FiGuardClient.verifyWebhook()` when the HMAC-SHA256 signature
+ * on an incoming webhook does not match the expected value.
+ *
+ * Always respond with HTTP 400 when you catch this — do not process the payload.
+ * Common causes: wrong webhook secret, payload was modified in transit, or the
+ * raw request body was re-encoded before verification (e.g. by a body-parser
+ * middleware). Pass the raw Buffer, not a parsed object.
+ */
+export class FiGuardWebhookVerificationError extends FiGuardError {
+  constructor(message: string) {
+    super(message);
+    this.name = "FiGuardWebhookVerificationError";
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}

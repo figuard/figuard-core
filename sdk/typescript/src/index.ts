@@ -56,6 +56,7 @@ export {
   FiGuardApiError,
   FiGuardDeniedException,
   FiGuardConnectionError,
+  FiGuardWebhookVerificationError,
 } from "./errors";
 
 // Denial reason constants

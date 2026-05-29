@@ -108,7 +108,7 @@ def handle_figuard():
 ```typescript
 // TypeScript — Express example
 import express from "express";
-import { FiGuardClient } from "figuard";
+import { FiGuardClient, FiGuardWebhookVerificationError } from "figuard";
 
 const app = express();
 // Use raw body middleware so we can verify the HMAC
@@ -124,8 +124,11 @@ app.post("/webhooks/figuard", (req, res) => {
       req.headers["x-webhook-signature"] as string,
       WEBHOOK_SECRET,
     );
-  } catch {
-    return res.status(400).json({ error: "invalid signature" });
+  } catch (err) {
+    if (err instanceof FiGuardWebhookVerificationError) {
+      return res.status(400).json({ error: "invalid signature" });
+    }
+    throw err;
   }
 
   switch (event["eventType"]) {
