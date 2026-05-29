@@ -146,6 +146,20 @@ public class SpendEvent {
     @Column
     private UUID delegatedTokenId;
 
+    /**
+     * Origin of this event: null for standard AGENT events; "HUMAN" or "EXTERNAL" for events
+     * recorded retroactively via POST /api/v1/events/external (e.g. a manual QuickBooks entry).
+     */
+    @Column(length = 20)
+    private String eventSource;
+
+    /**
+     * When the action actually occurred in the real world.
+     * Set only on external events; null for standard events (createdAt is accurate).
+     */
+    @Column
+    private OffsetDateTime occurredAt;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private Map<String, Object> metadata;

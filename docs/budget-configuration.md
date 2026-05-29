@@ -230,4 +230,4 @@ An expired budget stops accepting authorizations — any new `authorize` call re
 
 - [Enforcement Features](enforcement.md) — full list of denial codes and how each one is triggered
 - [Fleet Agents & Delegation Tokens](fleet-agents.md) — splitting a parent budget across sub-agents
-- [Replay & Audit](replay.md) — reconstructing what happened on a budget after the fact
+- [Audit & Replay](audit-replay.md) — reconstructing what happened on a budget after the fact

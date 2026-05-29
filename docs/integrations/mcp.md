@@ -2,13 +2,19 @@
 
 FiGuard has an MCP server. Add it to Claude Code, Cursor, or Claude Desktop and your AI assistant can create budgets, authorize spend, and pull audit trails — without you writing any code.
 
+```bash
+npx figuard-mcp
+```
+
+No `pip install` or SDK setup required. The assistant calls the tools directly.
+
 ---
 
-## Step 1: Add to your MCP client (2 minutes)
+## Setup (2 minutes)
 
-Pick your client and add the config block. No install needed — `npx` pulls the server on first run.
+Add this block to your MCP config file. No install needed — `npx` pulls the server on first run.
 
-**Claude Code** (`.claude/settings.json`):
+**Claude Code** — `.claude/settings.json`:
 ```json
 {
   "mcpServers": {
@@ -24,13 +30,13 @@ Pick your client and add the config block. No install needed — `npx` pulls the
 }
 ```
 
-**Cursor** (`.cursor/mcp.json`) and **Claude Desktop** (`claude_desktop_config.json`) use the same format.
+**Cursor** — `.cursor/mcp.json` and **Claude Desktop** — `claude_desktop_config.json` use the same format.
 
 Restart your client. You should see `figuard` listed under available MCP servers.
 
 ---
 
-## Step 2: Try it immediately
+## Step 1: Try it immediately
 
 Ask your assistant:
 
@@ -55,7 +61,7 @@ Authorization result: ✓ AUTHORIZED
 
 ---
 
-## Step 3: See what happens when spend is denied
+## Step 2: See what happens when spend is denied
 
 ```
 Now authorize a $150 flight purchase.
@@ -77,7 +83,7 @@ The denial reason, remaining balance, and recovery options all come from FiGuard
 
 ---
 
-## Step 4: Confirm or void a spend
+## Step 3: Confirm or void a spend
 
 After a real action completes, confirm the actual amount:
 
@@ -104,7 +110,7 @@ Event evt_abc123 voided. $267.00 released back to flights allocation.
 
 ---
 
-## Step 5: Audit trail
+## Step 4: Audit trail
 
 ```
 Show me the full ledger for the budget you just created.
@@ -123,7 +129,7 @@ Events:
 ## Available tools
 
 | Tool | What it does |
-|------|-------------|
+|---|---|
 | `figuard_create_budget` | Create a budget (with optional per-category allocations) |
 | `figuard_authorize` | Pre-flight authorize a spend — returns AUTHORIZED or DENIED |
 | `figuard_confirm` | Confirm the actual amount after the action succeeds |
@@ -131,18 +137,18 @@ Events:
 | `figuard_void` | Cancel a reservation before the action happens |
 | `figuard_get_budget` | Current balance, spent, reserved |
 | `figuard_get_ledger` | Full event history for a budget |
+| `figuard_list_budgets` | List all budgets for your account |
 | `figuard_fund_budget` | Add/remove funds or reset a budget |
+| `figuard_resume_budget` | Resume a paused budget with an override reason |
 | `figuard_create_delegation_token` | Issue a scoped sub-budget token for a sub-agent |
 | `figuard_revoke_delegation_token` | Revoke a delegation token immediately |
 | `figuard_cancel_budget` | Cancel a budget |
-| `figuard_list_budgets` | List all budgets for your account |
-| `figuard_resume_budget` | Resume a paused budget with an override reason |
 
 ---
 
 ## Use your own instance
 
-The sandbox key (`sb_live_demo`) is shared and resets periodically. For persistent data, [self-host FiGuard](../self-hosting.md) and point the MCP server at your instance:
+`sb_live_demo` is a shared demo key on the public sandbox. It's rate-limited and resets periodically. For persistent data, [self-host FiGuard](../self-hosting.md) and point the MCP server at your instance:
 
 ```json
 {
@@ -165,7 +171,7 @@ Generate an API key at `POST /api/v1/api-keys` after starting your instance.
 
 ## Using FiGuard MCP in agent pipelines
 
-You can use the MCP tools programmatically from any agent that supports MCP. The pattern is:
+You can use the MCP tools programmatically from any agent that supports MCP:
 
 1. Agent calls `figuard_create_budget` at startup — stores the session token
 2. Before each expensive action, calls `figuard_authorize` with the token and amount

@@ -42,4 +42,9 @@ public class SpendEventResponse {
     private String traceId;
     private OffsetDateTime createdAt;
     private Map<String, Object> metadata;
+
+    // Set only on external events (recorded via POST /events/external).
+    // Null for standard agent-initiated events.
+    private String eventSource;
+    private OffsetDateTime occurredAt;
 }

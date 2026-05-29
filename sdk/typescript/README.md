@@ -14,6 +14,20 @@ npm install figuard
 
 Requires Node.js 18+.
 
+## Zero-config demo (no account needed)
+
+```typescript
+import { FiGuardClient } from "figuard";
+
+// No arguments — connects to the shared public sandbox automatically
+const client = new FiGuardClient();
+```
+
+> **Note:** The shared sandbox is for demos only. Data is wiped periodically.
+> For production, [self-host FiGuard](https://figuard.io/docs/self-hosting) and pass your API key:
+> `new FiGuardClient({ apiKey: "fg_live_...", baseUrl: "https://your-figuard.example.com" })`
+> or set `FIGUARD_API_KEY` / `FIGUARD_BASE_URL` environment variables.
+
 ## Quickstart
 
 ```typescript

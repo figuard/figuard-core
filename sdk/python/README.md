@@ -24,6 +24,34 @@ pip install figuard[all]            # everything above
 
 Requires Python 3.9+.
 
+## Zero-config demo (no account needed)
+
+```python
+from figuard import FiGuardClient
+
+# No arguments — connects to the shared public sandbox automatically
+client = FiGuardClient()
+```
+
+Or with framework integrations — one line wires up the entire budget + callback:
+
+```python
+# LangChain
+from figuard.integrations.langchain import auto_guard_langchain
+
+executor = auto_guard_langchain(executor)  # $500 / 24h budget, zero config
+
+# CrewAI
+from figuard.integrations.crewai import auto_guard_crewai
+
+auto_guard_crewai(book_flight_tool)  # wraps tool._run in-place, $500 / 24h budget
+```
+
+> **Note:** The shared sandbox is for demos only. Data is wiped periodically.
+> For production, [self-host FiGuard](https://figuard.io/docs/self-hosting) and pass your API key:
+> `FiGuardClient(api_key="fg_live_...", base_url="https://your-figuard.example.com")`
+> or set `FIGUARD_API_KEY` / `FIGUARD_BASE_URL` environment variables.
+
 ## Quickstart
 
 ```python

@@ -147,56 +147,21 @@ If the flight allocation is exhausted, the hotel allocation is unaffected. Each 
 A parent budget holds the total limit. Delegation tokens carve out sub-limits for each sub-agent. Sub-agents never see the parent session token — they only get their delegation token.
 
 ```python
-# Orchestrator creates the fleet budget
-fleet = client.create_budget(
-    user_id="orchestrator",
-    total_limit=10_000.00,
-    currency="USD",
-    expires_in="8h",
-)
+fleet = client.create_budget(user_id="orchestrator", total_limit=10_000.00, currency="USD", expires_in="8h")
 
-fleet_session_token = fleet.primary_token.session_token
-
-# Orchestrator issues a delegation token for each sub-agent
 refund_token = client.create_delegation_token(
     budget_id=fleet.id,
-    session_token=fleet_session_token,   # orchestrator authenticates
+    session_token=fleet.primary_token.session_token,
     label="refund-processor",
     caps=[{"category": "refund", "limit": 3_000.00}],
     expires_in="4h",
 )
-
-compute_token = client.create_delegation_token(
-    budget_id=fleet.id,
-    session_token=fleet_session_token,
-    label="compute-runner",
-    caps=[{"category": "compute", "limit": 5_000.00}],
-    expires_in="4h",
-)
-
-# Hand each token to its sub-agent — never share fleet_session_token beyond the orchestrator
+# Pass refund_token.session_token to the sub-agent — never share the fleet session token
 ```
 
-Each sub-agent authorizes using its own delegation token, not the fleet's session token:
+A sub-agent cannot exceed its cap (`DELEGATE_CAP_EXCEEDED`) even if the parent budget has headroom. The parent budget also enforces its own total.
 
-```python
-# RefundProcessorAgent — uses refund_token.session_token
-auth = client.authorize(
-    session_token=refund_token.session_token,   # delegation token, not fleet token
-    agent_id="refund_processor",
-    action_type="REFUND",
-    description="Order #8821 refund",
-    requested_quantity=150.00,
-    claimed_category="refund",
-    idempotency_key="refund-8821",
-)
-
-if auth.is_authorized:
-    payment_gateway.issue_refund(150.00)
-    client.confirm_event(auth.event_id, confirmed_quantity=150.00)
-```
-
-A sub-agent cannot exceed its cap (`DELEGATE_CAP_EXCEEDED`) even if the parent budget has headroom. The parent budget also enforces its own total — if the fleet hits $10k, all sub-agents are blocked regardless of their individual caps.
+→ For token expiry, revocation, and enforcement details see [Fleet Agents & Delegation Tokens](fleet-agents.md).
 
 ---
 

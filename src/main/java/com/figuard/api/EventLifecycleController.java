@@ -2,6 +2,7 @@ package com.figuard.api;
 
 import com.figuard.api.dto.request.ConfirmEventRequest;
 import com.figuard.api.dto.request.FailEventRequest;
+import com.figuard.api.dto.request.RecordExternalEventRequest;
 import com.figuard.api.dto.request.VoidEventRequest;
 import com.figuard.api.dto.request.VoidTreeRequest;
 import com.figuard.api.dto.response.ChainDetailResponse;
@@ -100,6 +101,35 @@ public class EventLifecycleController {
             @PathVariable UUID id,
             @Valid @RequestBody VoidTreeRequest request) {
         return ResponseEntity.ok(lifecycleService.voidTree(id, request, TenantContext.get()));
+    }
+
+    @Operation(
+        summary = "Record an external spend event",
+        description = """
+            Record a spend that happened outside the normal authorize → confirm flow.
+
+            Creates a spend event directly in CONFIRMED state and charges the amount against
+            the budget's quantitySpent. No reservation is created — use this when the action
+            already occurred in an external system (a manual payment in QuickBooks, a charge
+            from a third-party processor, an end-of-day reconciliation batch).
+
+            Budget capacity limits are NOT enforced — the money was already spent.
+            Idempotency is enforced via the idempotencyKey field: a second call with the
+            same key returns HTTP 409.
+
+            Fires a SPEND_CONFIRMED webhook.
+            """
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "External event recorded"),
+        @ApiResponse(responseCode = "404", description = "Budget not found or not owned by this tenant"),
+        @ApiResponse(responseCode = "409", description = "Duplicate idempotency key")
+    })
+    @PostMapping("/external")
+    public ResponseEntity<SpendEventResponse> recordExternalEvent(
+            @Valid @RequestBody RecordExternalEventRequest request) {
+        return ResponseEntity.ok(
+            lifecycleService.recordExternalEvent(request, TenantContext.get()));
     }
 
     @Operation(

@@ -121,6 +121,8 @@ public class BudgetMapper {
             .traceId(event.getTraceId())
             .createdAt(event.getCreatedAt())
             .metadata(event.getMetadata())
+            .eventSource(event.getEventSource())
+            .occurredAt(event.getOccurredAt())
             .build();
     }
 

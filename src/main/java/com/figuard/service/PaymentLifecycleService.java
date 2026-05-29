@@ -2,6 +2,7 @@ package com.figuard.service;
 
 import com.figuard.api.dto.request.ConfirmEventRequest;
 import com.figuard.api.dto.request.FailEventRequest;
+import com.figuard.api.dto.request.RecordExternalEventRequest;
 import com.figuard.api.dto.request.VoidEventRequest;
 import com.figuard.api.dto.response.SpendEventResponse;
 import com.figuard.api.mapper.BudgetMapper;
@@ -475,6 +476,83 @@ public class PaymentLifecycleService {
         if (event.getEntitlementItemId() != null) {
             entitlementEnforcementService.release(event.getEntitlementItemId(), qty);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // External events
+    // -------------------------------------------------------------------------
+
+    /**
+     * Record a spend that happened outside the normal authorize → confirm flow.
+     *
+     * <p>Creates a SpendEvent directly in CONFIRMED state and charges the amount
+     * against the budget's quantitySpent. No reservation is created — the money
+     * was already spent. Budget capacity limits are intentionally NOT enforced
+     * (the action already occurred in the external system).
+     *
+     * <p>Idempotency: the idempotencyKey uniqueness constraint on the spend_events
+     * table prevents duplicate recording. A second call with the same key returns HTTP 409.
+     *
+     * <p>Use cases:
+     * <ul>
+     *   <li>Finance manager processes an emergency payment directly in QuickBooks</li>
+     *   <li>A third-party system completes a charge and you need to keep FiGuard's ledger in sync</li>
+     *   <li>End-of-day batch reconciliation from an external payment processor</li>
+     * </ul>
+     */
+    @Transactional
+    public SpendEventResponse recordExternalEvent(RecordExternalEventRequest request, Tenant tenant) {
+        AgentBudget budget = budgetRepository.findByIdWithLock(request.getBudgetId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget not found"));
+
+        if (!budget.getTenant().getId().equals(tenant.getId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget not found");
+        }
+
+        BigDecimal quantity = request.getQuantity();
+        String source = (request.getSource() != null && !request.getSource().isBlank())
+            ? request.getSource().toUpperCase()
+            : "EXTERNAL";
+
+        SpendEvent event = new SpendEvent();
+        event.setTenant(tenant);
+        event.setBudget(budget);
+        event.setRootBudgetId(budget.getId());
+        event.setAgentId(request.getAgentId());
+        event.setAgentType(source);         // repurpose agentType for source label
+        event.setActionType(request.getActionType());
+        event.setDescription(request.getDescription());
+        event.setRequestedQuantity(quantity);
+        event.setConfirmedQuantity(quantity);
+        event.setCurrency(budget.getCurrency());
+        event.setClaimedCategory(request.getClaimedCategory());
+        event.setIdempotencyKey(request.getIdempotencyKey());
+        event.setDecision(SpendDecision.CONFIRMED);
+        event.setEventSource(source);
+        event.setOccurredAt(request.getOccurredAt() != null
+            ? request.getOccurredAt()
+            : java.time.OffsetDateTime.now());
+        event.setMetadata(request.getMetadata());
+        // chainRootEventId intentionally null — external events are not part of an
+        // agent causal chain; subtree cap checks skip null chainRootEventId (V23 semantics).
+
+        // Charge directly to quantitySpent — no reservation step
+        budget.setQuantitySpent(budget.getQuantitySpent().add(quantity));
+        budgetRepository.save(budget);
+
+        eventRepository.save(event);
+
+        log.info("External event recorded: id={} budgetId={} source={} quantity={}",
+            event.getId(), budget.getId(), source, quantity);
+
+        Counter.builder("figuard.event.external").register(meterRegistry).increment();
+
+        webhookDispatcher.dispatch(
+            tenant.getId(),
+            WebhookEventType.SPEND_CONFIRMED,
+            webhookPayloadBuilder.buildSpendConfirmedPayload(budget, event));
+
+        return budgetMapper.toResponse(event);
     }
 
     // -------------------------------------------------------------------------

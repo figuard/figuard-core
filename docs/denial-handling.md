@@ -24,6 +24,8 @@ if (result.denialReason === DenialReason.ALLOCATION_EXHAUSTED) { ... }
 
 ## Denial reason codes
 
+> For the complete denial code reference — all 18 codes with trigger conditions and technical details — see [Enforcement Features](enforcement.md#denial-codes). The table below focuses on recoverability and what your application should do.
+
 | Code | Cause | Recoverable? |
 |---|---|---|
 | `BUDGET_EXHAUSTED` | Total budget has no remaining capacity | Only by increasing the budget limit |

@@ -6,6 +6,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [Unreleased] — pre-OSS (targeting 2026-06-03)
+
+### Zero-config developer experience
+- `FiGuardClient()` now requires no arguments — resolves: explicit params → `FIGUARD_API_KEY`/`FIGUARD_BASE_URL` env vars → shared public sandbox (`sb_live_demo`)
+- One-time sandbox warning printed to stdout on fallback; suppressable via `FIGUARD_SUPPRESS_SANDBOX_WARNING=1`
+- TypeScript SDK: equivalent zero-config constructor on `FiGuardClient`
+- `auto_guard_langchain(executor, budget=500)` — one-liner: creates client + 24h budget + wires `FiGuardCallbackHandler` onto an `AgentExecutor`
+- `auto_guard_crewai(tool, budget=500)` — one-liner: creates client + 24h budget + wraps tool's `_run` via `FiGuardCrewGuard`
+
+### External events + webhook verification (V24)
+- `POST /api/v1/events/external` — record a spend that already happened outside FiGuard
+- Python: `client.record_external_event()` + static `FiGuardClient.verify_webhook()`
+- TypeScript: `client.recordExternalEvent()` + static `FiGuardClient.verifyWebhook()`
+- V24 migration: `event_source` + `occurred_at` columns on spend_events
+
+### Per-chain spend cap (V23)
+- `chain_root_event_id` + `max_subtree_quantity` on spend_events
+- Subtree cap enforced at authorization time across a causal chain
+
+---
+
 ## [v1.0.0] — 2026-05-19 — Initial OSS Release
 
 ### Core authorization engine

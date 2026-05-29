@@ -290,9 +290,11 @@ Source: [`examples/rogue_agent_scenarios/`](examples/rogue_agent_scenarios/)
 - [Framework Integrations](docs/integrations.md) — LangChain, CrewAI, OpenAI Agents SDK, Anthropic
 - [Fleet Agents & Delegation Tokens](docs/fleet-agents.md)
 - [Enforcement Features](docs/enforcement.md) — denial codes, anomaly detection, allocation modes
-- [Replay & Audit](docs/replay.md)
+- [Handling Denials](docs/denial-handling.md) — per-code recovery strategies, framework surfacing, LLM prompt instructions
+- [Audit & Replay](docs/audit-replay.md) — ledger, point-in-time snapshots, timeline, counterfactual
+- [Webhooks](docs/webhooks.md) — event types, registration, signature verification
 - [TypeScript SDK](docs/typescript-sdk.md)
-- [MCP Server](docs/mcp-server.md)
+- [MCP Server](docs/integrations/mcp.md)
 - [Self-Hosting](docs/self-hosting.md)
 - [Known Limitations](docs/known-limitations.md)
 

@@ -144,4 +144,4 @@ The client automatically retries on 5xx responses and network errors with expone
 
 ## MCP Server
 
-If you're using Claude Code, Cursor, or Claude Desktop, use the MCP server instead of the SDK directly — see [MCP Server](mcp-server.md).
+If you're using Claude Code, Cursor, or Claude Desktop, use the MCP server instead of the SDK directly — see [MCP Server](integrations/mcp.md).

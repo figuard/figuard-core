@@ -91,60 +91,7 @@ This is distinct from request-level idempotency (which replays the same decision
 
 ## Webhooks
 
-FiGuard fires webhooks asynchronously for the following event types. Configure endpoints via `POST /api/v1/webhooks`.
-
-| Event type | Fires when |
-|---|---|
-| `BUDGET_50_PCT` | Budget crosses 50% utilization |
-| `BUDGET_90_PCT` | Budget crosses 90% utilization |
-| `BUDGET_EXHAUSTED` | Budget is fully consumed |
-| `BUDGET_PAUSED` | Budget was paused (anomaly auto-pause or manual) |
-| `BUDGET_RESUMED` | A paused budget was manually resumed via `POST /budgets/{id}/resume` |
-| `BUDGET_EXPIRING_SOON` | Budget will expire within 60 minutes |
-| `BUDGET_EXPIRED_UNUSED` | Budget expired without any authorize calls |
-| `ALLOCATION_EXHAUSTED` | A category allocation hit zero |
-| `SPEND_DENIED` | Any authorization is denied |
-| `SPEND_CONFIRMED` | Payment succeeded — event moved `AUTHORIZED → CONFIRMED` |
-| `SPEND_VOIDED` | A single authorized event was voided |
-| `SPEND_TREE_VOIDED` | An entire causal subtree was atomically voided — includes `rootEventId`, `voidedCount`, `totalQuantityReleased`, and `voidedEventIds` |
-| `SPEND_PAYMENT_FAILED` | Payment failed — event moved `AUTHORIZED → FAILED` |
-| `ANOMALY_DETECTED` | Anomaly detection triggers (both advisory and auto-pause) |
-| `VELOCITY_LIMIT_EXCEEDED` | A velocity window limit is exceeded (fires once per window; subsequent violations in the same window are silently denied) |
-| `LEDGER_INTEGRITY_VIOLATION` | LedgerIntegrityService detected a balance invariant breach |
-| `DELEGATION_TOKEN_REVOKED` | A delegation token was explicitly revoked |
-| `ENTITLEMENT_STATE_CHANGED` | Entitlement item transitioned NORMAL → APPROACHING (at `warnAtPercentage`%). One webhook per (item, state) per period |
-| `ENTITLEMENT_LIMIT_REACHED` | Entitlement item transitioned to LIMIT_REACHED (100% consumed). BLOCK policy will deny further spend on linked budgets |
-| `ENTITLEMENT_RENEWED` | Renewal sweep reset `currentPeriodConsumed` to zero and advanced `nextRenewalAt` — new period started |
-| `ENTITLEMENT_PAUSED` | Subscription was paused — all linked budgets will receive HTTP 402 on next authorize |
-| `ENTITLEMENT_RESUMED` | Paused subscription was resumed — linked budgets unblocked |
-| `RENEWAL_TOKEN_DELIVERY_FAILED` | An `entitlement.renewed` webhook has failed 3+ sweep retries — operator must call `POST /entitlements/{id}/rotate-tokens` to issue fresh tokens |
-
-All payloads include `eventType`, `budgetId`, `totalLimit`, `availableQuantity`, `percentUsed`, and `timestamp`. The `X-Webhook-Signature` header carries an HMAC-SHA256 signature computed from the raw payload body using the secret you provided at webhook registration.
-
-### Delivery and retry
-
-FiGuard attempts delivery up to 10 times total with exponential backoff:
-
-- **Attempts 1–4** (immediate, in `WebhookDispatcher`): fired at 0 s, 1 s, 2 s, 4 s
-- **Attempts 5–10** (sweep, in `WebhookRetryService`): fired every 60 s sweep pass at 1 min, 2 min, 4 min, 8 min, 16 min, 32 min after the previous failure
-
-After 10 failed attempts the delivery is marked terminal (`status: FAILED`, no further retries). You can also trigger a manual retry at any time from the webhook deliveries dashboard or via `POST /api/v1/webhooks/deliveries/{id}/retry`.
-
-**For `RENEWAL_TOKEN_DELIVERY_FAILED` specifically:** if an `entitlement.renewed` delivery reaches attempt 7 and is still failing, FiGuard fires a `RENEWAL_TOKEN_DELIVERY_FAILED` alert to all configs subscribed to that event type. This fires once per delivery (guarded by `renewalAlertSent` on the delivery record) and tells the operator to call `POST /entitlements/{id}/rotate-tokens` to issue fresh tokens before the stale ones are acted on.
-
-### Verifying signatures
-
-```python
-import hmac, hashlib
-
-def verify(payload_bytes: bytes, header: str, secret: str) -> bool:
-    expected = "sha256=" + hmac.new(
-        secret.encode(), payload_bytes, hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(expected, header)
-```
-
-The `secret` is the value you supplied when registering the webhook — it is never returned by the API after creation.
+For webhook event types, registration, signature verification, and delivery retry — see [Webhooks](webhooks.md).
 
 ---
 

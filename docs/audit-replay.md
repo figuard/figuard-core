@@ -1,6 +1,60 @@
 # Audit & Replay
 
-FiGuard's replay API lets you reconstruct exactly what happened inside a budget at any point in the past. Every authorized and denied event is stored in the ledger in order, so you can replay the full sequence, project state to a specific timestamp, or ask counterfactual questions about policy changes.
+FiGuard records every authorization decision — authorized, denied, confirmed, failed, voided — in an append-only ledger. Nothing is ever overwritten. The replay API lets you read that history in several ways depending on what you need.
+
+---
+
+## Reading the ledger
+
+The ledger is the complete event history for a budget. Use `iter_events` to page through it without tracking page tokens manually:
+
+```python
+# Python — auto-paginates
+for event in client.iter_events(budget_id="bdg_..."):
+    print(event.decision, event.requested_quantity, event.description)
+    # AUTHORIZED  270.0  JetBlue SFO→JFK roundtrip
+    # DENIED      150.0  Travel insurance — NO_MATCHING_ALLOCATION
+    # AUTHORIZED  198.0  Marriott Times Square 2 nights
+```
+
+```python
+# Async version
+async for event in client.iter_events(budget_id="bdg_..."):
+    process(event)
+
+# Filter to a specific decision
+denied = list(client.iter_events(budget_id="bdg_...", decision="DENIED"))
+```
+
+Or page manually:
+
+```python
+page = client.get_ledger(budget_id=budget.id, page=0, size=20)
+for event in page.events:
+    print(event.decision, event.requested_quantity, event.description)
+```
+
+Via REST:
+
+```bash
+curl -H "X-Agent-Budget-Key: $KEY" \
+  "http://localhost:8080/api/v1/budgets/$BUDGET_ID/ledger?page=0&size=50"
+```
+
+**Ledger event fields:**
+
+| Field | Description |
+|---|---|
+| `id` | Unique event ID |
+| `decision` | `AUTHORIZED`, `DENIED`, `CONFIRMED`, `FAILED`, or `VOIDED` |
+| `denial_code` | Machine-readable denial reason (null if authorized) |
+| `agent_id` | Which agent made the request |
+| `action_type` | `PURCHASE`, `REFUND`, `LLM_CALL`, `EXTERNAL_CALL`, etc. |
+| `requested_quantity` | Amount the agent requested |
+| `approved_quantity` | Amount reserved (null if denied) |
+| `confirmed_quantity` | Amount actually consumed (null until confirmed) |
+| `idempotency_key` | The key the agent provided |
+| `created_at` | When the authorization was evaluated |
 
 ---
 
@@ -52,7 +106,14 @@ for (const alloc of snapshot.allocations) {
 }
 ```
 
-**Response shape (`BudgetStateSnapshot`)**
+Via REST:
+
+```bash
+curl -H "X-Agent-Budget-Key: $KEY" \
+  "http://localhost:8080/api/v1/budgets/$BUDGET_ID/replay/state?at=2025-05-28T14:32:00Z"
+```
+
+**`BudgetStateSnapshot` fields:**
 
 | Field | Type | Description |
 |---|---|---|
@@ -64,7 +125,7 @@ for (const alloc of snapshot.allocations) {
 | `quantity_reserved` | float | Sum of outstanding AUTHORIZED events at `at` |
 | `available` | float | `total_limit − quantity_spent − quantity_reserved` |
 | `budget_status` | str | `"ACTIVE"`, `"PAUSED"`, `"EXHAUSTED"`, etc. |
-| `allocations` | list | Per-category breakdown (see `ReplayAllocationState`) |
+| `allocations` | list | Per-category breakdown |
 
 ---
 
@@ -96,7 +157,6 @@ const tl = await client.getBudgetTimeline({
   until: "2025-05-28T15:00:00Z",
 });
 
-console.log(`${tl.totalEvents} events in window`);
 for (const e of tl.timeline) {
   const gap = e.millisSincePrevious != null
     ? `+${(e.millisSincePrevious / 1000).toFixed(1)}s`
@@ -105,15 +165,14 @@ for (const e of tl.timeline) {
 }
 ```
 
-**Response shape (`BudgetTimeline`)**
+Via REST:
 
-| Field | Type | Description |
-|---|---|---|
-| `budget_id` | str | Budget ID |
-| `total_events` | int | Total events in the window |
-| `timeline` | list | Ordered list of `TimelineEvent` rows |
+```bash
+curl -H "X-Agent-Budget-Key: $KEY" \
+  "http://localhost:8080/api/v1/budgets/$BUDGET_ID/replay/timeline"
+```
 
-**`TimelineEvent` fields**
+**`TimelineEvent` fields:**
 
 | Field | Type | Description |
 |---|---|---|
@@ -129,9 +188,129 @@ for (const e of tl.timeline) {
 
 ---
 
+## Full replay with per-event snapshots
+
+`GET /api/v1/budgets/{id}/replay` replays every event and returns the projected budget state after each one. Use this when you want to understand the step-by-step accounting — not just the final numbers, but how the balance changed with each event.
+
+```bash
+curl -H "X-Agent-Budget-Key: $KEY" \
+  "http://localhost:8080/api/v1/budgets/$BUDGET_ID/replay"
+```
+
+Response — one entry per event, each with a `budgetStateAfter` snapshot:
+
+```json
+{
+  "events": [
+    {
+      "eventId": "evt_001",
+      "decision": "AUTHORIZED",
+      "requestedQuantity": 270.00,
+      "budgetStateAfter": {
+        "quantitySpent": 0.00,
+        "quantityReserved": 270.00,
+        "availableQuantity": 230.00
+      }
+    },
+    {
+      "eventId": "evt_002",
+      "decision": "CONFIRMED",
+      "confirmedQuantity": 267.00,
+      "budgetStateAfter": {
+        "quantitySpent": 267.00,
+        "quantityReserved": 0.00,
+        "availableQuantity": 233.00
+      }
+    }
+  ]
+}
+```
+
+---
+
+## `replay_counterfactual` — what-if analysis
+
+Answers: *"If I had set the hotel allocation to $400, how many fewer denials would there have been?"*
+
+```python
+# Python SDK
+result = client.replay_counterfactual(
+    budget_id="bdg_abc",
+    hypothetical_policy={
+        "total_limit": 500,
+        "allocations": [
+            {"category": "hotels", "limit": 400, "enforcement_mode": "CATEGORY_CONSTRAINED"},
+        ],
+        "max_transaction_quantity": 250,
+    },
+)
+
+actual = result["actualPolicySummary"]
+hypo = result["hypotheticalPolicySummary"]
+print(f"Actual denials:       {actual['deniedCount']}")
+print(f"Hypothetical denials: {hypo['deniedCount']}")
+print(f"Delta:                {hypo['additionalDenials']} more / {hypo['fewerDenials']} fewer")
+```
+
+Via REST:
+
+```bash
+curl -X POST \
+  -H "X-Agent-Budget-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "hypotheticalConfig": {
+      "totalLimit": 5000.00,
+      "allocations": [
+        {"category": "compute", "limit": 3000.00, "enforcement_mode": "CATEGORY_CONSTRAINED"},
+        {"category": "storage", "limit": 2000.00, "enforcement_mode": "CATEGORY_CONSTRAINED"}
+      ]
+    }
+  }' \
+  "http://localhost:8080/api/v1/budgets/$BUDGET_ID/replay/counterfactual"
+```
+
+Response:
+
+```json
+{
+  "originalAuthorized": 47,
+  "originalDenied": 3,
+  "hypotheticalAuthorized": 41,
+  "hypotheticalDenied": 9,
+  "events": [
+    {
+      "eventId": "evt_031",
+      "originalDecision": "AUTHORIZED",
+      "hypotheticalDecision": "DENIED",
+      "changed": true,
+      "hypotheticalDenialCode": "ALLOCATION_EXHAUSTED",
+      "reason": "compute allocation would have been exhausted at $2,980 spent"
+    }
+  ]
+}
+```
+
+**Post-incident use:** If an agent run caused unexpected spend, use counterfactual replay to test what velocity controls or allocation limits would have intercepted it at which specific event. The `changed: true` entries are your investigation starting points.
+
+---
+
+## Spend tree
+
+For fleet budgets, the ledger is organized as a tree: the orchestrator budget at the root, delegation tokens as branches, and individual authorization events as leaves.
+
+```bash
+curl -H "X-Agent-Budget-Key: $KEY" \
+  "http://localhost:8080/api/v1/budgets/$FLEET_BUDGET_ID/spend-tree"
+```
+
+The response shows which sub-agent authorized what, which events were confirmed vs voided, and the rolled-up totals at each level.
+
+---
+
 ## Worked example: "How did the agent overspend?"
 
-An agent session burned through a $500 budget unexpectedly. The support ticket says it happened "sometime around 2 PM". Use the two methods together to find exactly what happened.
+An agent session burned through a $500 budget unexpectedly. Use the timeline and state methods together to find exactly what happened.
 
 **Step 1 — Get the timeline to find the sequence**
 
@@ -164,7 +343,6 @@ The budget hit its limit between events #3 and #4 — a 3-second window around 1
 **Step 2 — Project the balance at the exact moment**
 
 ```python
-# Project just before event #4
 snapshot = client.get_budget_state_at(
     budget_id="bdg_abc",
     at=datetime(2025, 5, 28, 14, 32, 0, tzinfo=timezone.utc),
@@ -175,8 +353,6 @@ print(f"Spent:    ${snapshot.quantity_spent:.2f}")     # $559.00 (150+200+120+89
 print(f"Reserved: ${snapshot.quantity_reserved:.2f}")  # $0.00 (nothing pending)
 print(f"Available: ${snapshot.available:.2f}")         # $0.00 — already exhausted
 ```
-
-The agent authorized 4 reservations totalling $559 — $59 over the $500 limit — before the 5th call was denied. The hotel and misc reservations were not confirmed in time to release capacity for the return flight.
 
 **Step 3 — Check allocation breakdowns**
 
@@ -192,40 +368,13 @@ hotels        spent=0.00    reserved=320.00  available=-120.00
 misc          spent=0.00    reserved=89.00   available=-89.00
 ```
 
-Both hotel and misc allocations are over their per-category limits. The hotels allocation has $320 reserved (two unconfirmed authorizations) against a $200 limit — this is the root cause. The agent should have confirmed or voided hotel reservations before authorizing more spend.
-
----
-
-## `replay_counterfactual` — what-if analysis
-
-Answers: *"If I had set the hotel allocation to $400, how many fewer denials would there have been?"*
-
-```python
-result = client.replay_counterfactual(
-    budget_id="bdg_abc",
-    hypothetical_policy={
-        "total_limit": 500,
-        "allocations": [
-            {"category": "hotels", "limit": 400, "enforcement_mode": "CATEGORY_CONSTRAINED"},
-        ],
-        "max_transaction_quantity": 250,
-    },
-)
-
-actual = result["actualPolicySummary"]
-hypo = result["hypotheticalPolicySummary"]
-print(f"Actual denials:       {actual['deniedCount']}")
-print(f"Hypothetical denials: {hypo['deniedCount']}")
-print(f"Delta:                {hypo['additionalDenials']} more / {hypo['fewerDenials']} fewer")
-```
-
-See the full `replayCounterfactual` / `replay_counterfactual` docstring for the complete request and response schema.
+Both hotel and misc allocations are over their per-category limits. The hotels allocation has $320 reserved against a $200 limit — two unconfirmed authorizations. The agent should have confirmed or voided hotel reservations before authorizing more spend.
 
 ---
 
 ## Async Python
 
-All three methods are available on `AsyncFiGuardClient` with the same signatures:
+All SDK methods are available on `AsyncFiGuardClient` with the same signatures:
 
 ```python
 async with AsyncFiGuardClient() as client:
