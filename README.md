@@ -284,6 +284,7 @@ Source: [`examples/rogue_agent_scenarios/`](examples/rogue_agent_scenarios/)
 
 - **Interactive API docs:** http://localhost:8080/swagger-ui/index.html (local) · https://figuard-sandbox-g1ha.onrender.com/swagger-ui/index.html (live sandbox)
 - [API Reference](docs/api-reference.md) — full endpoint reference with payloads
+- [Cookbook](docs/cookbook.md) — short recipes: authorize/confirm/void, parallel calls, causal chains, graceful shutdown, testing, debugging
 - [Pick Your Pattern](docs/pick-your-pattern.md) — decision tree: find your scenario, get the exact create + authorize calls
 - [Budget Configuration](docs/budget-configuration.md) — full parameter reference for all four configuration layers
 - [Framework Integrations](docs/integrations.md) — LangChain, CrewAI, OpenAI Agents SDK, Anthropic
