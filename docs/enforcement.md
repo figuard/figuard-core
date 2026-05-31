@@ -130,5 +130,3 @@ client.update_budget(budget.id, velocity_max_per_minute=20)
 ```
 
 To update limits after creation, use `PATCH /budgets/{id}` with the updated field(s). The change takes effect immediately for the next window evaluation.
-
-**V2 roadmap:** quiet hours (per-timezone suppression windows), per-agent tracking within a shared budget. See [Known Limitations](known-limitations.md) for current query strategy notes.

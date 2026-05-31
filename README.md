@@ -353,19 +353,6 @@ Source: [`examples/rogue_agent_scenarios/`](examples/rogue_agent_scenarios/)
 - **Velocity counter table** — replace live `COUNT`/`SUM` scans with an atomically-incremented counter table per budget per window, removing the `spend_events` scan from the authorize hot path at scale
 - **Overdraft policies** — per-budget `REJECT` / `ALLOW_IF_AVAILABLE` / `ALLOW_WITH_OVERDRAFT` modes
 - **API rate limiting** — per-API-key token bucket (1000 req/min); returns 429 with `Retry-After`
-- **Subscription + entitlements** — known-user session model; platform issues tokens from a subscription, no budget creation in the agent
-
-### V3
-- **LangGraph graph inspector** — inspects graph topology at init, auto-provisions delegation tokens per node, resolves parentEventId races in parallel graphs
-- **Shadow mode — full inheritance chain** — budget-level `trust_mode=SHADOW` ships at OSS release (see below); V3 adds tenant → API key → policy → budget inheritance so an entire fleet can be put in shadow mode from a single API key setting
-- **FX conversion** — pluggable exchange rate provider; authorize amounts in any currency, settled in budget currency
-- **Token lineage tree** — `parent_token_id` on delegation tokens; `GET /tokens/{id}/lineage` reconstructs the full delegation chain
-- **Helm chart** — production-grade Kubernetes deployment with configurable replicas, resource limits, and secret management
-
-### V4
-- **Redis sliding-window velocity counters** — sorted-set counters in Redis, eliminating the DB round-trip for velocity checks at high throughput; falls back to counter table if Redis is unavailable
-- **Go SDK + Java client SDK** — idiomatic clients with context propagation
-- **SOC 2 Type II** — 6-month observation program; begin when first enterprise customers require it
 
 ---
 
