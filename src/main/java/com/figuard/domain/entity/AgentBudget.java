@@ -1,6 +1,7 @@
 package com.figuard.domain.entity;
 
 import com.figuard.domain.enums.BudgetStatus;
+import com.figuard.domain.enums.TrustMode;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -123,6 +124,16 @@ public class AgentBudget {
     // Null = no expiry (reservation holds until explicitly voided/failed/confirmed).
     @Column
     private Integer authorizationExpirySeconds;
+
+    /**
+     * Controls whether enforcement checks block requests or observe silently.
+     * SHADOW: all checks run, nothing is denied — wouldHaveBeen populated in response.
+     * FULL_ENFORCEMENT: default behaviour.
+     * Mutable via PATCH /budgets/{id} — flip to FULL_ENFORCEMENT when ready.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private TrustMode trustMode = TrustMode.FULL_ENFORCEMENT;
 
     // Rolling-window velocity controls. All three are optional (null = unlimited).
     // Checked after expiry, before category matching.

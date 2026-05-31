@@ -13,6 +13,7 @@ import com.figuard.domain.entity.SpendEvent;
 import com.figuard.domain.entity.Tenant;
 import com.figuard.domain.enums.DenialCode;
 import com.figuard.domain.enums.SpendDecision;
+import com.figuard.domain.enums.TrustMode;
 import com.figuard.domain.enums.WebhookEventType;
 import com.figuard.domain.entity.BudgetAnomalyBaseline;
 import com.figuard.domain.repository.AgentBudgetRepository;
@@ -139,6 +140,15 @@ public class AuthorizationService {
             }
         }
 
+        // Shadow mode: run all enforcement with dry-run semantics (no writes, no webhooks).
+        // The response always returns AUTHORIZED but includes wouldHaveBeen + wouldHaveBeenReason
+        // so the caller can see what full enforcement would have done.
+        // Flip budget.trustMode to FULL_ENFORCEMENT via PATCH /budgets/{id} when ready.
+        boolean shadowMode = budget.getTrustMode() == TrustMode.SHADOW;
+        if (shadowMode) {
+            request.setDryRun(true);
+        }
+
         // Step 2 — Idempotency check (skipped for dry-run — nothing was ever written)
         // Must happen before any writes. If a duplicate key is found, return the original
         // decision WITHOUT creating a new SpendEvent. This handles agent retries safely.
@@ -201,9 +211,9 @@ public class AuthorizationService {
         // parentEvent is not yet resolved at this point (validation happens in step 7),
         // so status denials are recorded without a parent link.
         switch (budget.getStatus()) {
-            case PAUSED    -> { return deny(budget, null, request, null, DenialCode.BUDGET_PAUSED,    "Budget is paused", delegatedToken); }
-            case CANCELLED -> { return deny(budget, null, request, null, DenialCode.BUDGET_CANCELLED, "Budget has been cancelled", delegatedToken); }
-            case EXHAUSTED -> { return deny(budget, null, request, null, DenialCode.BUDGET_EXHAUSTED, "Budget is exhausted", delegatedToken); }
+            case PAUSED    -> { AuthorizationResponse r = deny(budget, null, request, null, DenialCode.BUDGET_PAUSED,    "Budget is paused", delegatedToken); return shadowMode ? shadowWrap(r, budget) : r; }
+            case CANCELLED -> { AuthorizationResponse r = deny(budget, null, request, null, DenialCode.BUDGET_CANCELLED, "Budget has been cancelled", delegatedToken); return shadowMode ? shadowWrap(r, budget) : r; }
+            case EXHAUSTED -> { AuthorizationResponse r = deny(budget, null, request, null, DenialCode.BUDGET_EXHAUSTED, "Budget is exhausted", delegatedToken); return shadowMode ? shadowWrap(r, budget) : r; }
             default -> { /* ACTIVE — continue */ }
         }
 
@@ -212,8 +222,8 @@ public class AuthorizationService {
         // between the agent checking and sending the request.
         OffsetDateTime effectiveExpiry = budget.getExpiresAt().plusSeconds(expiryGraceSeconds);
         if (OffsetDateTime.now().isAfter(effectiveExpiry)) {
-            return deny(budget, null, request, null, DenialCode.BUDGET_EXPIRED, "Budget has expired",
-                delegatedToken);
+            AuthorizationResponse r = deny(budget, null, request, null, DenialCode.BUDGET_EXPIRED, "Budget has expired", delegatedToken);
+            return shadowMode ? shadowWrap(r, budget) : r;
         }
 
         // Step 5c — Entitlement balance check (entitlement-backed budgets only).
@@ -226,7 +236,8 @@ public class AuthorizationService {
             if (entitlementResult.isDenied()) {
                 EntitlementEnforcementService.CheckResult.Denied denied =
                         (EntitlementEnforcementService.CheckResult.Denied) entitlementResult;
-                return deny(budget, null, request, null, denied.code(), denied.message(), delegatedToken);
+                AuthorizationResponse r = deny(budget, null, request, null, denied.code(), denied.message(), delegatedToken);
+                return shadowMode ? shadowWrap(r, budget) : r;
             }
         }
 
@@ -238,7 +249,7 @@ public class AuthorizationService {
                 || budget.getVelocityMaxAmountPerHour() != null
                 || budget.getVelocityMaxPerDay() != null) {
             AuthorizationResponse velocityDenial = checkVelocity(budget, request, delegatedToken);
-            if (velocityDenial != null) return velocityDenial;
+            if (velocityDenial != null) return shadowMode ? shadowWrap(velocityDenial, budget) : velocityDenial;
         }
 
         // Step 6 — Currency check (monetary budgets only)
@@ -247,9 +258,10 @@ public class AuthorizationService {
             String requestCurrency = request.getCurrency() != null ? request.getCurrency() : "USD";
             String budgetCurrency  = budget.getCurrency().trim();
             if (!requestCurrency.equalsIgnoreCase(budgetCurrency)) {
-                return deny(budget, null, request, null, DenialCode.CURRENCY_MISMATCH,
+                AuthorizationResponse r = deny(budget, null, request, null, DenialCode.CURRENCY_MISMATCH,
                     "Currency mismatch: requested " + requestCurrency + " but budget is " + budgetCurrency,
                     delegatedToken);
+                return shadowMode ? shadowWrap(r, budget) : r;
             }
         }
 
@@ -259,10 +271,11 @@ public class AuthorizationService {
         // even if the budget has plenty of remaining funds.
         if (budget.getMaxTransactionQuantity() != null
                 && request.getRequestedQuantity().compareTo(budget.getMaxTransactionQuantity()) > 0) {
-            return deny(budget, null, request, null, DenialCode.EXCEEDS_QUANTITY_LIMIT,
+            AuthorizationResponse r = deny(budget, null, request, null, DenialCode.EXCEEDS_QUANTITY_LIMIT,
                 "requestedQuantity " + request.getRequestedQuantity() +
                 " exceeds per-transaction limit of " + budget.getMaxTransactionQuantity(),
                 delegatedToken);
+            return shadowMode ? shadowWrap(r, budget) : r;
         }
 
         // Step 7a — Anomaly detection
@@ -272,7 +285,7 @@ public class AuthorizationService {
         // calibrated for monetary amounts and produce false positives on token/call counts.
         if (budget.isAnomalyDetectionEnabled() && budget.isMonetary()) {
             var anomalyResult = checkAnomaly(budget, request.getRequestedQuantity(), request);
-            if (anomalyResult != null) return anomalyResult;
+            if (anomalyResult != null) return shadowMode ? shadowWrap(anomalyResult, budget) : anomalyResult;
         }
 
         // Step 8 — Parent event validation (causal chain)
@@ -296,11 +309,12 @@ public class AuthorizationService {
                 if (projected.compareTo(chainRoot.getMaxSubtreeQuantity()) > 0) {
                     BigDecimal remaining = chainRoot.getMaxSubtreeQuantity()
                         .subtract(subtreeTotal).max(BigDecimal.ZERO);
-                    return deny(budget, null, request, parentEvent,
+                    AuthorizationResponse subtreeR = deny(budget, null, request, parentEvent,
                         DenialCode.SUBTREE_CAP_EXCEEDED,
                         "chain total " + projected + " would exceed chain cap of " +
                         chainRoot.getMaxSubtreeQuantity() + "; remaining capacity: " + remaining,
                         delegatedToken);
+                    return shadowMode ? shadowWrap(subtreeR, budget) : subtreeR;
                 }
             }
         }
@@ -317,13 +331,29 @@ public class AuthorizationService {
             allocationRepository.findByParentBudgetIdOrderByCreatedAtAsc(budget.getId());
 
         // Step 11 — Category matching and funds check
+        AuthorizationResponse result;
         if (!allocations.isEmpty()) {
-            return authorizeWithAllocations(budget, allocations, request, parentEvent,
+            result = authorizeWithAllocations(budget, allocations, request, parentEvent,
                 effectiveReserved, delegatedToken, entitlementItem);
         } else {
-            return authorizeFlat(budget, request, parentEvent, effectiveReserved, delegatedToken,
+            result = authorizeFlat(budget, request, parentEvent, effectiveReserved, delegatedToken,
                 entitlementItem);
         }
+
+        // Shadow mode: enforce ran with dryRun=true. Return AUTHORIZED regardless,
+        // but populate wouldHaveBeen so the caller can see what enforcement would have done.
+        if (shadowMode) {
+            return AuthorizationResponse.builder()
+                .shadow(true)
+                .decision(SpendDecision.AUTHORIZED)
+                .wouldHaveBeen(result.getDecision())
+                .wouldHaveBeenReason(result.getDenialReason())
+                .budgetSnapshot(result.getBudgetSnapshot())
+                .traceId(MDC.get(TraceIdFilter.TRACE_ID_KEY))
+                .build();
+        }
+
+        return result;
     }
 
     /**
@@ -579,6 +609,23 @@ public class AuthorizationService {
     // -------------------------------------------------------------------------
     // Denial helper — every DENIED path writes a SpendEvent to the ledger
     // -------------------------------------------------------------------------
+
+    /**
+     * Wraps a denial (or authorized) response for shadow-mode budgets.
+     * Returns AUTHORIZED with shadow=true, preserving wouldHaveBeen and wouldHaveBeenReason
+     * so the caller can see what full enforcement would have done.
+     */
+    private AuthorizationResponse shadowWrap(AuthorizationResponse inner, AgentBudget budget) {
+        return AuthorizationResponse.builder()
+            .shadow(true)
+            .decision(SpendDecision.AUTHORIZED)
+            .wouldHaveBeen(inner.getDecision())
+            .wouldHaveBeenReason(inner.getDenialReason())
+            .budgetSnapshot(inner.getBudgetSnapshot() != null
+                ? inner.getBudgetSnapshot() : budgetMapper.toBudgetSnapshot(budget))
+            .traceId(MDC.get(TraceIdFilter.TRACE_ID_KEY))
+            .build();
+    }
 
     private AuthorizationResponse deny(AgentBudget budget,
                                        BudgetAllocation allocation,

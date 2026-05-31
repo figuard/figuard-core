@@ -1,0 +1,23 @@
+<svg width="160" height="40" viewBox="0 0 160 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- FiGuard wordmark — light background — mark + Fi + Guard -->
+
+  <!-- Mark scaled to 40px height, centered vertically -->
+  <!-- Left outer dash -->
+  <rect x="2"  y="18" width="5"  height="4" fill="#0A5C38" opacity="0.45"/>
+  <!-- Left bracket -->
+  <rect x="8"  y="9"  width="3"  height="22" fill="#0A5C38"/>
+  <rect x="8"  y="9"  width="7"  height="3"  fill="#0A5C38"/>
+  <rect x="8"  y="28" width="7"  height="3"  fill="#0A5C38"/>
+  <!-- Inner bar -->
+  <rect x="15" y="18" width="10" height="4"  fill="#0A5C38"/>
+  <!-- Right bracket -->
+  <rect x="29" y="9"  width="3"  height="22" fill="#0A5C38"/>
+  <rect x="25" y="9"  width="7"  height="3"  fill="#0A5C38"/>
+  <rect x="25" y="28" width="7"  height="3"  fill="#0A5C38"/>
+  <!-- Right outer dash -->
+  <rect x="33" y="18" width="5"  height="4"  fill="#0A5C38" opacity="0.45"/>
+
+  <!-- Wordmark: Fi in terracotta bold, Guard in charcoal light -->
+  <text x="46" y="29" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="22" fill="#0A5C38" letter-spacing="-0.5">Fi</text>
+  <text x="70" y="29" font-family="Georgia, 'Times New Roman', serif" font-weight="400" font-size="22" fill="#1a1a18" letter-spacing="-0.4">Guard</text>
+</svg>

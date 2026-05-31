@@ -1,5 +1,6 @@
 package com.figuard.api.dto.request;
 
+import com.figuard.domain.enums.TrustMode;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import lombok.Data;
@@ -131,4 +132,10 @@ public class CreateBudgetRequest {
     private List<AllocationRequest> allocations;
 
     private Map<String, Object> metadata;
+
+    /**
+     * Optional. SHADOW = observe only, nothing is blocked.
+     * Defaults to FULL_ENFORCEMENT. Flip via PATCH /budgets/{id} when ready.
+     */
+    private TrustMode trustMode = TrustMode.FULL_ENFORCEMENT;
 }

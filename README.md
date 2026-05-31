@@ -1,4 +1,4 @@
-# FiGuard
+<img src="docs/logo.svg" alt="FiGuard" height="44" />
 
 A travel-booking agent hit a Stripe timeout. It retried. Then retried again. The customer's card was charged **three times for the same flight** before an engineer noticed the anomaly in the logs — 40 minutes later.
 
@@ -20,11 +20,11 @@ Works with LangChain, CrewAI, LangGraph, and the OpenAI Agents SDK.
 | MCP server | Claude Code, Cursor, Claude Desktop | — |
 
 [![CI](https://github.com/figuard/figuard-core/actions/workflows/ci.yml/badge.svg)](https://github.com/figuard/figuard-core/actions/workflows/ci.yml)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-610%20passing-brightgreen)](#)
-[![PyPI](https://img.shields.io/pypi/v/figuard)](https://pypi.org/project/figuard/)
-[![npm](https://img.shields.io/npm/v/figuard?label=npm%20(ts-sdk)&color=cb3837)](https://www.npmjs.com/package/figuard)
-[![npm](https://img.shields.io/npm/v/figuard-mcp?label=figuard-mcp&color=cb3837)](https://www.npmjs.com/package/figuard-mcp)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-0A5C38.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-610%20passing-0A5C38)](#)
+[![PyPI](https://img.shields.io/pypi/v/figuard?color=0A5C38)](https://pypi.org/project/figuard/)
+[![npm](https://img.shields.io/npm/v/figuard?label=npm%20(ts-sdk)&color=0A5C38)](https://www.npmjs.com/package/figuard)
+[![npm](https://img.shields.io/npm/v/figuard-mcp?label=figuard-mcp&color=0A5C38)](https://www.npmjs.com/package/figuard-mcp)
 
 ---
 
@@ -105,7 +105,40 @@ https://figuard-sandbox-g1ha.onrender.com/ui
 
 Every authorization, denial, confirmation, and void shows up as a node in the spend tree in real time.
 
-**4. Self-host** — [see self-hosting docs](docs/self-hosting.md)
+**4. Try shadow mode — observe before enforcing**
+
+Not sure what limits to set? Run your agent in shadow mode first. All enforcement checks run, nothing gets blocked, and every authorize response tells you what *would have* happened:
+
+```python
+budget = client.create_budget(
+    user_id="agent_001",
+    total_limit=500,
+    currency="USD",
+    expires_in="24h",
+    trust_mode="SHADOW",          # observe-only, nothing blocked
+)
+
+auth = client.authorize(
+    session_token=budget.primary_token.session_token,
+    agent_id="refund_agent",
+    action_type="REFUND",
+    requested_quantity=1_200.00,
+    idempotency_key="refund-001",
+)
+
+print(auth.decision)                # AUTHORIZED  ← shadow, never blocked
+print(auth.shadow)                  # True
+print(auth.would_have_been)         # DENIED
+print(auth.would_have_been_reason)  # BUDGET_EXHAUSTED
+```
+
+Watch the dashboard for a week. When the limits look right, flip to enforcement with a single PATCH — no need to recreate the budget or restart your agent:
+
+```python
+client.update_budget(budget.id, trust_mode="FULL_ENFORCEMENT")
+```
+
+**5. Self-host** — [see self-hosting docs](docs/self-hosting.md)
 
 ```bash
 git clone https://github.com/figuard/figuard-core
@@ -288,6 +321,7 @@ Source: [`examples/rogue_agent_scenarios/`](examples/rogue_agent_scenarios/)
 - [Pick Your Pattern](docs/pick-your-pattern.md) — decision tree: find your scenario, get the exact create + authorize calls
 - [Budget Configuration](docs/budget-configuration.md) — full parameter reference for all four configuration layers
 - [Framework Integrations](docs/integrations.md) — LangChain, CrewAI, OpenAI Agents SDK, Anthropic
+- [Observability](docs/integrations/observability.md) — FiGuard spans in Langfuse, Jaeger, Honeycomb, Datadog
 - [Fleet Agents & Delegation Tokens](docs/fleet-agents.md)
 - [Enforcement Features](docs/enforcement.md) — denial codes, anomaly detection, allocation modes
 - [Handling Denials](docs/denial-handling.md) — per-code recovery strategies, framework surfacing, LLM prompt instructions
@@ -315,12 +349,23 @@ Source: [`examples/rogue_agent_scenarios/`](examples/rogue_agent_scenarios/)
 
 ### V2
 - **Row Level Security** — PostgreSQL RLS policies as a second enforcement layer for operators running FiGuard in shared multi-tenant mode
-- **Velocity counter table** — replace live `COUNT`/`SUM` scans in the current velocity controls with an atomically-incremented counter table per budget per window, removing the `spend_events` scan from the authorize hot path at scale
-- **Overdraft policies** — per-budget policy flag controlling behaviour when budget is exhausted: `REJECT` (current default), `ALLOW_IF_AVAILABLE` (use remaining funds, deny the rest), `ALLOW_WITH_OVERDRAFT` (permit and record overdraft for later settlement)
+- **Scoped tokens** (`sc_` prefix) — derived session tokens with hard restrictions on action types, categories, and max transaction amount; for untrusted sub-agent delegation
+- **Velocity counter table** — replace live `COUNT`/`SUM` scans with an atomically-incremented counter table per budget per window, removing the `spend_events` scan from the authorize hot path at scale
+- **Overdraft policies** — per-budget `REJECT` / `ALLOW_IF_AVAILABLE` / `ALLOW_WITH_OVERDRAFT` modes
+- **API rate limiting** — per-API-key token bucket (1000 req/min); returns 429 with `Retry-After`
+- **Subscription + entitlements** — known-user session model; platform issues tokens from a subscription, no budget creation in the agent
 
 ### V3
-- **Redis velocity counters** — sliding-window counters in Redis, eliminating the DB round-trip for velocity checks at high throughput
+- **LangGraph graph inspector** — inspects graph topology at init, auto-provisions delegation tokens per node, resolves parentEventId races in parallel graphs
+- **Shadow mode — full inheritance chain** — budget-level `trust_mode=SHADOW` ships at OSS release (see below); V3 adds tenant → API key → policy → budget inheritance so an entire fleet can be put in shadow mode from a single API key setting
+- **FX conversion** — pluggable exchange rate provider; authorize amounts in any currency, settled in budget currency
+- **Token lineage tree** — `parent_token_id` on delegation tokens; `GET /tokens/{id}/lineage` reconstructs the full delegation chain
 - **Helm chart** — production-grade Kubernetes deployment with configurable replicas, resource limits, and secret management
+
+### V4
+- **Redis sliding-window velocity counters** — sorted-set counters in Redis, eliminating the DB round-trip for velocity checks at high throughput; falls back to counter table if Redis is unavailable
+- **Go SDK + Java client SDK** — idiomatic clients with context propagation
+- **SOC 2 Type II** — 6-month observation program; begin when first enterprise customers require it
 
 ---
 

@@ -1,6 +1,7 @@
 package com.figuard.api.dto.request;
 
 import com.figuard.domain.enums.BudgetStatus;
+import com.figuard.domain.enums.TrustMode;
 import jakarta.validation.constraints.*;
 import lombok.Data;
 
@@ -31,4 +32,7 @@ public class UpdateBudgetRequest {
 
     @Positive(message = "velocityMaxPerDay must be positive")
     private Integer velocityMaxPerDay;
+
+    // Flip SHADOW → FULL_ENFORCEMENT (or back) without recreating the budget.
+    private TrustMode trustMode;
 }

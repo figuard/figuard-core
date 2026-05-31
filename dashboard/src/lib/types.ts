@@ -98,6 +98,7 @@ export interface BudgetResponse {
   velocityMaxPerMinute: number | null;
   velocityMaxAmountPerHour: number | null;
   velocityMaxPerDay: number | null;
+  trustMode: string | null;
 }
 
 export interface SpendEventResponse {

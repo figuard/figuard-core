@@ -1,12 +1,12 @@
 <svg width="32" height="32" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- FiGuard favicon 32px — outer dashes present but dim -->
-  <rect x="4"  y="36" width="10" height="8" fill="#C0522A" opacity="0.45"/>
-  <rect x="16" y="18" width="6"  height="44" fill="#C0522A"/>
-  <rect x="16" y="18" width="14" height="6"  fill="#C0522A"/>
-  <rect x="16" y="56" width="14" height="6"  fill="#C0522A"/>
-  <rect x="30" y="36" width="20" height="8"  fill="#C0522A"/>
-  <rect x="58" y="18" width="6"  height="44" fill="#C0522A"/>
-  <rect x="50" y="18" width="14" height="6"  fill="#C0522A"/>
-  <rect x="50" y="56" width="14" height="6"  fill="#C0522A"/>
-  <rect x="66" y="36" width="10" height="8"  fill="#C0522A" opacity="0.45"/>
+  <rect x="4"  y="36" width="10" height="8" fill="#0A5C38" opacity="0.45"/>
+  <rect x="16" y="18" width="6"  height="44" fill="#0A5C38"/>
+  <rect x="16" y="18" width="14" height="6"  fill="#0A5C38"/>
+  <rect x="16" y="56" width="14" height="6"  fill="#0A5C38"/>
+  <rect x="30" y="36" width="20" height="8"  fill="#0A5C38"/>
+  <rect x="58" y="18" width="6"  height="44" fill="#0A5C38"/>
+  <rect x="50" y="18" width="14" height="6"  fill="#0A5C38"/>
+  <rect x="50" y="56" width="14" height="6"  fill="#0A5C38"/>
+  <rect x="66" y="36" width="10" height="8"  fill="#0A5C38" opacity="0.45"/>
 </svg>

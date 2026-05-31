@@ -2,6 +2,7 @@ package com.figuard.api.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.figuard.domain.enums.BudgetStatus;
+import com.figuard.domain.enums.TrustMode;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -44,6 +45,7 @@ public class BudgetResponse {
     private Integer velocityMaxPerDay;
     private boolean anomalyDetectionEnabled;
     private boolean autoPauseOnAnomaly;
+    private TrustMode trustMode;
     private BudgetStatus status;
     private List<AllocationResponse> allocations;
     private OffsetDateTime expiresAt;

@@ -70,6 +70,7 @@ public class BudgetMapper {
             .velocityMaxPerDay(budget.getVelocityMaxPerDay())
             .anomalyDetectionEnabled(budget.isAnomalyDetectionEnabled())
             .autoPauseOnAnomaly(budget.isAutoPauseOnAnomaly())
+            .trustMode(budget.getTrustMode())
             .status(budget.getStatus())
             .allocations(allocations)
             .expiresAt(budget.getExpiresAt())
@@ -178,6 +179,9 @@ public class BudgetMapper {
         budget.setMetadata(request.getMetadata());
         if (request.getEntitlementItemId() != null) {
             budget.setEntitlementItemId(request.getEntitlementItemId());
+        }
+        if (request.getTrustMode() != null) {
+            budget.setTrustMode(request.getTrustMode());
         }
         return budget;
     }

@@ -1,16 +1,16 @@
 <svg width="120" height="28" viewBox="0 0 120 28" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- FiGuard nav wordmark — light background — 28px height -->
 
-  <rect x="1"  y="12" width="4"  height="3" fill="#C0522A" opacity="0.45"/>
-  <rect x="6"  y="5"  width="2.5" height="17" fill="#C0522A"/>
-  <rect x="6"  y="5"  width="6"  height="2.5" fill="#C0522A"/>
-  <rect x="6"  y="19" width="6"  height="2.5" fill="#C0522A"/>
-  <rect x="12" y="12" width="8"  height="3"  fill="#C0522A"/>
-  <rect x="22" y="5"  width="2.5" height="17" fill="#C0522A"/>
-  <rect x="20" y="5"  width="6"  height="2.5" fill="#C0522A"/>
-  <rect x="20" y="19" width="6"  height="2.5" fill="#C0522A"/>
-  <rect x="25" y="12" width="4"  height="3"  fill="#C0522A" opacity="0.45"/>
+  <rect x="1"  y="12" width="4"  height="3" fill="#0A5C38" opacity="0.45"/>
+  <rect x="6"  y="5"  width="2.5" height="17" fill="#0A5C38"/>
+  <rect x="6"  y="5"  width="6"  height="2.5" fill="#0A5C38"/>
+  <rect x="6"  y="19" width="6"  height="2.5" fill="#0A5C38"/>
+  <rect x="12" y="12" width="8"  height="3"  fill="#0A5C38"/>
+  <rect x="22" y="5"  width="2.5" height="17" fill="#0A5C38"/>
+  <rect x="20" y="5"  width="6"  height="2.5" fill="#0A5C38"/>
+  <rect x="20" y="19" width="6"  height="2.5" fill="#0A5C38"/>
+  <rect x="25" y="12" width="4"  height="3"  fill="#0A5C38" opacity="0.45"/>
 
-  <text x="33" y="20" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="16" fill="#C0522A" letter-spacing="-0.3">Fi</text>
+  <text x="33" y="20" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="16" fill="#0A5C38" letter-spacing="-0.3">Fi</text>
   <text x="50" y="20" font-family="Georgia, 'Times New Roman', serif" font-weight="300" font-size="16" fill="#1a1a18" letter-spacing="-0.3">Guard</text>
 </svg>

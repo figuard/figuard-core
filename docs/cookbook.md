@@ -188,7 +188,15 @@ def test_agent_stops_when_budget_exhausted():
 
 ## Observability
 
-### 7. Debugging a denied event
+### 7. FiGuard spans in Langfuse / Jaeger
+
+FiGuard emits `figuard.authorize`, `figuard.confirm`, `figuard.fail`, and `figuard.void_tree` spans via OpenTelemetry. They appear as child spans under your LangChain tool spans — so every authorization decision is visible in the same trace as the LLM call that triggered it.
+
+→ Full setup for Langfuse, Jaeger, Honeycomb, Datadog, and TypeScript — see [Observability](integrations/observability.md).
+
+---
+
+### 9. Debugging a denied event
 
 An agent was denied mid-session and you're not sure why. Use `get_budget_timeline` to find the sequence, then `get_budget_state_at` to confirm the balance at that moment.
 
@@ -217,7 +225,7 @@ print(f"Events applied: {snapshot.events_applied}")
 
 ---
 
-### 8. Export all spend for a session with iter_events
+### 10. Export all spend for a session with iter_events
 
 Use `iter_events` to page through the full ledger without manually tracking page numbers.
 

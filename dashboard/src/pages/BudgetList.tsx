@@ -270,6 +270,14 @@ export function BudgetList() {
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap shrink-0">
+                      {budget.trustMode === "SHADOW" && (
+                        <span
+                          className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-700 ring-1 ring-purple-300"
+                          title="Shadow mode — enforcement checks run but nothing is blocked. Flip to FULL_ENFORCEMENT when ready."
+                        >
+                          SHADOW
+                        </span>
+                      )}
                       <span
                         className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${BUDGET_STATUS_BADGE[budget.status]}`}
                       >

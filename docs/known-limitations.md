@@ -74,7 +74,7 @@ When velocity limits are configured (`velocity_max_per_minute`, `velocity_max_am
 
 This is correct and efficient for most agent workloads (dozens to low hundreds of calls per minute per budget). At high concurrent load — roughly 500+ `authorize` calls per second on a single budget — these queries add measurable latency.
 
-**V3 roadmap:** replace the live queries with a dedicated counter table incremented atomically per budget per window.  
+**V2 roadmap:** replace the live queries with a dedicated counter table incremented atomically per budget per window.  
 **V4 roadmap:** Redis sliding-window counters using sorted sets, eliminating the DB round-trip for velocity checks entirely.
 
 ---
@@ -93,4 +93,4 @@ PostgreSQL Row Level Security (RLS) would add a second enforcement layer at the 
 
 For self-hosted deployments (the primary use case for this project), each instance is typically single-tenant, making RLS less critical.
 
-**V2 roadmap:** optional RLS policy migration for operators running FiGuard in a shared multi-tenant mode.
+**V2 roadmap:** RLS policy migration for operators running FiGuard in a shared multi-tenant mode. See spec Section 19 (V2-A1) for implementation plan.

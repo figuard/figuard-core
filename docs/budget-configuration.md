@@ -220,6 +220,43 @@ budget = client.create_budget(
 
 ---
 
+## Shadow mode
+
+Start in shadow mode when you are onboarding a new agent type or a new spend category and want to observe before enforcing. All enforcement checks run — budget exhaustion, velocity limits, allocation caps — but nothing is blocked. Every authorize response includes what full enforcement would have done.
+
+```python
+# Observe for a week, tune budget sizes, then flip to enforcement
+budget = client.create_budget(
+    total_limit=500,
+    currency="USD",
+    expires_in="24h",
+    trust_mode="SHADOW",
+)
+
+auth = client.authorize(
+    session_token=budget.primary_token.session_token,
+    agent_id="refund_agent",
+    action_type="REFUND",
+    requested_quantity=1_200.00,
+    idempotency_key="refund-001",
+)
+
+print(auth.decision)           # "AUTHORIZED"   ← shadow, never blocked
+print(auth.shadow)             # True
+print(auth.would_have_been)    # "DENIED"        ← what enforcement would have done
+print(auth.would_have_been_reason)  # "BUDGET_EXHAUSTED"
+```
+
+When you are ready to enforce, flip without recreating the budget:
+
+```python
+client.update_budget(budget.id, trust_mode="FULL_ENFORCEMENT")
+```
+
+The dashboard shows a **SHADOW** badge on all shadow-mode budgets so the team can see which budgets are still in observation mode.
+
+---
+
 ## What happens when a budget expires
 
 An expired budget stops accepting authorizations — any new `authorize` call returns `BUDGET_EXPIRED`. Existing confirmed events are unaffected. To keep a long-running session alive, call `POST /budgets/{id}/extend` before expiry. It can be called repeatedly; each call adds up to 24 hours from the current time.

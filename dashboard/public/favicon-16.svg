@@ -1,10 +1,10 @@
 <svg width="16" height="16" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- FiGuard favicon 16px — outer dashes dropped, brackets + inner bar only -->
-  <rect x="14" y="16" width="7"  height="48" fill="#C0522A"/>
-  <rect x="14" y="16" width="16" height="7"  fill="#C0522A"/>
-  <rect x="14" y="57" width="16" height="7"  fill="#C0522A"/>
-  <rect x="59" y="16" width="7"  height="48" fill="#C0522A"/>
-  <rect x="51" y="16" width="16" height="7"  fill="#C0522A"/>
-  <rect x="51" y="57" width="16" height="7"  fill="#C0522A"/>
-  <rect x="30" y="36" width="20" height="8"  fill="#C0522A"/>
+  <rect x="14" y="16" width="7"  height="48" fill="#0A5C38"/>
+  <rect x="14" y="16" width="16" height="7"  fill="#0A5C38"/>
+  <rect x="14" y="57" width="16" height="7"  fill="#0A5C38"/>
+  <rect x="59" y="16" width="7"  height="48" fill="#0A5C38"/>
+  <rect x="51" y="16" width="16" height="7"  fill="#0A5C38"/>
+  <rect x="51" y="57" width="16" height="7"  fill="#0A5C38"/>
+  <rect x="30" y="36" width="20" height="8"  fill="#0A5C38"/>
 </svg>

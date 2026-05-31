@@ -2,6 +2,7 @@ package com.figuard.api.dto.response;
 
 import com.figuard.domain.enums.DenialCode;
 import com.figuard.domain.enums.SpendDecision;
+import com.figuard.domain.enums.TrustMode;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -36,4 +37,11 @@ public class AuthorizationResponse {
 
     // Request trace ID — correlates with X-Trace-Id response header and server logs
     private String traceId;
+
+    // Shadow mode fields — present only when the budget's trustMode is SHADOW.
+    // shadow=true means enforcement ran but nothing was blocked.
+    // wouldHaveBeen=DENIED + wouldHaveBeenReason shows what full enforcement would have done.
+    private boolean shadow;
+    private SpendDecision wouldHaveBeen;
+    private DenialCode wouldHaveBeenReason;
 }

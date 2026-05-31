@@ -295,6 +295,10 @@ public class BudgetService {
             budget.setVelocityMaxPerDay(request.getVelocityMaxPerDay());
         }
 
+        if (request.getTrustMode() != null) {
+            budget.setTrustMode(request.getTrustMode());
+        }
+
         AgentBudget saved = budgetRepository.save(budget);
 
         if (manuallyPausing) {
