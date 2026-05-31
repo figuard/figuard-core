@@ -6,18 +6,38 @@ No alert fired. No limit existed. The agent had a valid API key and no concept o
 
 FiGuard gives agents a budget. They ask permission before spending. You set the ceiling, the retry rules, and the idempotency policy once. Every spend attempt — authorized or denied — lands in an audit log.
 
-Works with LangChain, CrewAI, LangGraph, and the OpenAI Agents SDK.
+It's the same infrastructure payment teams built 20 years ago — reserve before executing, confirm after, write every transition to an append-only ledger. Applied to agent systems.
 
-**Tested with:**
+---
 
-| Framework | Versions | Python |
-|---|---|---|
-| LangChain | ≥ 0.3.0 | 3.9 – 3.12 |
-| LangGraph | ≥ 0.2.0 | 3.10 – 3.12 |
-| CrewAI | ≥ 0.102 | 3.10 – 3.12 |
-| OpenAI Agents SDK | ≥ 0.0.5 | 3.10 – 3.12 |
-| TypeScript SDK | Node ≥ 18 | — |
-| MCP server | Claude Code, Cursor, Claude Desktop | — |
+## What FiGuard Is Not
+
+**Not a payment processor.** FiGuard never touches money. It authorizes the intent to spend and records the decision. The actual payment goes through your existing processor as before.
+
+**Not a policy language.** Budget limits and allocation caps are structured data, not a DSL. FiGuard matches the category an agent declares against the categories you defined — nothing more.
+
+**Not a firewall for human users.** FiGuard is purpose-built for agent-to-service authorization. The session token model assumes agents are ephemeral and untrusted by default.
+
+**Not a replacement for Stripe spending controls.** Use both if you want defense in depth. FiGuard blocks at agent decision time; Stripe blocks at payment time. Different layers.
+
+**Not a security boundary against adversarial agents.** FiGuard enforces what the agent declares. An agent that lies about its category or amount bypasses category enforcement. FiGuard is designed for honest agents with bounded resources — the same threat model as a database connection pool or a rate limiter. It prevents accidental overspend and enforces organizational policies on well-behaved agents. For adversarial agent containment, pair FiGuard with a security layer like [Microsoft AGT](https://github.com/microsoft/agt).
+
+---
+
+## Where FiGuard Fits
+
+LangChain, LangGraph, CrewAI, and the OpenAI Agents SDK decide what the agent should do. FiGuard decides whether the resource-consuming action is allowed.
+
+```
+agent chooses tool
+  → client.authorize()        ← reservation placed, limit checked
+  → tool executes
+  → client.confirm()          ← actual amount settled, reservation released
+```
+
+FiGuard sits between the orchestrator and the action. It never replaces the orchestrator, never proxies the API call, and never sees your data. Your framework code doesn't change — you add `authorize` / `confirm` around the operations that consume bounded resources: payments, tokens, API calls, GPU hours, or any unit you define.
+
+---
 
 [![CI](https://github.com/figuard/figuard-core/actions/workflows/ci.yml/badge.svg)](https://github.com/figuard/figuard-core/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-0A5C38.svg)](LICENSE)
@@ -26,37 +46,31 @@ Works with LangChain, CrewAI, LangGraph, and the OpenAI Agents SDK.
 [![npm](https://img.shields.io/npm/v/figuard?label=npm%20(ts-sdk)&color=0A5C38)](https://www.npmjs.com/package/figuard)
 [![npm](https://img.shields.io/npm/v/figuard-mcp?label=figuard-mcp&color=0A5C38)](https://www.npmjs.com/package/figuard-mcp)
 
----
-
 ![FiGuard demo](https://github.com/user-attachments/assets/e953a132-c379-45fe-9796-644a4ec84c5d)
 
-**Try it in 2 minutes — no setup required:**  
-→ [Run the quickstart in Colab](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/01_infinite_loop.ipynb)  
-→ [See the live dashboard](https://figuard-sandbox-g1ha.onrender.com/ui)
+**Try it now — no setup, no signup:**  
+→ [Run in Colab](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/01_infinite_loop.ipynb)  
+→ [Live dashboard](https://figuard-sandbox-g1ha.onrender.com/ui)
 
 ---
 
-## 60-Second Quickstart
+## Quickstart
 
-**1. Install and connect**
+**Install**
 
 ```bash
 pip install figuard
 ```
 
+**Create a budget and authorize a spend**
+
 ```python
 from figuard import FiGuardClient
 
-# Zero-config — no setup required. Connects to the shared public sandbox automatically.
+# Zero-config — connects to the shared public sandbox automatically.
+# For production: set FIGUARD_API_KEY + FIGUARD_BASE_URL, or see Self-Hosting below.
 client = FiGuardClient()
-```
 
-The sandbox is a live FiGuard instance. Data is wiped periodically — not for production.
-For production, [self-host FiGuard](https://figuard.io/docs/self-hosting) and set `FIGUARD_API_KEY` / `FIGUARD_BASE_URL`.
-
-**2. Create a budget and authorize a spend**
-
-```python
 budget = client.create_budget(
     user_id="agent_001",
     total_limit=500.00,
@@ -81,7 +95,7 @@ print(auth.approved_quantity) # 270.0
 # Confirm with actual charged amount after the transaction succeeds
 client.confirm_event(auth.event_id, confirmed_quantity=267.00)
 
-# Try a second spend that exceeds what's left ($500 - $267 = $233 remaining)
+# Second spend — exceeds what's left ($500 - $267 = $233 remaining)
 auth2 = client.authorize(
     session_token=budget.primary_token.session_token,
     agent_id="travel_agent",
@@ -95,19 +109,24 @@ print(auth2.decision)       # DENIED
 print(auth2.denial_reason)  # INSUFFICIENT_FUNDS
 ```
 
-**3. See it in the dashboard**
+Every authorization, denial, and confirmation shows up in the spend tree at `https://figuard-sandbox-g1ha.onrender.com/ui` in real time.
 
-Open the sandbox dashboard — your events are already there:
+**Tested with:**
 
-```
-https://figuard-sandbox-g1ha.onrender.com/ui
-```
+| Framework | Versions | Python |
+|---|---|---|
+| LangChain | ≥ 0.3.0 | 3.9 – 3.12 |
+| LangGraph | ≥ 0.2.0 | 3.10 – 3.12 |
+| CrewAI | ≥ 0.102 | 3.10 – 3.12 |
+| OpenAI Agents SDK | ≥ 0.0.5 | 3.10 – 3.12 |
+| TypeScript SDK | Node ≥ 18 | — |
+| MCP server | Claude Code, Cursor, Claude Desktop | — |
 
-Every authorization, denial, confirmation, and void shows up as a node in the spend tree in real time.
+---
 
-**4. Try shadow mode — observe before enforcing**
+## Shadow Mode
 
-Not sure what limits to set? Run your agent in shadow mode first. All enforcement checks run, nothing gets blocked, and every authorize response tells you what *would have* happened:
+Not sure what limits to set? Run in shadow mode first. All enforcement checks run, nothing gets blocked, and every response tells you what *would have* happened.
 
 ```python
 budget = client.create_budget(
@@ -115,7 +134,7 @@ budget = client.create_budget(
     total_limit=500,
     currency="USD",
     expires_in="24h",
-    trust_mode="SHADOW",          # observe-only, nothing blocked
+    trust_mode="SHADOW",          # observe-only — nothing blocked
 )
 
 auth = client.authorize(
@@ -132,37 +151,10 @@ print(auth.would_have_been)         # DENIED
 print(auth.would_have_been_reason)  # BUDGET_EXHAUSTED
 ```
 
-Watch the dashboard for a week. When the limits look right, flip to enforcement with a single PATCH — no need to recreate the budget or restart your agent:
+Watch the dashboard for a day or a week. When the limits look right, flip to enforcement with one call — no budget recreation, no agent restart:
 
 ```python
 client.update_budget(budget.id, trust_mode="FULL_ENFORCEMENT")
-```
-
-**5. Self-host** — [see self-hosting docs](docs/self-hosting.md)
-
-```bash
-git clone https://github.com/figuard/figuard-core
-cd figuard-core
-docker compose up
-# Ready at http://localhost:8080
-```
-
-That's it. The server is a Docker container — same as Postgres or Redis. You never need to touch the internals. Switch your client to localhost:
-
-```python
-from figuard import FiGuardClient
-
-client = FiGuardClient(
-    api_key="fg_live_demo",
-    base_url="http://localhost:8080",  # or set FIGUARD_API_KEY + FIGUARD_BASE_URL
-)
-```
-
-Run the example scenarios:
-
-```bash
-pip install figuard
-python examples/rogue_agent_scenarios/demo.py
 ```
 
 ---
@@ -173,7 +165,7 @@ Four operations. Everything else is detail.
 
 | Operation | What it does |
 |---|---|
-| `authorize()` | Agent asks permission — funds reserved, nothing moved yet |
+| `authorize()` | Agent asks permission — capacity reserved, nothing moved yet |
 | `confirm()` | Report what actually moved — releases the reservation |
 | `void()` | Cancel a pending authorization — reservation released |
 | `fail()` | Record a failed action — reservation released |
@@ -224,7 +216,7 @@ qty spent released released
         └───────────────────────────────────┘
 ```
 
-Every authorization, denial, confirmation, and void is a row in the ledger. The spend tree shows the full causal chain across an orchestrator and its sub-agents:
+A budget issues session tokens. An agent's `authorize` call reserves capacity. Execution happens externally — FiGuard never sees the data, never proxies the call. The agent reports back via `confirm`, `void`, or `fail`. Every state transition lands in the append-only ledger. The spend tree shows the full causal chain across an orchestrator and its sub-agents:
 
 ![FiGuard Spend Tree — orchestrator with confirmed and denied sub-agent events](docs/spend-tree.png)
 
@@ -242,40 +234,30 @@ You could. The authorize endpoint looks simple — check the balance, write a re
 
 **Session token security** — you need a token that scopes to exactly one budget, is returned exactly once, and is never stored in plaintext. If you store the raw token and your database is breached, every active agent session is compromised. Hash at write time, never store the raw value.
 
-**Append-only ledger** — a mutable status field on an authorization record loses history. When you need to reconstruct what happened and why a budget hit its limit, you want every state transition recorded as a separate row, not an update to the previous one.
+**Append-only ledger** — a mutable status field on an authorization record loses history. When you need to reconstruct what happened and why a budget hit its limit — or when a finance team asks why $40K of agent spend happened last Tuesday — you want every state transition as a separate row, not an update to the previous one.
 
-None of this is architecturally exotic. It's the same set of problems that payment infrastructure teams solved 20 years ago. FiGuard is that infrastructure applied to agent systems — already built, already tested, already handling the edge cases.
-
----
-
-## Create Your First Policy
-
-Pick your scenario in the interactive wizard — monetary vs non-monetary budget, single agent vs fleet, per-category limits, safety controls — and get the exact `create_budget` + `authorize` calls ready to paste.
-
-**[→ Open the code wizard](https://figuard.io/#get-started)**
-
-Or follow the decision tree in [Pick your pattern](docs/pick-your-pattern.md) if you prefer plain docs. Full parameter reference in [Budget configuration](docs/budget-configuration.md).
+It's the same set of problems that payment infrastructure teams solved 20 years ago. FiGuard is that infrastructure applied to agent systems — already built, already tested, already handling the edge cases.
 
 ---
 
-## Examples
+## Failure Scenarios
 
-### FiGuard in your stack
+Real failure modes — each showing the problem, the mechanism FiGuard uses to catch it, and a Colab to run it with no API keys.
 
-Real failure modes that happen inside LangChain, LangGraph, and CrewAI — each showing the problem and the fix side-by-side. Run in simulation mode with no API keys, or switch to real mode with your own keys.
+| Scenario | Framework | Failure mode | FiGuard stops it at | Colab |
+|---|---|---|---|---|
+| **Payment retry storm** | LangChain | Tool times out after Stripe charges. Retry = double charge. | Idempotency key — retry returns the same event, Stripe never called twice | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/framework-scenarios/01_langchain_payment_retry.ipynb) |
+| **Research cost spiral** | LangGraph | Loop runs 30 iterations on an ambiguous query. LLM controls the exit. | Budget ceiling at $0.20 — loop exits at iteration 20 | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/framework-scenarios/02_langgraph_research_loop.ipynb) |
+| **Fleet attribution loss** | LangGraph | Supervisor routes through 3 sub-agents. No per-agent cost caps. | Delegation token per agent — researcher capped, others unaffected | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/framework-scenarios/03_langgraph_supervisor_fleet.ipynb) |
+| **Parallel crew blowout** | CrewAI | Parallel crew — one member makes 25 API calls on a 5-call task | Delegation cap stops the runaway member, rest of crew completes | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/framework-scenarios/04_crewai_parallel_crew.ipynb) |
+| **Concurrent overspend** | Any | 10 agents share one budget. All read the same balance simultaneously. | Pessimistic lock — 5 authorized, 5 denied, $1k ceiling never exceeded | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/03_concurrent_overspend.ipynb) |
+| **Category violation** | Any | Hotel charged to flight budget. Found at month-end. | `DENIED — NO_MATCHING_ALLOCATION` at authorization time | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/05_category_violation.ipynb) |
 
-| Framework | Failure mode | FiGuard stops it at | Colab |
-|---|---|---|---|
-| **LangChain** | Payment tool times out after Stripe charges. Retry = double charge. | Idempotency key collapses retry to one event — Stripe skipped | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/framework-scenarios/01_langchain_payment_retry.ipynb) |
-| **LangGraph** | Research loop runs 30 iterations on an ambiguous query. LLM controls the exit — `max_iterations` doesn't bound cost. | Budget ceiling at $0.20 — loop exits at iteration 20 | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/framework-scenarios/02_langgraph_research_loop.ipynb) |
-| **LangGraph** | Supervisor routes a task through three sub-agents. Researcher runs up cost — shared budget has no attribution. | Delegation token per agent — researcher capped, billing and writer complete | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/framework-scenarios/03_langgraph_supervisor_fleet.ipynb) |
-| **CrewAI** | Parallel crew — market researcher makes 25 data API calls on a 5-call task. No per-agent visibility. | Delegation token per crew member — researcher capped, analyst and writer unaffected | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/framework-scenarios/04_crewai_parallel_crew.ipynb) |
-
-Source: [`examples/framework_scenarios/`](examples/framework_scenarios/)
+Source: [`examples/framework_scenarios/`](examples/framework_scenarios/) · [`examples/rogue_agent_scenarios/`](examples/rogue_agent_scenarios/)
 
 ```bash
 pip install figuard
-python examples/framework_scenarios/langchain_payment_retry.py      # no keys needed
+python examples/framework_scenarios/langchain_payment_retry.py      # no API keys needed
 python examples/framework_scenarios/langgraph_research_loop.py
 python examples/framework_scenarios/langgraph_supervisor_fleet.py
 python examples/framework_scenarios/crewai_parallel_crew.py
@@ -283,54 +265,74 @@ python examples/framework_scenarios/crewai_parallel_crew.py
 
 ---
 
-### Agent Failure Scenarios
+## How FiGuard Compares
 
-Five lower-level failure modes — idempotency, concurrent overspend, rogue sub-agents, category violations.
+| | FiGuard | Langfuse / LangSmith | Portkey / LiteLLM | Stripe Issuing |
+|---|---|---|---|---|
+| When it runs | **Before** execution | After execution | At model call | At payment time |
+| What it guards | Any bounded resource | — (observability only) | LLM tokens only | Card spend only |
+| Blocks overspend? | Yes | No | Partial (LLM only) | Yes (card only) |
+| Reserve/confirm lifecycle | Yes | No | No | Yes |
+| Covers non-monetary resources | Yes | No | No | No |
 
-| # | Scenario | FiGuard stops it at | Colab |
-|---|----------|---------------------|-------|
-| 1 | **Infinite quality loop** — 847 iterations, $16.94, no alert | iteration 251, $5.00 budget ceiling | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/01_infinite_loop.ipynb) |
-| 2 | **Duplicate invoice payment** — timeout + retry = double charge | retry returns same event_id, one charge | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/02_duplicate_payment.ipynb) |
-| 3 | **Concurrent fleet overspend** — 10 agents, 1 budget, $2k attempted | 5 authorized, 5 denied, $1k never exceeded | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/03_concurrent_overspend.ipynb) |
-| 4 | **Rogue sub-agent** — one hallucinating agent drains the whole fleet | delegation cap stops researcher at $200, fleet completes | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/04_rogue_subagent_fleet.ipynb) |
-| 5 | **Category violation** — hotel charged to flight budget, found at month-end | `DENIED — NO_MATCHING_ALLOCATION` at authorization time | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/05_category_violation.ipynb) |
-
-Source: [`examples/rogue_agent_scenarios/`](examples/rogue_agent_scenarios/)
+Observability tools (Langfuse, LangSmith) tell you what happened after it happened. LLM gateways (Portkey, LiteLLM) manage model routing and token spend on LLM calls specifically. FiGuard authorizes before any action executes and covers the full resource spectrum — payments, tokens, API calls, GPU hours, or any unit you define. They complement each other; FiGuard is the enforcement layer.
 
 ---
 
-## What FiGuard Is Not
+## Self-Hosting
 
-**Not a payment processor.** FiGuard never touches money. It authorizes the intent to spend and records the decision. The actual payment goes through your existing processor as before.
+FiGuard is a single Docker container alongside your existing infrastructure — same as adding Postgres or Redis. Your spend data never leaves your environment.
 
-**Not a policy language.** Budget limits and allocation caps are structured data, not a DSL. FiGuard matches the category an agent declares against the categories you defined — nothing more.
+```bash
+git clone https://github.com/figuard/figuard-core
+cd figuard-core
+docker compose up -d
+# Ready at http://localhost:8080
+```
 
-**Not a firewall for human users.** FiGuard is purpose-built for agent-to-service authorization. The session token model assumes agents are ephemeral and untrusted by default.
+Point your client at it:
 
-**Not a replacement for Stripe spending controls.** Use both if you want defense in depth. FiGuard blocks at agent decision time; Stripe blocks at payment time. Different attack surfaces.
+```python
+client = FiGuardClient(
+    api_key="your_api_key",
+    base_url="http://localhost:8080",
+)
+```
 
-**Not a security boundary against adversarial agents.** FiGuard enforces what the agent declares. An agent that lies about its category or amount bypasses category enforcement. FiGuard is designed for honest agents with bounded resources — the same threat model as a database connection pool or a rate limiter. It prevents accidental overspend and enforces organizational policies on well-behaved agents. For adversarial agent containment, pair FiGuard with a security layer like [Microsoft AGT](https://github.com/microsoft/agt).
+Full setup guide, environment variables, Postgres configuration, and production checklist: [Self-Hosting](docs/self-hosting.md).
+
+---
+
+## Performance
+
+Authorize calls complete in under 10ms p99 on a local deployment with a warm connection pool. The authorize path acquires a pessimistic row lock, writes the reservation, and returns — there is no external network hop. In practice the overhead is smaller than a typical database query in your existing stack.
+
+The sandbox runs on a single Render free instance; don't benchmark against it.
 
 ---
 
 ## Docs
 
-- **Interactive API docs:** http://localhost:8080/swagger-ui/index.html (local) · https://figuard-sandbox-g1ha.onrender.com/swagger-ui/index.html (live sandbox)
+**Start here:**
 - [API Reference](docs/api-reference.md) — full endpoint reference with payloads
-- [Cookbook](docs/cookbook.md) — short recipes: authorize/confirm/void, parallel calls, causal chains, graceful shutdown, testing, debugging
-- [Pick Your Pattern](docs/pick-your-pattern.md) — decision tree: find your scenario, get the exact create + authorize calls
-- [Budget Configuration](docs/budget-configuration.md) — full parameter reference for all four configuration layers
+- [Pick Your Pattern](docs/pick-your-pattern.md) — decision tree: find your scenario, get exact code
 - [Framework Integrations](docs/integrations.md) — LangChain, CrewAI, OpenAI Agents SDK, Anthropic
-- [Observability](docs/integrations/observability.md) — FiGuard spans in Langfuse, Jaeger, Honeycomb, Datadog
-- [Fleet Agents & Delegation Tokens](docs/fleet-agents.md)
+- [Self-Hosting](docs/self-hosting.md) — Docker, Postgres, production checklist
+
+**Reference:**
+- [Budget Configuration](docs/budget-configuration.md) — full parameter reference for all configuration layers
 - [Enforcement Features](docs/enforcement.md) — denial codes, anomaly detection, allocation modes
-- [Handling Denials](docs/denial-handling.md) — per-code recovery strategies, framework surfacing, LLM prompt instructions
+- [Fleet Agents & Delegation Tokens](docs/fleet-agents.md)
+- [Handling Denials](docs/denial-handling.md) — per-code recovery strategies, LLM prompt instructions
 - [Audit & Replay](docs/audit-replay.md) — ledger, point-in-time snapshots, timeline, counterfactual
 - [Webhooks](docs/webhooks.md) — event types, registration, signature verification
+- [Observability](docs/integrations/observability.md) — FiGuard spans in Langfuse, Jaeger, Honeycomb, Datadog
 - [TypeScript SDK](docs/typescript-sdk.md)
 - [MCP Server](docs/integrations/mcp.md)
-- [Self-Hosting](docs/self-hosting.md)
+- [Cookbook](docs/cookbook.md) — short recipes: authorize/confirm/void, parallel calls, causal chains, testing
 - [Known Limitations](docs/known-limitations.md)
+
+Interactive API docs: [localhost:8080/swagger-ui](http://localhost:8080/swagger-ui/index.html) · [sandbox](https://figuard-sandbox-g1ha.onrender.com/swagger-ui/index.html)
 
 ---
 
@@ -341,18 +343,22 @@ Source: [`examples/rogue_agent_scenarios/`](examples/rogue_agent_scenarios/)
 | Python | `pip install figuard` |
 | TypeScript / Node.js | `npm install figuard` |
 | MCP Server | `npx figuard-mcp` |
-| Java | `com.figuard:figuard-sdk` |
+| Java | `com.figuard:figuard-sdk:0.3.0` |
 
 ---
 
 ## Roadmap
 
-### V2
-- **Row Level Security** — PostgreSQL RLS policies as a second enforcement layer for operators running FiGuard in shared multi-tenant mode
-- **Scoped tokens** (`sc_` prefix) — derived session tokens with hard restrictions on action types, categories, and max transaction amount; for untrusted sub-agent delegation
-- **Velocity counter table** — replace live `COUNT`/`SUM` scans with an atomically-incremented counter table per budget per window, removing the `spend_events` scan from the authorize hot path at scale
+- **Scoped tokens** — derived session tokens with hard restrictions on action types, categories, and max transaction amount; for untrusted sub-agent delegation
 - **Overdraft policies** — per-budget `REJECT` / `ALLOW_IF_AVAILABLE` / `ALLOW_WITH_OVERDRAFT` modes
-- **API rate limiting** — per-API-key token bucket (1000 req/min); returns 429 with `Retry-After`
+
+See [ROADMAP.md](ROADMAP.md) for the full list.
+
+---
+
+## Versioning
+
+FiGuard is pre-1.0. Patch releases may include breaking changes to the API or SDK. Stable guarantees begin at v1.0.
 
 ---
 
