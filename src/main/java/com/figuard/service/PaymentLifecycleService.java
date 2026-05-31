@@ -563,7 +563,7 @@ public class PaymentLifecycleService {
     public void autoVoidStaleEvent(SpendEvent stale) {
         // Re-fetch with lock inside this transaction to prevent concurrent void races
         eventRepository.findByIdWithLock(stale.getId()).ifPresent(event -> {
-            if (!event.canBeVoided()) return;  // already transitioned by another thread
+            if (event.getDecision() != SpendDecision.AUTHORIZED) return;  // only void pending reservations
 
             BigDecimal reserved = event.getRequestedQuantity();
 
