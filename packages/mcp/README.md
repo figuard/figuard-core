@@ -126,7 +126,7 @@ Session tokens returned by `figuard_create_budget` are short-lived (they expire 
 ```bash
 git clone https://github.com/figuard/figuard-core
 cd figuard-core
-docker compose up
+docker compose up -d
 ```
 
 FiGuard will be available at `http://localhost:8080`.

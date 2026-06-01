@@ -46,7 +46,7 @@ const budget = await client.createBudget({
 // 2. Pre-authorize every spend before it happens
 try {
   const result = (await client.authorize({
-    sessionToken: budget.tokens![0].sessionToken!,
+    sessionToken: budget.primaryToken!.sessionToken!,
     agentId: "agent_flight_booker",
     actionType: "PURCHASE",
     description: "NYC to LAX flight",
@@ -98,7 +98,7 @@ const budget = await client.createBudget({
 
 // claimedCategory must match one of allowedCategories
 const result = await client.authorize({
-  sessionToken: budget.tokens![0].sessionToken!,
+  sessionToken: budget.primaryToken!.sessionToken!,
   agentId: "travel_agent",
   actionType: "PURCHASE",
   description: "Flight to NYC",
@@ -272,7 +272,7 @@ Test your integration without writing to the ledger or firing webhooks:
 
 ```typescript
 const result = await client.authorize({
-  sessionToken: budget.tokens![0].sessionToken!,
+  sessionToken: budget.primaryToken!.sessionToken!,
   agentId: "agent_1",
   actionType: "PURCHASE",
   description: "Test authorization",
@@ -288,7 +288,7 @@ console.log(result.isAuthorized); // true/false based on real enforcement
 ```typescript
 const client = new FiGuardClient({
   apiKey: "fg_live_...",
-  baseUrl: "https://api.figuard.io", // override for self-hosted deployments
+  baseUrl: "https://your-figuard.example.com", // your self-hosted instance
   timeoutMs: 30_000,                 // per-request timeout (default: 30s)
 });
 ```
@@ -296,7 +296,7 @@ const client = new FiGuardClient({
 ## Security notes
 
 - The raw `sessionToken` is returned **once** on `createBudget()` and never again. Store it securely — treat it like a password.
-- `idempotencyKey` is **required** on every `authorize()` call. Use a stable unique key per logical spend intent so retries are safe and never double-spend.
+- `idempotencyKey` is optional — a UUID is auto-generated if omitted. Provide a stable key per logical spend intent so retries collapse to the same event instead of creating duplicates.
 
 ## Self-hosting
 

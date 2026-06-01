@@ -63,7 +63,7 @@ client = FiGuardClient(api_key="fg_live_...")
 budget = client.create_budget(
     user_id="user_123",
     total_limit=500.00,
-    expires_at="2024-12-31T23:59:59Z",
+    expires_in="24h",
 )
 
 # 2. Pre-authorize every spend before it happens
@@ -98,7 +98,7 @@ async def run_agent():
         budget = await client.create_budget(
             user_id="user_123",
             total_limit=500.00,
-            expires_at="2024-12-31T23:59:59Z",
+            expires_in="24h",
         )
 
         result = await client.authorize(
@@ -122,7 +122,7 @@ Allocations let you ring-fence spend by category and enforce item-type rules:
 budget = client.create_budget(
     user_id="user_123",
     total_limit=500.00,
-    expires_at="2024-12-31T23:59:59Z",
+    expires_in="24h",
     allocations=[
         {
             "category": "flights",
@@ -177,7 +177,7 @@ Enable per-budget anomaly detection to auto-pause budgets when a single request 
 budget = client.create_budget(
     user_id="user_123",
     total_limit=2000.00,
-    expires_at="2024-12-31T23:59:59Z",
+    expires_in="24h",
     anomaly_detection_enabled=True,
     # optional: dedicated URL for anomaly alerts
     # anomaly_alert_webhook_url="https://your-service.com/alerts",
@@ -277,7 +277,7 @@ for root in tree.roots:
 ```python
 client = FiGuardClient(
     api_key="fg_live_...",
-    base_url="https://api.figuard.io",  # override for self-hosted
+    base_url="https://your-figuard.example.com",  # your self-hosted instance
     timeout=30,                          # per-request timeout in seconds
 )
 ```
@@ -286,7 +286,7 @@ client = FiGuardClient(
 
 - The raw `session_token` is returned **once** on `create_budget()` and never again. Store it securely — treat it like a password.
 - The SDK logs only the first 8 characters of the session token. The full token never appears in logs.
-- `idempotency_key` is **required** on every `authorize()` call. Use a stable unique key per logical spend intent so retries are safe.
+- `idempotency_key` is optional — a UUID is auto-generated if omitted. Provide a stable key per logical spend intent so retries collapse to the same event instead of creating duplicates.
 
 ---
 
