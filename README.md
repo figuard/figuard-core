@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/figuard/figuard-core/actions/workflows/ci.yml/badge.svg)](https://github.com/figuard/figuard-core/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-0A5C38.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-610%20passing-0A5C38)](#)
+[![Tests](https://img.shields.io/badge/tests-401%20passing-0A5C38)](#)
 [![PyPI](https://img.shields.io/pypi/v/figuard?color=0A5C38)](https://pypi.org/project/figuard/)
 [![npm](https://img.shields.io/npm/v/figuard?label=npm%20(ts-sdk)&color=0A5C38)](https://www.npmjs.com/package/figuard)
 [![npm](https://img.shields.io/npm/v/figuard-mcp?label=figuard-mcp&color=0A5C38)](https://www.npmjs.com/package/figuard-mcp)
@@ -31,12 +31,19 @@ Your framework decides what to do next. FiGuard decides whether the resource-con
   settles reservation — ledger updated
 ```
 
+**LangChain / LangGraph** — FiGuard authorizes each tool call before it executes. A budget-exhausted agent stops cleanly instead of running up cost — even across parallel nodes in a LangGraph.
+
+**CrewAI** — Each crew member gets a delegation token with its own cap. A runaway specialist is stopped at its limit without affecting the rest of the crew.
+
+**OpenAI Agents SDK / MCP** — Wrap tools with `@guarded_function_tool` or add the FiGuard MCP server — every tool call is pre-flight authorized before it reaches the API.
+
+**Not using a framework?** — The raw SDK works anywhere — a Python script, a background job, a serverless function. If it calls an API that costs money or consumes a bounded resource, FiGuard fits.
+
 ![FiGuard demo](https://github.com/user-attachments/assets/e953a132-c379-45fe-9796-644a4ec84c5d)
 
 **Try it now — no setup, no signup:**  
 → [Run in Colab](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/01_infinite_loop.ipynb)  
-→ [Live dashboard](https://figuard-sandbox-g1ha.onrender.com/ui)  
-→ [View on GitHub](https://github.com/figuard/figuard-core)
+→ [Live dashboard](https://figuard-sandbox-g1ha.onrender.com/ui)
 
 > FiGuard is the authorization and ledger layer — not a payment processor, not a policy DSL, not an adversarial-agent firewall. [Full scope →](#what-figuard-is-not)
 

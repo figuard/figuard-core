@@ -145,7 +145,7 @@ See [FAILURE_BEHAVIOR.md](../FAILURE_BEHAVIOR.md) for `fail_open` details.
 ## Recommended rollout sequence
 
 1. **Week 1–2: Shadow mode** — instrument agents, collect data, zero denials
-2. **Week 3: Soft limit only** — set `soft_limit`, enable `BUDGET_SOFT_LIMIT_REACHED` webhook alerts, still no hard denials
+2. **Week 3: Soft limit only** — set `soft_limit`, enable `BUDGET_90_PCT` webhook alerts, still no hard denials
 3. **Week 4+: Full enforcement** — set `total_limit`, `max_transaction_quantity`, `auto_pause_on_anomaly=True`
 
 This three-phase approach means your first enforcement event is never a surprise.

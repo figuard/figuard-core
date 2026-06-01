@@ -26,6 +26,8 @@ Every `authorize()` call either succeeds or returns a structured denial. The den
 | `DELEGATE_CAP_EXCEEDED` | Sub-agent over its delegation cap | Sub-agent's delegation token cap is exhausted |
 | `DELEGATION_TOKEN_REVOKED` | The delegation token was explicitly revoked | Orchestrator called `POST /budgets/{id}/delegation-tokens/{token_id}/revoke` |
 | `VELOCITY_LIMIT_EXCEEDED` | Too many authorize attempts within the rolling window | `velocity_max_per_minute`, `velocity_max_amount_per_hour`, or `velocity_max_per_day` limit reached |
+| `INVALID_SESSION_TOKEN` | Session token not found or expired | Token was never issued, already voided, or the budget has expired — HTTP 401 |
+| `SUBTREE_CAP_EXCEEDED` | Causal chain total would exceed the subtree cap | Adding this authorization would push the total spend across the causal chain over `max_subtree_quantity` |
 
 > **`INSUFFICIENT_FUNDS` vs `BUDGET_EXHAUSTED`:** These are distinct. `INSUFFICIENT_FUNDS` means the budget has *some* funds remaining but not enough for this request — the agent could retry with a smaller amount. `BUDGET_EXHAUSTED` means the budget has reached its limit and is now in EXHAUSTED status — no further authorizations will pass regardless of amount.
 
