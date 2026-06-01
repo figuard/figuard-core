@@ -4,7 +4,9 @@
 npm install figuard
 ```
 
-All methods are async and return typed responses. The client is isomorphic — it works in Node.js and browser environments.
+All methods are async and return typed responses. The client works in Node.js environments.
+
+> **Never instantiate `FiGuardClient` in a browser environment.** The `apiKey` would be exposed in the JavaScript bundle and visible in network requests to any user. FiGuard is a server-side infrastructure client — keep it in your backend, API routes, or server-side agent code only.
 
 ---
 
