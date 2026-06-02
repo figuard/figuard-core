@@ -183,7 +183,7 @@ A budget issues session tokens. An agent's `authorize` call reserves capacity. E
 
 ---
 
-## The Hard Parts
+## How the Hard Parts Are Solved
 
 The authorize endpoint looks simple — check the balance, write a record. The parts that matter aren't obvious until you've hit them in production:
 
