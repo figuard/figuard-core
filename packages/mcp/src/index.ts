@@ -58,7 +58,7 @@ if (!API_KEY) {
 // FiGuard client (single instance, shared across all tool calls)
 // ---------------------------------------------------------------------------
 
-const client = new FiGuardClient({ apiKey: API_KEY, baseUrl: BASE_URL });
+const client = new FiGuardClient({ apiKey: API_KEY, baseUrl: BASE_URL, userAgent: "figuard-mcp/0.2.0" });
 
 // ---------------------------------------------------------------------------
 // MCP server

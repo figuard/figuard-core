@@ -108,6 +108,13 @@ export interface FiGuardClientOptions {
   /** Per-request timeout in milliseconds (default: 30_000). */
   timeoutMs?: number;
   /**
+   * Override the User-Agent header sent on every request.
+   * Defaults to `figuard-typescript/{version}`.
+   * Set by the MCP server to `figuard-mcp/{version}` so MCP traffic
+   * is distinguishable from direct SDK usage in metrics.
+   */
+  userAgent?: string;
+  /**
    * When `true`, a `FiGuardConnectionError` in `authorize()` returns a synthetic
    * AUTHORIZED result instead of throwing, so agent pipelines keep running when
    * FiGuard is temporarily unreachable.
@@ -321,6 +328,7 @@ export class FiGuardClient {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly _failOpen: boolean;
+  private readonly _userAgent: string;
 
   /**
    * Create a FiGuardClient.
@@ -333,7 +341,7 @@ export class FiGuardClient {
    * When the sandbox fallback is used, a one-time warning is printed to stdout.
    * Suppress it with `FIGUARD_SUPPRESS_SANDBOX_WARNING=1`.
    */
-  constructor({ apiKey, baseUrl, timeoutMs = 30_000, failOpen = false }: FiGuardClientOptions = {}) {
+  constructor({ apiKey, baseUrl, timeoutMs = 30_000, failOpen = false, userAgent }: FiGuardClientOptions = {}) {
     const resolvedKey =
       apiKey ??
       (typeof process !== "undefined" ? process.env["FIGUARD_API_KEY"] : undefined);
@@ -362,6 +370,7 @@ export class FiGuardClient {
     }
     this.timeoutMs = timeoutMs;
     this._failOpen = failOpen;
+    this._userAgent = userAgent ?? "figuard-typescript/0.5.0";
   }
 
   // -------------------------------------------------------------------------
@@ -1371,6 +1380,7 @@ export class FiGuardClient {
               "Content-Type": "application/json",
               Accept: "application/json",
               "X-Agent-Budget-Key": this.apiKey,
+              "User-Agent": this._userAgent,
               ...options.headers,
             },
             body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
