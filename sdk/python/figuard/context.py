@@ -67,6 +67,25 @@ def _set_current_event_id(event_id: Optional[str]) -> None:
     _figuard_event_ctx.set(event_id)
 
 
+def clear_current_event_id() -> None:
+    """
+    Clear the ambient FiGuard event ID for the current execution context.
+
+    Call this at the start of an independent agent or crew member to prevent
+    a stale event ID from a previous agent (or a previous notebook run) from
+    being injected as ``parent_event_id`` into unrelated authorize() calls.
+
+    Typical use in multi-agent notebooks and parallel crews::
+
+        from figuard import clear_current_event_id
+
+        # Each crew member runs in isolation — no shared event chain
+        clear_current_event_id()
+        result = client.authorize(session_token=agent_token, ...)
+    """
+    _figuard_event_ctx.set(None)
+
+
 # ---------------------------------------------------------------------------
 # Scope context manager
 # ---------------------------------------------------------------------------

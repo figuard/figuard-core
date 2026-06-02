@@ -81,7 +81,7 @@ from .models import (
     WebhookDelivery,
     WebhookTestResult,
 )
-from .context import figuard_scope, figuard_run_in_executor, get_current_event_id
+from .context import figuard_scope, figuard_run_in_executor, get_current_event_id, clear_current_event_id
 
 __all__ = [
     "__version__",
@@ -121,6 +121,7 @@ __all__ = [
     "figuard_scope",
     "figuard_run_in_executor",
     "get_current_event_id",
+    "clear_current_event_id",
     # Multi-resource
     "CompositeGuard",
     "GuardedResource",
