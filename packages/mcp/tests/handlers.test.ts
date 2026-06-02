@@ -483,8 +483,8 @@ describe("TOOLS definitions", () => {
     "figuard_get_delegation_token",
   ];
 
-  it("exports exactly 13 tools", () => {
-    expect(TOOLS).toHaveLength(13);
+  it("exports exactly 14 tools", () => {
+    expect(TOOLS).toHaveLength(14);
   });
 
   it("has all expected tool names", () => {
