@@ -90,7 +90,18 @@ python demo.py
 - One logical change per PR — don't bundle unrelated fixes
 - New integrations must include unit tests (see `sdk/python/tests/integrations/` for examples)
 - No internal codenames or planning documents in commits or PR descriptions
-- Tests must pass: `make test` before opening a PR
+- CI runs automatically on every PR — all checks must be green before merging
+
+## CI overview
+
+| When | What runs |
+|---|---|
+| Every PR | Java server tests, TypeScript SDK (typecheck + tests), MCP package (typecheck + tests), Python SDK unit tests (Python 3.9–3.12) |
+| Merge to `main` only | Python SDK live tests (Testcontainers), MCP E2E test (spawns MCP subprocess against live stack) |
+
+Live tests run post-merge only because the Docker build takes ~3–4 minutes — running it on every PR would make review loops slow. If a live test fails on `main`, the committer is notified via GitHub Actions email.
+
+The MCP package has a local symlink dependency on the TypeScript SDK (`../../sdk/typescript`). CI builds the TS SDK first before running MCP tests — if you see `Cannot find module 'figuard'` in CI, this is why.
 
 ---
 

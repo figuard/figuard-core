@@ -11,12 +11,12 @@ bash scripts/check-release.sh
 ```
 
 This script checks:
-- Python SDK local version vs published PyPI version
-- TypeScript SDK local version vs published npm version
 - figuard-notebooks for known anti-patterns (stale method signatures, wrong param names)
 - CHANGELOG has an entry for the version being released
 
-All checks must pass before proceeding.
+> **Note:** The script also checks local SDK versions against PyPI/npm. These checks are no longer meaningful — SDK versions are now stamped from the git tag at publish time, not pre-bumped in source. Ignore any version-mismatch failures from those two checks; treat only the CHANGELOG and notebook checks as blocking.
+
+All blocking checks must pass before proceeding.
 
 ---
 
@@ -25,15 +25,16 @@ All checks must pass before proceeding.
 ### Python SDK (`sdk/python/`)
 - [ ] New API endpoints added in this release have corresponding SDK methods
 - [ ] Method signatures match the API (param names, types)
-- [ ] `pyproject.toml` version bumped appropriately (patch / minor / major)
-- [ ] Published to PyPI: `cd sdk/python && python -m build && twine upload dist/*`
-- [ ] Verify: `pip install figuard==<new-version>` works
+- [ ] **No manual version bump needed** — the publish workflow stamps the version from the git tag at build time
 
 ### TypeScript SDK (`sdk/typescript/`)
 - [ ] Same method coverage check as Python
-- [ ] `package.json` version bumped
-- [ ] Published to npm: `cd sdk/typescript && npm publish`
-- [ ] Verify: `npm install figuard@<new-version>` works
+- [ ] **No manual version bump needed** — stamped from the tag at publish time
+
+### MCP server (`packages/mcp/`)
+- [ ] All tool definitions map to valid API endpoints in this release
+- [ ] Tool input schemas match current API request format
+- [ ] **No manual version bump needed** — stamped from the tag at publish time
 
 ### Java SDK (`sdk/java/`)
 - [ ] If new API endpoints exist — add SDK methods or note them as pending in `sdk/java/README.md`
@@ -49,29 +50,21 @@ All checks must pass before proceeding.
 
 ---
 
-## 4. MCP server
-
-- [ ] All MCP tool definitions map to valid API endpoints in this release
-- [ ] Tool input schemas match current API request format
-- [ ] Tested manually: at least one tool call succeeds end-to-end
-
----
-
-## 5. CHANGELOG
+## 4. CHANGELOG
 
 - [ ] `CHANGELOG.md` has an entry for the new version with a summary of changes
 - [ ] Breaking changes are clearly marked
 
 ---
 
-## 6. CI
+## 5. CI
 
 - [ ] All CI checks are green on `main`
 - [ ] No failing tests
 
 ---
 
-## 7. Cut the release
+## 6. Cut the release
 
 1. Go to **github.com/figuard/figuard-core → Releases → Draft a new release**
 2. Tag: `vX.Y.Z` targeting `main`
@@ -79,11 +72,16 @@ All checks must pass before proceeding.
 4. Paste CHANGELOG entry as release notes
 5. Click **Publish release**
 
-Publishing the release automatically triggers the sandbox rebuild via the `rebuild-sandbox.yml` workflow.
+**What happens automatically on publish:**
+- `publish-python.yml` — stamps `__version__` from the tag, builds a wheel, publishes to PyPI via OIDC trusted publishing (no token needed)
+- `publish-npm.yml` — stamps version in `package.json` for both `figuard` and `figuard-mcp`, publishes both to npm (requires `NPM_TOKEN` secret)
+- `rebuild-sandbox.yml` — triggers a Render redeploy of the sandbox instance
+
+No manual `twine upload` or `npm publish` needed — the tag is the release signal.
 
 ---
 
-## 8. Verify
+## 7. Verify
 
 - [ ] GitHub Actions `rebuild-sandbox` workflow completes successfully
 - [ ] Sandbox is healthy: `curl https://figuard-sandbox-g1ha.onrender.com/api/v1/health`
