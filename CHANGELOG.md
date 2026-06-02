@@ -6,7 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
-## [v1.0.0] — 2026-06-01 — Initial OSS Release
+## [v1.0.0] — 2026-06-02 — Initial OSS Release
 
 ### Core authorization engine
 - Pre-flight spend authorization: `POST /api/v1/authorize` with `X-Session-Token` header
@@ -78,7 +78,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Python SDK (`figuard` on PyPI) — `FiGuardClient` with LangChain, CrewAI, OpenAI Agents, OpenAI function calling, Anthropic tool use integrations
 - TypeScript SDK (`figuard` on npm) — `FiGuardClient` with full type coverage
 - MCP server (`figuard-mcp` on npm) — 14 tools for Claude Code, Cursor, Claude Desktop, Windsurf
-- Java SDK (`io.figuard:figuard-java-sdk`)
+- Java SDK (`io.figuard:figuard-java-sdk:1.0.0`)
 
 ### Infrastructure
 - Pre-built Docker image: `ghcr.io/figuard/figuard-core:latest` (GitHub Container Registry)

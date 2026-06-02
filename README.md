@@ -308,7 +308,7 @@ Interactive API docs: [localhost:8080/swagger-ui](http://localhost:8080/swagger-
 | Python | `pip install figuard` |
 | TypeScript / Node.js | `npm install figuard` |
 | MCP Server | `npx figuard-mcp` |
-| Java | `com.figuard:figuard-sdk:0.3.0` |
+| Java | `com.figuard:figuard-sdk:1.0.0` |
 
 ---
 
@@ -323,7 +323,7 @@ See [ROADMAP.md](ROADMAP.md) for the full list.
 
 ## Versioning
 
-FiGuard is pre-1.0. Patch releases may include breaking changes to the API or SDK. Stable guarantees begin at v1.0.
+FiGuard follows [Semantic Versioning](https://semver.org/). v1.0.0 is the first stable release — the API and SDK interfaces are stable from this version forward.
 
 ---
 
