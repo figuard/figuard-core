@@ -142,10 +142,12 @@ class AsyncFiGuardClient:
         self._api_key = resolved_key or self._SANDBOX_API_KEY
         self._base_url = (resolved_url or self._SANDBOX_BASE_URL).rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout)
+        from . import __version__
         self._default_headers: Dict[str, str] = {
             "X-Agent-Budget-Key": self._api_key,
             "Content-Type": "application/json",
             "Accept": "application/json",
+            "User-Agent": f"figuard-python/{__version__}",
         }
         self._session: Optional[aiohttp.ClientSession] = None
 

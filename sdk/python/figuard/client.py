@@ -151,11 +151,13 @@ class FiGuardClient:
         self._timeout = timeout
         self._fail_open = fail_open
         self._session = requests.Session()
+        from . import __version__
         self._session.headers.update(
             {
                 "X-Agent-Budget-Key": resolved_key,
                 "Content-Type": "application/json",
                 "Accept": "application/json",
+                "User-Agent": f"figuard-python/{__version__}",
             }
         )
 
