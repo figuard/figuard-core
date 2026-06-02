@@ -291,7 +291,7 @@ Response:
 }
 ```
 
-**Post-incident use:** If an agent run caused unexpected spend, use counterfactual replay to test what velocity controls or allocation limits would have intercepted it at which specific event. The `changed: true` entries are your investigation starting points.
+**Post-incident use:** If an agent run caused unexpected spend, use what-if replay to test what velocity controls or allocation limits would have intercepted it at which specific event. The `changed: true` entries are your investigation starting points.
 
 ---
 

@@ -45,7 +45,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Full event replay with projected state snapshots (`GET /budgets/{id}/replay`)
 - Point-in-time state projection (`GET /budgets/{id}/replay/state`)
 - Lightweight timeline (`GET /budgets/{id}/replay/timeline`)
-- Counterfactual analysis — test a hypothetical policy against real history (`POST /budgets/{id}/replay/counterfactual`)
+- What-if analysis — test a hypothetical policy against real history (`POST /budgets/{id}/replay/counterfactual`)
 
 ### Webhooks
 - 10-attempt exponential backoff retry sweep (ShedLock prevents duplicate runs)

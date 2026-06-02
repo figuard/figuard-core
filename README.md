@@ -289,7 +289,7 @@ For production benchmarks, run the self-hosted Docker setup against a local Post
 - [Enforcement Features](docs/enforcement.md) — denial codes, anomaly detection, allocation modes
 - [Fleet Agents & Delegation Tokens](docs/fleet-agents.md)
 - [Handling Denials](docs/denial-handling.md) — per-code recovery strategies, LLM prompt instructions
-- [Audit & Replay](docs/audit-replay.md) — ledger, point-in-time snapshots, timeline, counterfactual
+- [Audit & Replay](docs/audit-replay.md) — ledger, point-in-time snapshots, timeline, what-if analysis
 - [Webhooks](docs/webhooks.md) — event types, registration, signature verification
 - [Observability](docs/integrations/observability.md) — FiGuard spans in Langfuse, Jaeger, Honeycomb, Datadog
 - [TypeScript SDK](docs/typescript-sdk.md)
