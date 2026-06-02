@@ -1,6 +1,7 @@
 {
   "name": "figuard-mcp",
   "version": "0.2.0",
+  "mcpName": "io.github.figuard/figuard-mcp",
   "description": "FiGuard MCP server — use FiGuard from Claude Code, Cursor, or Claude Desktop without writing SDK code",
   "main": "./dist/index.js",
   "bin": {
