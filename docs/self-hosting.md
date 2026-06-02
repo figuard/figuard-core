@@ -128,3 +128,19 @@ location /api/v1/authorize {
 ```
 
 Caddy and Traefik have equivalent rate limiting middleware. Applying stricter limits on `/api/v1/authorize` than on read endpoints is recommended — authorization is the hot path and the most likely target for runaway agents.
+
+### Connection pool and Postgres limits
+
+FiGuard defaults to a Hikari pool of **20 connections per instance** (`maximum-pool-size: 20` in `application.yml`). If you run multiple replicas, the total connection count is `replicas × 20`.
+
+> **Warning:** If `total connections > postgres max_connections`, Spring Boot instances will **fail to start entirely** — they cannot acquire an initial connection from the pool. This is not a graceful degradation; the instance will not serve any requests. Check `max_connections` in your Postgres configuration (default is 100) before scaling out.
+
+```sql
+-- Check current Postgres connection limit
+SHOW max_connections;
+
+-- Check current active connections
+SELECT count(*) FROM pg_stat_activity;
+```
+
+To run 3 replicas with the default pool size (60 connections), Postgres needs `max_connections >= 60` plus headroom for migrations, monitoring, and admin connections. A value of `max_connections = 100` leaves very little margin; set it to at least `replicas × pool_size × 1.5`. Alternatively, reduce `maximum-pool-size` in `application.yml` or use PgBouncer to multiplex connections.

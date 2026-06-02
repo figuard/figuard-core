@@ -4,9 +4,10 @@
 
 | Version | Supported |
 |---------|-----------|
-| latest (main) | ✅ |
+| 1.0.x (latest) | ✅ |
+| < 1.0 | ❌ |
 
-FiGuard is pre-1.0. We patch the main branch. If you are self-hosting, stay current with main or pin a recent release tag.
+We patch the current release branch. If you are self-hosting, pin a release tag and watch the changelog for security fixes.
 
 ---
 

@@ -1,0 +1,16 @@
+<svg width="160" height="40" viewBox="0 0 160 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Mark -->
+  <rect x="2"  y="18" width="5"  height="4"  fill="#4ade80" opacity="0.45"/>
+  <rect x="8"  y="9"  width="3"  height="22" fill="#4ade80"/>
+  <rect x="8"  y="9"  width="7"  height="3"  fill="#4ade80"/>
+  <rect x="8"  y="28" width="7"  height="3"  fill="#4ade80"/>
+  <rect x="15" y="18" width="10" height="4"  fill="#4ade80"/>
+  <rect x="29" y="9"  width="3"  height="22" fill="#4ade80"/>
+  <rect x="25" y="9"  width="7"  height="3"  fill="#4ade80"/>
+  <rect x="25" y="28" width="7"  height="3"  fill="#4ade80"/>
+  <rect x="33" y="18" width="5"  height="4"  fill="#4ade80" opacity="0.45"/>
+
+  <!-- Wordmark -->
+  <text x="46" y="29" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="22" fill="#4ade80" letter-spacing="-0.5">Fi</text>
+  <text x="70" y="29" font-family="Georgia, 'Times New Roman', serif" font-weight="400" font-size="22" fill="#e2e8f0" letter-spacing="-0.4">Guard</text>
+</svg>

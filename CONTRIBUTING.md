@@ -53,7 +53,13 @@ pip install -e ".[dev,langchain,crewai,openai-agents,openai,anthropic]"
 # Unit tests only (no service needed)
 pytest tests/ --ignore=tests/live -q
 
-# Live tests (requires make run first)
+# All Python versions via tox (requires pyenv with 3.9–3.12)
+tox
+
+# Live tests with Testcontainers (auto-spins up the server)
+FIGUARD_USE_TESTCONTAINERS=true tox -e live
+
+# Live tests against a manually running server
 pytest tests/live/ -v
 ```
 
@@ -155,7 +161,7 @@ npm run dev
 figuard-core/
 ├── src/                     # Java Spring Boot service
 │   └── main/
-│       ├── java/io/figuard/
+│       ├── java/com/figuard/
 │       └── resources/
 ├── sdk/
 │   ├── python/

@@ -96,7 +96,7 @@ handler = FiGuardCallbackHandler(
 
 **Handler vs. tool guard — when to use which:**
 
-- `FiGuardCallbackHandler` — attach once to the executor; all tools share the same budget, session token, and category. Right for most single-agent setups.
+- `FiGuardCallbackHandler` — attach once to the executor; all tools share the same budget, session token, and category. Right for most single-agent setups. Thread-safe — internal state is protected by a `threading.Lock`, so it's safe to share a single handler across parallel LangGraph branches.
 - `FiGuardToolGuard` — wrap individual tools when you need different categories or session tokens per tool. The handler is not needed if you use tool guards; they enforce independently.
 
 ```python

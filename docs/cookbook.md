@@ -36,6 +36,8 @@ except Exception as e:
 
 Two concurrent tool calls can both read the same available balance and both get approved. Use a stable idempotency key derived from the request content, not a random UUID, so a retry finds the original result instead of creating a second reservation.
 
+> **Anti-pattern:** `idempotency_key=str(uuid.uuid4())` generates a fresh key on every call — a retry creates a duplicate reservation. Use a key derived from the request content (see `stable_key` below) so retries are idempotent.
+
 ```python
 import hashlib
 

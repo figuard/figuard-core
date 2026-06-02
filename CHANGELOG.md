@@ -6,28 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
-## [Unreleased] — pre-OSS (targeting 2026-06-03)
-
-### Zero-config developer experience
-- `FiGuardClient()` now requires no arguments — resolves: explicit params → `FIGUARD_API_KEY`/`FIGUARD_BASE_URL` env vars → shared public sandbox (`sb_live_demo`)
-- One-time sandbox warning printed to stdout on fallback; suppressable via `FIGUARD_SUPPRESS_SANDBOX_WARNING=1`
-- TypeScript SDK: equivalent zero-config constructor on `FiGuardClient`
-- `auto_guard_langchain(executor, budget=500)` — one-liner: creates client + 24h budget + wires `FiGuardCallbackHandler` onto an `AgentExecutor`
-- `auto_guard_crewai(tool, budget=500)` — one-liner: creates client + 24h budget + wraps tool's `_run` via `FiGuardCrewGuard`
-
-### External events + webhook verification (V24)
-- `POST /api/v1/events/external` — record a spend that already happened outside FiGuard
-- Python: `client.record_external_event()` + static `FiGuardClient.verify_webhook()`
-- TypeScript: `client.recordExternalEvent()` + static `FiGuardClient.verifyWebhook()`
-- V24 migration: `event_source` + `occurred_at` columns on spend_events
-
-### Per-chain spend cap (V23)
-- `chain_root_event_id` + `max_subtree_quantity` on spend_events
-- Subtree cap enforced at authorization time across a causal chain
-
----
-
-## [v1.0.0] — 2026-05-19 — Initial OSS Release
+## [v1.0.0] — 2026-06-01 — Initial OSS Release
 
 ### Core authorization engine
 - Pre-flight spend authorization: `POST /api/v1/authorize` with `X-Session-Token` header
@@ -79,10 +58,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Shareable public receipt URL per budget (`GET /budgets/{id}/receipt`)
 - HTML receipt page — no auth required, 90-day TTL (`GET /receipts/{token}`)
 
+### Zero-config developer experience
+- `FiGuardClient()` requires no arguments — resolves: explicit params → `FIGUARD_API_KEY`/`FIGUARD_BASE_URL` env vars → shared public sandbox (`sb_live_demo`)
+- One-time sandbox warning on fallback; suppressable via `FIGUARD_SUPPRESS_SANDBOX_WARNING=1`
+- TypeScript SDK: equivalent zero-config constructor
+- `auto_guard_langchain(executor, budget=500)` — one-liner: creates client + 24h budget + wires `FiGuardCallbackHandler`
+- `auto_guard_crewai(tool, budget=500)` — one-liner: creates client + 24h budget + wraps tool via `FiGuardCrewGuard`
+
+### External events + fail-open reconciliation
+- `POST /api/v1/events/external` — record a spend that happened outside FiGuard (outage reconciliation)
+- Python: `client.record_external_event()` + static `FiGuardClient.verify_webhook()`
+- TypeScript: `client.recordExternalEvent()` + static `FiGuardClient.verifyWebhook()`
+
+### Per-chain spend cap
+- `chain_root_event_id` + `max_subtree_quantity` on spend events
+- Subtree cap enforced at authorization time across a full causal chain
+
 ### SDKs
-- Python SDK (`figuard` on PyPI) — `FiGuardClient` with LangChain, CrewAI, OpenAI Agents, Anthropic integrations
-- TypeScript SDK (`@figuard/sdk` on npm) — `FiGuardClient` with full type coverage
-- MCP server (`@figuard/mcp`) — 13 tools for Claude and other MCP-compatible agents
+- Python SDK (`figuard` on PyPI) — `FiGuardClient` with LangChain, CrewAI, OpenAI Agents, OpenAI function calling, Anthropic tool use integrations
+- TypeScript SDK (`figuard` on npm) — `FiGuardClient` with full type coverage
+- MCP server (`figuard-mcp` on npm) — 14 tools for Claude Code, Cursor, Claude Desktop, Windsurf
 - Java SDK (`io.figuard:figuard-java-sdk`)
 
 ### Infrastructure

@@ -26,7 +26,7 @@ Session tokens are returned **once** when a budget is created. Store them secure
 |---|---|
 | `BudgetStatus` | `ACTIVE` `PAUSED` `EXHAUSTED` `EXPIRED` `CANCELLED` |
 | `SpendDecision` | `AUTHORIZED` `DENIED` `CONFIRMED` `FAILED` `VOIDED` |
-| `DenialCode` | `INSUFFICIENT_FUNDS` `BUDGET_EXHAUSTED` `BUDGET_PAUSED` `BUDGET_EXPIRED` `BUDGET_CANCELLED` `CURRENCY_MISMATCH` `NO_MATCHING_ALLOCATION` `ALLOCATION_EXHAUSTED` `FORBIDDEN_ITEM_TYPE` `MISSING_CLAIMED_CATEGORY` `EXCEEDS_QUANTITY_LIMIT` `INTENT_SCOPE_VIOLATION` `ANOMALY_DETECTED` `VELOCITY_LIMIT_EXCEEDED` `ENTITY_ALREADY_AUTHORIZED` `DELEGATE_CAP_EXCEEDED` `DELEGATION_TOKEN_REVOKED` `DUPLICATE_REQUEST` `INVALID_PARENT_EVENT` `SUBTREE_CAP_EXCEEDED` |
+| `DenialCode` | `INSUFFICIENT_FUNDS` `BUDGET_EXHAUSTED` `BUDGET_PAUSED` `BUDGET_EXPIRED` `BUDGET_CANCELLED` `CURRENCY_MISMATCH` `NO_MATCHING_ALLOCATION` `ALLOCATION_EXHAUSTED` `FORBIDDEN_ITEM_TYPE` `MISSING_CLAIMED_CATEGORY` `EXCEEDS_QUANTITY_LIMIT` `INTENT_SCOPE_VIOLATION` `ANOMALY_DETECTED` `VELOCITY_LIMIT_EXCEEDED` `ENTITY_ALREADY_AUTHORIZED` `DELEGATE_CAP_EXCEEDED` `DELEGATION_TOKEN_REVOKED` `DUPLICATE_REQUEST` `INVALID_PARENT_EVENT` `SUBTREE_CAP_EXCEEDED` `CAUSAL_CYCLE_DETECTED` `CAUSAL_CHAIN_TOO_DEEP` `ENTITLEMENT_LIMIT_REACHED` `ENTITLEMENT_NOT_FOUND` `SUBSCRIPTION_PAUSED` `SUBSCRIPTION_CANCELLED` |
 | `EnforcementMode` | `OPEN` `CATEGORY_CONSTRAINED` `STRICT` |
 | `FundingOperation` | `CREDIT` `DEBIT` `RESET` `RESET_SPENT` |
 | `AllocationStatus` | `ACTIVE` `EXHAUSTED` |
@@ -561,6 +561,8 @@ Use this when an orchestration job is cancelled or fails mid-run and you want to
 | `404` | Root event not found or not owned by this tenant |
 | `409` | Root event is not in `AUTHORIZED` state |
 | `409` | `VOID_REQUIRES_REFUND` — root or a descendant has `externalTransactionId` set |
+
+> **Tree size limit:** There is no server-enforced depth or node count limit. The traversal is recursive — very deep causal chains (hundreds of levels) will exhaust the Java call stack. For typical agent hierarchies (orchestrator → sub-agents → tool calls, 2–4 levels deep) this is not a concern. If your use case generates deep recursive chains, call `void_event` on leaf nodes first before voiding the root.
 
 Fires a `SPEND_TREE_VOIDED` webhook with the same summary.
 

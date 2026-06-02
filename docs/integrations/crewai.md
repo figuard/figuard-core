@@ -190,6 +190,13 @@ The extractor receives the tool name and the full kwargs dict. Return the spend 
 
 CrewAI supports async execution via `kickoff_async`. Use `AsyncFiGuardClient` and `await` the guard setup:
 
+> **Thread pool context** — When CrewAI runs multiple agents or tasks in parallel (via its internal `ThreadPoolExecutor`), Python `ContextVar` values do not propagate into worker threads. If you are using causal chain tracking (`parent_event_id` propagation), use `figuard_run_in_executor` instead of `loop.run_in_executor` so the context is carried into the worker thread:
+> ```python
+> from figuard import figuard_run_in_executor
+> # ✅ carries parent_event_id into the worker thread
+> await figuard_run_in_executor(process_booking, order_id)
+> ```
+
 ```python
 import asyncio
 from figuard import AsyncFiGuardClient

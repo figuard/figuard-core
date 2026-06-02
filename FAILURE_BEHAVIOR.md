@@ -134,3 +134,35 @@ client.record_external_event(
     event_source="OUTAGE_RECONCILIATION",
 )
 ```
+
+> **Reconciliation limitation:** `record_external_event()` currently has no way to link the post-outage ledger entry to the original `fallback_` event ID. The two records — the synthetic fallback trace and the reconciliation entry — exist independently in the audit log. Cross-referencing them requires matching on `agent_id` + `description` + `occurred_at` in your own data pipeline.
+
+---
+
+## Circuit breaker recommendation
+
+When `fail_open=True`, a prolonged FiGuard outage means spend accumulates without any ledger record for the entire duration. To cap that exposure, wrap the fallback execution path in an application-side circuit breaker:
+
+```python
+# Python — using a simple counter-based breaker
+from figuard import FiGuardClient, FiGuardConnectionError
+
+MAX_CONSECUTIVE_FALLBACKS = 10
+consecutive_fallbacks = 0
+
+def authorize_with_circuit_breaker(client, **kwargs):
+    global consecutive_fallbacks
+    if consecutive_fallbacks >= MAX_CONSECUTIVE_FALLBACKS:
+        raise RuntimeError(
+            f"FiGuard has been unreachable for {consecutive_fallbacks} consecutive calls — "
+            "refusing to proceed without spend controls"
+        )
+    result = client.authorize(**kwargs)
+    if result.is_fallback:
+        consecutive_fallbacks += 1
+    else:
+        consecutive_fallbacks = 0
+    return result
+```
+
+For production use, prefer a library-grade circuit breaker (Python: `pybreaker`; Java: Resilience4j). The key configuration: open the circuit after N consecutive fallbacks, and require explicit reset after FiGuard health recovers — don't silently resume.
