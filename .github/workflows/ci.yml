@@ -55,9 +55,18 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: packages/mcp/package-lock.json
+          cache-dependency-path: |
+            sdk/typescript/package-lock.json
+            packages/mcp/package-lock.json
 
-      - name: Install dependencies
+      # The MCP package-lock resolves 'figuard' as a local symlink to
+      # sdk/typescript. TypeScript needs the compiled dist/ to find types,
+      # so build the SDK before running npm ci in the MCP directory.
+      - name: Install and build TypeScript SDK
+        run: npm ci && npm run build
+        working-directory: sdk/typescript
+
+      - name: Install MCP dependencies
         run: npm ci
         working-directory: packages/mcp
 
@@ -82,6 +91,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Authenticate to Docker Hub to avoid anonymous pull rate limits.
+      # Requires DOCKERHUB_TOKEN secret (Settings → Secrets → Actions).
+      # If the secret is absent the login is skipped and the build may
+      # hit rate limits, but will still succeed on a clean runner cache.
+      - name: Log in to Docker Hub
+        if: secrets.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@v3
+        with:
+          username: figuard
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        continue-on-error: true
+
       - name: Set up Java for Docker build
         uses: actions/setup-java@v4
         with:
@@ -89,8 +110,17 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
+      - name: Set up Docker Buildx (enables layer caching)
+        uses: docker/setup-buildx-action@v3
+
       - name: Build figuard Docker image
-        run: docker build -t figuard:latest .
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: figuard:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Start FiGuard stack
         working-directory: sdk/python
@@ -114,7 +144,13 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: packages/mcp/package-lock.json
+          cache-dependency-path: |
+            sdk/typescript/package-lock.json
+            packages/mcp/package-lock.json
+
+      - name: Install and build TypeScript SDK
+        run: npm ci && npm run build
+        working-directory: sdk/typescript
 
       - name: Install and build MCP
         run: npm ci && npm run build

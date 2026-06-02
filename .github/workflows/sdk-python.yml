@@ -62,6 +62,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: figuard
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        continue-on-error: true
+
       - name: Set up Java for Docker build
         uses: actions/setup-java@v4
         with:
@@ -69,8 +76,17 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
+      - name: Set up Docker Buildx (enables layer caching)
+        uses: docker/setup-buildx-action@v3
+
       - name: Build figuard Docker image
-        run: docker build -t figuard:latest .
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: figuard:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - uses: actions/setup-python@v5
         with:
