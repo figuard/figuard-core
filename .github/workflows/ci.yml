@@ -44,3 +44,90 @@ jobs:
       - name: Run tests
         run: npm test
         working-directory: sdk/typescript
+
+  mcp:
+    name: MCP package tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: packages/mcp/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: packages/mcp
+
+      - name: Type check
+        run: npm run typecheck
+        working-directory: packages/mcp
+
+      - name: Run tests
+        run: npm test
+        working-directory: packages/mcp
+
+  # -----------------------------------------------------------------------
+  # MCP E2E — spawns MCP server subprocess against a live FiGuard stack.
+  # Only runs on push to main (post-merge) — Docker build takes ~4 minutes.
+  # -----------------------------------------------------------------------
+  mcp-e2e:
+    name: MCP E2E test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [server, mcp]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java for Docker build
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build figuard Docker image
+        run: docker build -t figuard:latest .
+
+      - name: Start FiGuard stack
+        working-directory: sdk/python
+        run: |
+          docker compose -f docker-compose.sdk-test.yml up -d
+          echo "Waiting for FiGuard to be healthy..."
+          for i in $(seq 1 36); do
+            if curl -sf http://localhost:18080/actuator/health | grep -q '"status":"UP"'; then
+              echo "FiGuard is up after $((i * 5))s."
+              break
+            fi
+            if [ $i -eq 36 ]; then
+              echo "Timed out waiting for FiGuard."
+              docker compose -f docker-compose.sdk-test.yml logs
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: packages/mcp/package-lock.json
+
+      - name: Install and build MCP
+        run: npm ci && npm run build
+        working-directory: packages/mcp
+
+      - name: Run MCP E2E test
+        working-directory: packages/mcp
+        env:
+          FIGUARD_BASE_URL: http://localhost:18080
+          FIGUARD_API_KEY: fg_live_testkey123
+        run: node e2e-sandbox-test.mjs
+
+      - name: Stop FiGuard stack
+        if: always()
+        working-directory: sdk/python
+        run: docker compose -f docker-compose.sdk-test.yml down -v
