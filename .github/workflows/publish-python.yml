@@ -23,21 +23,15 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Verify the tag version matches what's in pyproject.toml / __init__.py
-      # Prevents publishing a stale version if the version bump was forgotten.
-      - name: Verify version matches tag
-        working-directory: sdk/python
+      # Stamp the version from the tag directly into __init__.py so no
+      # manual version-bump PR is needed before tagging. The file on
+      # main stays as a "last published" marker; the tag is the source
+      # of truth for what actually gets published.
+      - name: Set version from tag
         run: |
-          TAG="${GITHUB_REF_NAME#v}"   # strip leading 'v' from tag
-          PKG=$(python -c "import figuard; print(figuard.__version__)")
-          if [ "$TAG" != "$PKG" ]; then
-            echo "❌ Tag version ($TAG) does not match package version ($PKG)."
-            echo "   Bump the version in sdk/python/figuard/__init__.py before tagging."
-            exit 1
-          fi
-          echo "✓ Version $PKG matches tag $TAG"
-        env:
-          PYTHONPATH: .
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/__version__ = .*/__version__ = \"$VERSION\"/" sdk/python/figuard/__init__.py
+          echo "Publishing version $VERSION"
 
       - name: Install build tools
         run: pip install build
