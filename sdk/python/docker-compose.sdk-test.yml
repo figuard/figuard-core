@@ -1,0 +1,42 @@
+# Ephemeral stack for SDK live tests — no persistent volumes.
+#
+# Used automatically when FIGUARD_USE_TESTCONTAINERS=true or CI=true.
+# The figuard:latest image must be built before running:
+#
+#   docker build -t figuard:latest /path/to/figuard-core
+#
+# This file is NOT a replacement for the main docker-compose.yml.
+# That file is for local development; this file is for SDK test isolation.
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: figuard
+      POSTGRES_USER: figuard
+      POSTGRES_PASSWORD: figuard_local
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U figuard"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  figuard:
+    image: figuard:latest
+    ports:
+      - "18080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/figuard
+      SPRING_DATASOURCE_USERNAME: figuard
+      SPRING_DATASOURCE_PASSWORD: figuard_local
+      WEBHOOK_SECRET_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      FIGUARD_SEED_DEMO_KEY: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s

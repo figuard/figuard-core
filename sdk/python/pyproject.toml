@@ -60,6 +60,7 @@ dev = [
     "aiohttp>=3.9",
     "mypy>=1.9",
     "types-requests>=2.31",
+    "testcontainers[compose]>=4.0",
 ]
 
 [project.urls]

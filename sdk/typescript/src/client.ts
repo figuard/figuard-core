@@ -162,6 +162,13 @@ export interface CreateBudgetOptions {
   entityDedupEnabled?: boolean;
   allocations?: AllocationInput[];
   metadata?: Record<string, unknown>;
+  /**
+   * "SHADOW" — all enforcement checks run but nothing is blocked.
+   * The authorize response includes shadow=true, wouldHaveBeen, and wouldHaveBeenReason.
+   * Flip to "FULL_ENFORCEMENT" via updateBudget() when ready.
+   * Default: "FULL_ENFORCEMENT".
+   */
+  trustMode?: string;
 }
 
 export interface DelegationCapInput {
@@ -383,6 +390,7 @@ export class FiGuardClient {
     if (options.entityDedupEnabled) body["entityDedupEnabled"] = true;
     if (options.allocations !== undefined) body["allocations"] = options.allocations;
     if (options.metadata !== undefined) body["metadata"] = options.metadata;
+    if (options.trustMode !== undefined) body["trustMode"] = options.trustMode;
 
     const data = await this.request("POST", "/api/v1/budgets", { body, retryable: true });
     return makeBudget(data);

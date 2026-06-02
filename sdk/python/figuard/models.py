@@ -67,6 +67,8 @@ class Budget:
     allocations: List[AllocationResponse] = field(default_factory=list)
     cancelled_at: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+    # "SHADOW" or "FULL_ENFORCEMENT". Flip to FULL_ENFORCEMENT via update_budget() when ready.
+    trust_mode: Optional[str] = None
     # List of session tokens — only populated immediately after create_budget().
     # Use primary_token or the session_token convenience shim for the common case.
     tokens: Optional[List[BudgetToken]] = None
@@ -146,6 +148,12 @@ class AuthorizationResult:
     original_event_status: Optional[str] = None
     # True when FiGuard was unreachable and fail_open=True caused a synthetic approval
     is_fallback: bool = False
+    # Shadow mode fields — present only when budget.trust_mode == "SHADOW".
+    # shadow=True means enforcement ran but nothing was blocked.
+    # would_have_been="DENIED" + would_have_been_reason shows what full enforcement would have done.
+    shadow: bool = False
+    would_have_been: Optional[str] = None
+    would_have_been_reason: Optional[str] = None
 
     @property
     def is_authorized(self) -> bool:

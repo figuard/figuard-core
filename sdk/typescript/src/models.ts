@@ -67,6 +67,8 @@ export interface Budget {
   readonly allocations: AllocationResponse[];
   readonly cancelledAt?: string;
   readonly metadata?: Record<string, unknown>;
+  /** "SHADOW" or "FULL_ENFORCEMENT". Flip to FULL_ENFORCEMENT via updateBudget() when ready. */
+  readonly trustMode?: string;
   /**
    * Only present immediately after createBudget(). Null/undefined on all subsequent reads.
    * For simple budgets: one entry with category="default".
@@ -133,6 +135,14 @@ export interface AuthorizationResult {
    * No ledger entry was created. `confirmEvent/failEvent/voidEvent` are no-ops for this eventId.
    */
   readonly isFallback?: boolean;
+  /**
+   * Shadow mode fields — present only when the budget's trustMode is "SHADOW".
+   * shadow=true means enforcement ran but nothing was blocked.
+   * wouldHaveBeen="DENIED" + wouldHaveBeenReason shows what full enforcement would have done.
+   */
+  readonly shadow?: boolean;
+  readonly wouldHaveBeen?: string;
+  readonly wouldHaveBeenReason?: string;
   /**
    * Throw FiGuardDeniedException if denied.
    * Returns this if authorized, enabling fluent chaining:
@@ -329,6 +339,7 @@ export function makeBudget(data: Record<string, unknown>): Budget {
     allocations,
     cancelledAt: (data["cancelledAt"] as string | undefined) ?? undefined,
     metadata: (data["metadata"] as Record<string, unknown> | undefined) ?? undefined,
+    trustMode: (data["trustMode"] as string | undefined) ?? undefined,
     tokens,
     primaryToken: tokens?.[0],
     isActive: status === "ACTIVE",
@@ -370,6 +381,10 @@ export function makeAuthorizationResult(data: Record<string, unknown>): Authoriz
   const approvedQuantity = (data["approvedQuantity"] as number | undefined) ?? undefined;
   const authorizedAt = (data["authorizedAt"] as string | undefined) ?? undefined;
 
+  const shadow = (data["shadow"] as boolean | undefined) ?? false;
+  const wouldHaveBeen = (data["wouldHaveBeen"] as string | undefined) ?? undefined;
+  const wouldHaveBeenReason = (data["wouldHaveBeenReason"] as string | undefined) ?? undefined;
+
   const result: AuthorizationResult = {
     eventId,
     decision,
@@ -382,6 +397,9 @@ export function makeAuthorizationResult(data: Record<string, unknown>): Authoriz
     originalEventId,
     originalEventStatus,
     isAuthorized: decision === "AUTHORIZED",
+    shadow,
+    wouldHaveBeen,
+    wouldHaveBeenReason,
     raiseIfDenied() {
       if (decision !== "AUTHORIZED") {
         throw new FiGuardDeniedException(

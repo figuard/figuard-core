@@ -1,58 +1,138 @@
 """
 Shared fixtures for live integration tests.
 
-Requires a running figuard-core container:
-    make run          # from figuard-core repo root
+Two modes:
 
-Override the URL via environment variable:
-    FIGUARD_URL=http://localhost:8080 pytest tests/live/
+  1. Manual (default):
+         make run          # from figuard-core repo root
+         pytest tests/live/
+     Tests are skipped automatically if the container is not reachable.
+     Override the URL:
+         FIGUARD_URL=http://localhost:8080 pytest tests/live/
 
-Tests are skipped automatically when the container is not reachable.
+  2. Testcontainers (CI / automatic):
+         FIGUARD_USE_TESTCONTAINERS=true pytest tests/live/
+         # or just set CI=true — same effect
+     Spins up a fresh figuard stack using docker-compose.sdk-test.yml,
+     runs all tests, tears down on completion.
+     Requires the figuard:latest image to be built first:
+         docker build -t figuard:latest /path/to/figuard-core
 """
 
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 import requests
 
 from figuard import FiGuardClient
 
-FIGUARD_URL = os.environ.get("FIGUARD_URL", "http://localhost:8080")
+_USE_TESTCONTAINERS = bool(
+    os.environ.get("FIGUARD_USE_TESTCONTAINERS") or os.environ.get("CI")
+)
+_MANUAL_URL = os.environ.get("FIGUARD_URL", "http://localhost:8080")
+_TC_URL = "http://localhost:18080"           # matches port in docker-compose.sdk-test.yml
+_SDK_DIR = Path(__file__).parent.parent.parent   # sdk/python/
+
 DEMO_API_KEY = os.environ.get("FIGUARD_API_KEY", "fg_live_testkey123")
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def _expires_at() -> str:
-    """Return an ISO-8601 timestamp 23 hours from now (within the 24h budget limit)."""
     ts = datetime.now(timezone.utc) + timedelta(hours=23)
     return ts.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _container_is_up() -> bool:
+def _is_healthy(url: str) -> bool:
     try:
-        resp = requests.get(f"{FIGUARD_URL}/actuator/health", timeout=3)
-        return resp.status_code == 200
+        return requests.get(f"{url}/actuator/health", timeout=3).status_code == 200
     except Exception:
         return False
 
 
-# Module-level skip: applied to every test in the live/ directory
+def _wait_for_health(url: str, timeout: int = 180, interval: int = 5) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if _is_healthy(url):
+            return True
+        time.sleep(interval)
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Session-scoped stack fixture
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def figuard_url() -> str:
+    return _TC_URL if _USE_TESTCONTAINERS else _MANUAL_URL
+
+
+@pytest.fixture(scope="session", autouse=True)
+def figuard_stack(figuard_url: str):
+    """
+    Ensures a figuard stack is running for the duration of the test session.
+
+    Testcontainers mode (FIGUARD_USE_TESTCONTAINERS=true or CI=true):
+      - Spins up postgres + figuard via docker-compose.sdk-test.yml
+      - Waits for the health endpoint to return 200
+      - Tears down after all tests complete
+      - Requires: docker, figuard:latest image
+
+    Manual mode (default):
+      - Checks that the stack is reachable at FIGUARD_URL
+      - Skips all live tests if it is not
+    """
+    if _USE_TESTCONTAINERS:
+        from testcontainers.compose import DockerCompose
+
+        compose = DockerCompose(
+            str(_SDK_DIR),
+            compose_file_name="docker-compose.sdk-test.yml",
+        )
+        compose.start()
+        try:
+            if not _wait_for_health(_TC_URL, timeout=180):
+                pytest.skip(
+                    "figuard stack (Testcontainers) did not become healthy within 3 minutes — "
+                    "check that figuard:latest image is built"
+                )
+            yield
+        finally:
+            compose.stop()
+    else:
+        if not _is_healthy(_MANUAL_URL):
+            pytest.skip(
+                f"figuard container not reachable at {_MANUAL_URL} — "
+                "run `make run` first, or set FIGUARD_USE_TESTCONTAINERS=true"
+            )
+        yield
+
+
+# Fallback: mark individual test items as skipped when running without the autouse fixture
 def pytest_collection_modifyitems(config, items):
-    if not _container_is_up():
+    if not _USE_TESTCONTAINERS and not _is_healthy(_MANUAL_URL):
         skip = pytest.mark.skip(
-            reason=f"figuard container not reachable at {FIGUARD_URL} — run `make run` first"
+            reason=(
+                f"figuard container not reachable at {_MANUAL_URL} — "
+                "run `make run` first, or set FIGUARD_USE_TESTCONTAINERS=true"
+            )
         )
         for item in items:
             if "live" in str(item.fspath):
                 item.add_marker(skip)
 
 
-@pytest.fixture(scope="session")
-def figuard_url() -> str:
-    return FIGUARD_URL
-
+# ---------------------------------------------------------------------------
+# Test fixtures
+# ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="session")
 def api_key() -> str:
@@ -67,18 +147,17 @@ def client(figuard_url: str, api_key: str) -> FiGuardClient:
 @pytest.fixture
 def flat_budget(client: FiGuardClient):
     """A flat (no-allocation) $500 budget for general spend tests."""
-    budget = client.create_budget(
+    return client.create_budget(
         user_id="live_test_user",
         total_limit=500.00,
         expires_at=_expires_at(),
     )
-    return budget
 
 
 @pytest.fixture
 def allocated_budget(client: FiGuardClient):
     """A $400 budget with flight ($300) and hotel ($100) allocations."""
-    budget = client.create_budget(
+    return client.create_budget(
         user_id="live_test_user",
         total_limit=400.00,
         expires_at=_expires_at(),
@@ -97,15 +176,13 @@ def allocated_budget(client: FiGuardClient):
             },
         ],
     )
-    return budget
 
 
 @pytest.fixture
 def tiny_budget(client: FiGuardClient):
     """A $10 budget — useful for triggering INSUFFICIENT_FUNDS."""
-    budget = client.create_budget(
+    return client.create_budget(
         user_id="live_test_user",
         total_limit=10.00,
         expires_at=_expires_at(),
     )
-    return budget

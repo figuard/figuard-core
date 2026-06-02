@@ -185,6 +185,7 @@ class FiGuardClient:
         entity_dedup_enabled: bool = False,
         allocations: Optional[List[Dict[str, Any]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        trust_mode: Optional[str] = None,
     ) -> Budget:
         """
         Create a new agent budget.
@@ -205,6 +206,11 @@ class FiGuardClient:
         :param entity_dedup_enabled: If True, a second authorize with the same
             ``entity_id`` is denied with ENTITY_ALREADY_AUTHORIZED instead of
             creating a new event. Use to prevent double-refund on the same order.
+        :param trust_mode: ``"SHADOW"`` — all enforcement checks run but nothing is blocked.
+            The authorize response includes ``shadow=True``, ``would_have_been``, and
+            ``would_have_been_reason`` so you can see what would have been denied.
+            Flip to ``"FULL_ENFORCEMENT"`` via ``update_budget()`` when ready.
+            Default: ``"FULL_ENFORCEMENT"``.
 
         :param expires_at: Absolute ISO 8601 expiry timestamp (e.g. ``"2026-12-31T23:59:59Z"``).
             Mutually exclusive with ``expires_in``.
@@ -250,6 +256,8 @@ class FiGuardClient:
             body["allocations"] = allocations
         if metadata is not None:
             body["metadata"] = metadata
+        if trust_mode is not None:
+            body["trustMode"] = trust_mode
 
         data = self._request("POST", "/api/v1/budgets", json=body, retryable=True)
         return _parse_budget(data)
@@ -1715,6 +1723,7 @@ def _parse_budget(data: Dict[str, Any]) -> Budget:
         cancelled_at=data.get("cancelledAt"),
         metadata=data.get("metadata"),
         tokens=tokens,
+        trust_mode=data.get("trustMode"),
     )
 
 
@@ -1751,6 +1760,9 @@ def _parse_authorization_result(data: Dict[str, Any]) -> AuthorizationResult:
         denial_message=data.get("denialMessage"),
         original_event_id=data.get("originalEventId"),
         original_event_status=data.get("originalEventStatus"),
+        shadow=bool(data.get("shadow", False)),
+        would_have_been=_str(data.get("wouldHaveBeen")),
+        would_have_been_reason=_str(data.get("wouldHaveBeenReason")),
     )
 
 
