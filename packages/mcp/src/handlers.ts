@@ -56,7 +56,7 @@ export async function handleCreateBudget(client: FiGuardClient, args: Args): Pro
     velocityMaxPerMinute: optNum(args, "velocity_max_per_minute"),
     velocityMaxAmountPerHour: optNum(args, "velocity_max_amount_per_hour"),
     velocityMaxPerDay: optNum(args, "velocity_max_per_day"),
-    allocations: (args["allocations"] as Array<Record<string, unknown>> | undefined)?.map(a => ({
+    allocations: (args["allocations"] as Array<Record<string, unknown>> | undefined)?.map((a: Record<string, unknown>) => ({
       category: a["category"] as string,
       limit: a["limit"] as number,
       enforcementMode: (a["enforcement_mode"] ?? a["enforcementMode"]) as "OPEN" | "CATEGORY_CONSTRAINED" | "STRICT" | "SOFT" | undefined,
