@@ -159,7 +159,7 @@ jobs:
         working-directory: packages/mcp
         env:
           FIGUARD_BASE_URL: http://localhost:18080
-          FIGUARD_API_KEY: fg_live_testkey123
+          FIGUARD_API_KEY: fg_live_demo
         run: node e2e-sandbox-test.mjs
 
       - name: Stop FiGuard stack

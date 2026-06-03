@@ -38,7 +38,7 @@ _MANUAL_URL = os.environ.get("FIGUARD_URL", "http://localhost:8080")
 _TC_URL = "http://localhost:18080"           # matches port in docker-compose.sdk-test.yml
 _SDK_DIR = Path(__file__).parent.parent.parent   # sdk/python/
 
-DEMO_API_KEY = os.environ.get("FIGUARD_API_KEY", "fg_live_testkey123")
+DEMO_API_KEY = os.environ.get("FIGUARD_API_KEY", "fg_live_demo")
 
 
 # ---------------------------------------------------------------------------

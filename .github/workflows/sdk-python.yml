@@ -99,4 +99,4 @@ jobs:
         run: tox -e live
         working-directory: sdk/python
         env:
-          FIGUARD_API_KEY: fg_live_testkey123
+          FIGUARD_API_KEY: fg_live_demo
