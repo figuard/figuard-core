@@ -432,9 +432,9 @@ export const TOOLS = [
   {
     name: "figuard_cancel_batch",
     description:
-      "Cancel up to 100 budgets in a single call. " +
-      "Already-terminal budgets (EXPIRED, CANCELLED, EXHAUSTED) are included in the response without an error — the call is idempotent per budget. " +
-      "Use this for bulk teardown of agent sessions (e.g. cancel all budgets for a deactivated user or a completed workflow).",
+      "Cancel one or more budgets. Use this to cancel a single budget (pass one ID) or up to 100 at once. " +
+      "This is the correct tool when the user asks to cancel, close, void, or abandon a budget — not figuard_void (which only cancels individual spend events, not budgets). " +
+      "Already-terminal budgets (EXPIRED, CANCELLED, EXHAUSTED) are included in the response without an error — the call is idempotent per budget.",
     inputSchema: {
       type: "object",
       properties: {
