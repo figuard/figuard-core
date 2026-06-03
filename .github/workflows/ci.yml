@@ -96,7 +96,6 @@ jobs:
       # If the secret is absent the login is skipped and the build may
       # hit rate limits, but will still succeed on a clean runner cache.
       - name: Log in to Docker Hub
-        if: secrets.DOCKERHUB_TOKEN != ''
         uses: docker/login-action@v3
         with:
           username: figuard
