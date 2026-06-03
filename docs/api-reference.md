@@ -223,7 +223,7 @@ Resume a `PAUSED` budget. Returns `409` if the budget is not currently paused.
 ```jsonc
 {
   "overrideReason": "False positive — reviewed and cleared", // required
-  "overrideBy": "sai@company.com"    // optional — who approved the resume
+  "overrideBy": "ops-team@company.com"    // optional — who approved the resume
 }
 ```
 

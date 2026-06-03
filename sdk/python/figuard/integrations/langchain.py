@@ -376,9 +376,8 @@ class FiGuardCallbackHandler(BaseCallbackHandler):
 
         metadata = kwargs.get("metadata") or {}
         metadata_agent_id: Optional[str] = metadata.get("agent_id") if isinstance(metadata, dict) else None
-        # Use the run_id as agentId — it uniquely identifies this execution unit
-        # in the LangChain call graph and maps directly to FiGuard's agentId field.
-        effective_agent_id = metadata_agent_id or str(run_id)
+        # Resolution order: per-call metadata → handler default → run_id fallback
+        effective_agent_id = metadata_agent_id or self._agent_id or str(run_id)
 
         token = self._get_token(metadata_agent_id)
         parsed = _parse_input(input_str)
