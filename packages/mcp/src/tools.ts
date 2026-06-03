@@ -76,7 +76,7 @@ export const TOOLS = [
         },
         allocations: {
           type: "array",
-          description: "Optional category-level budget caps. Use to split the total limit across categories (e.g. $300 for flights, $200 for hotels). IMPORTANT: the sum of all allocation limits MUST equal total_limit exactly. Example: total_limit=500, allocations=[{flights: 300}, {hotels: 200}] — 300+200=500 ✓. If the user specifies allocations that don't sum to total_limit, adjust total_limit or add a remainder allocation before calling this tool.",
+          description: "Optional category-level caps. Each allocation is an independent maximum — flights capped at $300 means flights can never exceed $300, regardless of what other categories spend. Allocation limits must not exceed total_limit but do not need to sum to it — the remainder is a shared pool. Example: total_limit=1000, allocations=[{flights: 500}, {hotels: 200}] — valid, $300 remains as unallocated headroom.",
           items: {
             type: "object",
             properties: {
