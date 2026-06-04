@@ -1,0 +1,37 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.figuard/figuard-mcp",
+  "description": "Pre-flight spend authorization for AI agents. Set a budget, enforce limits, audit every decision.",
+  "repository": {
+    "url": "https://github.com/figuard/figuard-core",
+    "source": "github",
+    "subfolder": "packages/mcp"
+  },
+  "version": "1.0.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "figuard-mcp",
+      "version": "1.0.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "FIGUARD_API_KEY",
+          "description": "Your FiGuard API key. Leave unset to use the shared public sandbox — no account needed to try it.",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "FIGUARD_BASE_URL",
+          "description": "Your FiGuard server URL. Leave unset to use the shared public sandbox.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
