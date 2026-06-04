@@ -7,7 +7,7 @@ description: Pre-flight spend authorization for LangChain agents. Set a budget, 
 
 [FiGuard](https://github.com/figuard/figuard-core) is a pre-flight spend authorization layer for LangChain agents. Before a tool call executes, FiGuard checks whether the agent is allowed to make that spend and blocks it if not.
 
-The authorization decision — AUTHORIZED or DENIED with a structured reason — becomes the tool result. The LLM receives it in the same stream as any other tool output and can adapt its plan.
+The authorization decision (AUTHORIZED or DENIED with a structured reason) becomes the tool result. The LLM receives it in the same stream as any other tool output and can adapt its plan.
 
 ## Why
 
@@ -17,16 +17,16 @@ Common failure modes FiGuard prevents:
 
 - **Duplicate charges on retry**: agent times out waiting for a response, retries, the first call already went through. FiGuard's idempotency key catches the retry and returns the original authorization instead of creating a second one.
 - **Concurrent overspend**: two agents share a budget, both see "$400 available", both get approved at the same time. FiGuard uses pessimistic locking so only one reservation can land at a time.
-- **Runaway loops**: agent hits an ambiguous query, runs 30 iterations. FiGuard stops it when the budget is exhausted — before the bill arrives.
+- **Runaway loops**: agent hits an ambiguous query, runs 30 iterations. FiGuard stops it when the budget is exhausted, before the bill arrives.
 - **Fleet attribution loss**: supervisor routes through 3 sub-agents, no per-agent caps. FiGuard delegation tokens give each sub-agent its own limit without changing any agent code.
 
 ## How it works
 
 FiGuard uses a reserve-then-confirm model:
 
-1. `on_tool_start` calls `authorize()` — checks the budget and reserves the requested amount
-2. `on_tool_end` calls `confirm_event()` — settles the actual cost (may differ from the reserved amount)
-3. `on_tool_error` calls `fail_event()` — releases the reservation if the tool fails
+1. `on_tool_start` calls `authorize()`, which checks the budget and reserves the requested amount
+2. `on_tool_end` calls `confirm_event()`, which settles the actual cost (may differ from the reserved amount)
+3. `on_tool_error` calls `fail_event()`, which releases the reservation if the tool fails
 
 The reservation prevents two concurrent tools from both seeing "$200 available" and both getting approved when only $200 is left.
 
@@ -176,7 +176,7 @@ Each sub-agent uses its delegation token exactly like a regular session token. F
 
 ## OTEL tracing
 
-FiGuard emits OpenTelemetry spans for every authorization decision. Install the optional dependency and configure your OTEL provider — FiGuard picks it up automatically:
+FiGuard emits OpenTelemetry spans for every authorization decision. Install the optional dependency and configure your OTEL provider. FiGuard picks it up automatically:
 
 ```shell
 pip install figuard[opentelemetry]
@@ -196,7 +196,7 @@ trace.set_tracer_provider(provider)
 # in Langfuse, Jaeger, Honeycomb, Datadog, or any OTEL-compatible backend
 ```
 
-A denied hotel booking appears as an `ERROR` span nested inside the tool call span — in the same trace as the LLM that triggered it.
+A denied hotel booking appears as an `ERROR` span nested inside the tool call span, in the same trace as the LLM that triggered it.
 
 ## Additional resources
 
