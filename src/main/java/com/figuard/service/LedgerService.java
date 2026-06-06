@@ -80,9 +80,9 @@ public class LedgerService {
             .map(this::buildNode)
             .toList();
 
-        // Roll up totals across all nodes in the tree
-        BigDecimal totalAuthorized = sumDecision(roots, SpendDecision.AUTHORIZED, SpendDecision.CONFIRMED);
-        BigDecimal totalConfirmed  = sumDecision(roots, SpendDecision.CONFIRMED);
+        // Roll up totals across all nodes in the tree (recursive — roots-only was a bug)
+        BigDecimal totalAuthorized = sumNodeDecision(rootNodes, SpendDecision.AUTHORIZED, SpendDecision.CONFIRMED);
+        BigDecimal totalConfirmed  = sumNodeDecision(rootNodes, SpendDecision.CONFIRMED);
         int totalEvents            = countAllEvents(rootNodes);
 
         return SpendTreeResponse.builder()
@@ -144,12 +144,22 @@ public class LedgerService {
         return budget;
     }
 
-    private BigDecimal sumDecision(List<SpendEvent> events, SpendDecision... decisions) {
+    private BigDecimal sumNodeDecision(List<SpendTreeNode> nodes, SpendDecision... decisions) {
         List<SpendDecision> target = List.of(decisions);
-        return events.stream()
-            .filter(e -> target.contains(e.getDecision()))
-            .map(SpendEvent::getRequestedQuantity)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal sum = BigDecimal.ZERO;
+        for (SpendTreeNode node : nodes) {
+            if (target.contains(node.getDecision())) {
+                BigDecimal amount = node.getDecision() == SpendDecision.CONFIRMED
+                        && node.getConfirmedQuantity() != null
+                    ? node.getConfirmedQuantity()
+                    : node.getRequestedQuantity();
+                sum = sum.add(amount);
+            }
+            if (node.getChildren() != null) {
+                sum = sum.add(sumNodeDecision(node.getChildren(), decisions));
+            }
+        }
+        return sum;
     }
 
     private int countAllEvents(List<SpendTreeNode> nodes) {
