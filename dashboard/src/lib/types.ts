@@ -153,6 +153,7 @@ export interface SpendTreeNodeResponse {
   intentContext: string | null;
   idempotencyKey: string | null;
   denialReason: DenialCode | null;
+  denialMessage: string | null;
   failureReason: string | null;
   parentEventId: string | null;
   chainRootEventId: string | null;

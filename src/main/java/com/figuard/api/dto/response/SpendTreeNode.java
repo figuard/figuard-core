@@ -37,6 +37,7 @@ public class SpendTreeNode {
     private String intentContext;
     private String idempotencyKey;
     private DenialCode denialReason;
+    private String denialMessage;
     private String failureReason;
     private UUID parentEventId;
     private UUID chainRootEventId;

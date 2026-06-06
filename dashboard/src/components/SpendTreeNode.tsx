@@ -30,7 +30,6 @@ function NodeCard({
 
   const isDenied = node.decision === "DENIED";
   const isFailed = node.decision === "FAILED";
-  // CONFIRMED nodes show the actual confirmed amount; all others show requested.
   const displayAmount =
     node.decision === "CONFIRMED" && node.confirmedQuantity != null
       ? fmt(node.confirmedQuantity)
@@ -38,13 +37,14 @@ function NodeCard({
 
   return (
     <div
-      className={`w-56 rounded-xl border bg-white shadow-sm select-none
+      className={`w-64 rounded-xl border bg-white shadow-sm select-none
         ${isRoot ? "border-gray-400 shadow-md" : "border-gray-200"}
       `}
     >
-      {/* Top bar: decision badge (always) + denial reason OR amount */}
+      {/* Top bar: decision badge + amount (non-denied) */}
       <div
-        className={`flex items-center justify-between px-3 py-2 rounded-t-xl border-b border-gray-100
+        className={`flex items-center justify-between px-3 py-2 rounded-t-xl
+          ${(isDenied || isFailed) ? "" : "border-b border-gray-100"}
           ${isRoot ? "bg-gray-50" : "bg-white"}
         `}
       >
@@ -52,28 +52,35 @@ function NodeCard({
           <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
           {node.decision}
         </span>
-
-        {/* DENIED: show denial reason as the primary secondary info */}
-        {isDenied && node.denialReason ? (
-          <span
-            className="text-xs font-mono text-red-500 truncate max-w-[120px]"
-            title={node.denialReason}
-          >
-            {node.denialReason}
-          </span>
-        ) : isFailed && node.failureReason ? (
-          <span
-            className="text-xs font-mono text-orange-500 truncate max-w-[120px]"
-            title={node.failureReason}
-          >
-            {node.failureReason}
-          </span>
-        ) : (
+        {!isDenied && !isFailed && (
           <span className="text-sm font-semibold tabular-nums text-gray-900">
             {displayAmount}
           </span>
         )}
       </div>
+
+      {/* DENIED: full-width reason + policy context */}
+      {isDenied && node.denialReason && (
+        <div className="px-3 pt-1 pb-2 border-b border-gray-100">
+          <p className="text-xs font-mono font-semibold text-red-600 break-all leading-snug">
+            {node.denialReason}
+          </p>
+          {node.denialMessage && (
+            <p className="text-xs text-gray-400 mt-1 leading-snug">
+              {node.denialMessage}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* FAILED: full-width reason + policy context */}
+      {isFailed && node.failureReason && (
+        <div className="px-3 pt-1 pb-2 border-b border-gray-100">
+          <p className="text-xs font-mono font-semibold text-orange-600 break-all leading-snug">
+            {node.failureReason}
+          </p>
+        </div>
+      )}
 
       {/* Body */}
       <div className="px-3 py-2 space-y-1">
@@ -85,7 +92,6 @@ function NodeCard({
             {node.description}
           </p>
         )}
-        {/* DENIED: show requested amount as secondary info in body */}
         {isDenied && (
           <p className="text-xs text-gray-400 tabular-nums">
             requested {fmt(node.requestedQuantity)}
@@ -93,7 +99,7 @@ function NodeCard({
         )}
         <div className="flex items-center justify-between pt-0.5">
           {node.claimedCategory ? (
-            <span className="text-xs bg-blue-50 text-blue-600 rounded px-1.5 py-0.5 truncate max-w-[100px]">
+            <span className="text-xs bg-blue-50 text-blue-600 rounded px-1.5 py-0.5 truncate max-w-[110px]">
               {node.claimedCategory}
             </span>
           ) : (

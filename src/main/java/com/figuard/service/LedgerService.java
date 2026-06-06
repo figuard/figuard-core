@@ -122,6 +122,7 @@ public class LedgerService {
             .idempotencyKey(event.getIdempotencyKey())
             .denialReason(event.getDenialReason() != null
                 ? DenialCode.valueOf(event.getDenialReason()) : null)
+            .denialMessage(event.getDenialMessage())
             .failureReason(event.getFailureReason())
             .parentEventId(event.getParentEvent() != null ? event.getParentEvent().getId() : null)
             .chainRootEventId(event.getChainRootEventId())
