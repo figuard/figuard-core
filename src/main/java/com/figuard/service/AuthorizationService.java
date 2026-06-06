@@ -703,12 +703,18 @@ public class AuthorizationService {
                                                AuthorizeSpendRequest request,
                                                BigDecimal baselineMean,
                                                BigDecimal threshold) {
-        SpendEvent event = buildEvent(budget, null, request, null,
+        SpendEvent parentEvent = resolveParentForDenial(request, budget.getId());
+        SpendEvent event = buildEvent(budget, null, request, parentEvent,
             SpendDecision.DENIED, DenialCode.ANOMALY_DETECTED.name(),
             "requestedQuantity " + request.getRequestedQuantity()
                 + " exceeds anomaly threshold of " + threshold
                 + " (mean=" + baselineMean + ")", null, null);
         SpendEvent saved = spendEventRepository.save(event);
+
+        if (parentEvent == null) {
+            saved.setChainRootEventId(saved.getId());
+            saved = spendEventRepository.save(saved);
+        }
 
         UUID tenantId = budget.getTenant().getId();
 
@@ -865,9 +871,11 @@ public class AuthorizationService {
                                                  DelegatedToken delegatedToken,
                                                  OffsetDateTime dedupCutoff,
                                                  String violatedLimit) {
+        SpendEvent parentEvent = resolveParentForDenial(request, budget.getId());
+
         // Dry-run: phantom event, no write, no webhook
         if (request.isDryRun()) {
-            SpendEvent phantom = buildEvent(budget, null, request, null,
+            SpendEvent phantom = buildEvent(budget, null, request, parentEvent,
                 SpendDecision.DENIED, DenialCode.VELOCITY_LIMIT_EXCEEDED.name(),
                 "Velocity limit violated: " + violatedLimit, null, delegatedToken);
             log.info("DRY_RUN VELOCITY_DENIED: budgetId={} limit={}", budget.getId(), violatedLimit);
@@ -886,10 +894,16 @@ public class AuthorizationService {
         }
 
         // First violation in this window: write the event and fire the webhook.
-        SpendEvent event = buildEvent(budget, null, request, null,
+        SpendEvent event = buildEvent(budget, null, request, parentEvent,
             SpendDecision.DENIED, DenialCode.VELOCITY_LIMIT_EXCEEDED.name(),
             "Velocity limit violated: " + violatedLimit, null, delegatedToken);
         SpendEvent saved = spendEventRepository.save(event);
+
+        // Root velocity denials (no parent) self-reference chainRootEventId.
+        if (parentEvent == null) {
+            saved.setChainRootEventId(saved.getId());
+            saved = spendEventRepository.save(saved);
+        }
 
         log.warn("VELOCITY_LIMIT_EXCEEDED: budgetId={} limit={} key={}",
             budget.getId(), violatedLimit, request.getIdempotencyKey());
@@ -909,6 +923,19 @@ public class AuthorizationService {
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Soft parent lookup used by early denial paths (velocity, anomaly) that fire before
+     * Step 8 parent validation. Returns null silently if the ID is absent, the event
+     * doesn't exist, or belongs to a different budget — the denial is recorded regardless,
+     * but with a parent link when one can be resolved.
+     */
+    private SpendEvent resolveParentForDenial(AuthorizeSpendRequest request, UUID budgetId) {
+        if (request.getParentEventId() == null) return null;
+        return spendEventRepository.findById(request.getParentEventId())
+            .filter(p -> p.getBudget().getId().equals(budgetId))
+            .orElse(null);
+    }
 
     private SpendEvent validateParentEvent(UUID parentEventId, UUID budgetId) {
         SpendEvent parent = spendEventRepository.findById(parentEventId)

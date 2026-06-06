@@ -150,6 +150,70 @@ class SpendTreeIT extends IntegrationTestBase {
             .andExpect(status().isNotFound());
     }
 
+    @Test
+    void tree_velocityDenied_withParentEventId_appearsAsChild() throws Exception {
+        // Velocity limit of 2: first two calls authorized, third denied.
+        // The denied call passes parentEventId — it must appear as a child of the root,
+        // not as a disconnected root node.
+        Map<String, Object> budgetBody = Map.of(
+            "userId", "user_velocity_tree",
+            "totalLimit", 500.00,
+            "currency", "USD",
+            "velocityMaxPerMinute", 2,
+            "expiresAt", OffsetDateTime.now().plusHours(2)
+                .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+        );
+        String budgetResponse = mockMvc.perform(post("/api/v1/budgets")
+                .header("X-Agent-Budget-Key", TEST_API_KEY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(budgetBody)))
+            .andExpect(status().isCreated())
+            .andReturn().getResponse().getContentAsString();
+
+        JsonNode budgetJson = objectMapper.readTree(budgetResponse);
+        String budgetId = budgetJson.get("id").asText();
+        String sessionToken = budgetJson.get("tokens").get(0).get("sessionToken").asText();
+
+        // Event 1 — root, authorized
+        String rootId = authorize(sessionToken, "10.00", null);
+
+        // Event 2 — child, authorized (velocity count: 2, at limit)
+        authorize(sessionToken, "10.00", rootId);
+
+        // Event 3 — velocity denied, submits parentEventId = rootId
+        var deniedBody = new java.util.LinkedHashMap<String, Object>();
+        deniedBody.put("agentId", "searcher");
+        deniedBody.put("actionType", "web_search");
+        deniedBody.put("description", "search #3 — velocity denial");
+        deniedBody.put("requestedQuantity", 10.00);
+        deniedBody.put("currency", "USD");
+        deniedBody.put("idempotencyKey", UUID.randomUUID().toString());
+        deniedBody.put("parentEventId", rootId);
+
+        String deniedResponse = mockMvc.perform(post("/api/v1/authorize")
+                .header("X-Session-Token", sessionToken)
+                .header("X-Agent-Budget-Key", TEST_API_KEY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(deniedBody)))
+            .andReturn().getResponse().getContentAsString();
+
+        String deniedEventId = objectMapper.readTree(deniedResponse).get("eventId").asText();
+        assertThat(objectMapper.readTree(deniedResponse).get("decision").asText()).isEqualTo("DENIED");
+
+        // Tree must have 1 root with 2 children (authorized child + velocity-denied child)
+        mockMvc.perform(get("/api/v1/budgets/{id}/tree", budgetId)
+                .header("X-Agent-Budget-Key", TEST_API_KEY))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.roots", hasSize(1)))
+            .andExpect(jsonPath("$.roots[0].id").value(rootId))
+            .andExpect(jsonPath("$.roots[0].children", hasSize(2)))
+            // One of the children must be the velocity-denied event
+            .andExpect(jsonPath("$.roots[0].children[?(@.id == '" + deniedEventId + "')].decision")
+                .value(hasItem("DENIED")))
+            .andExpect(jsonPath("$.roots[0].children[?(@.id == '" + deniedEventId + "')].denialReason")
+                .value(hasItem("VELOCITY_LIMIT_EXCEEDED")));
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
