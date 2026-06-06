@@ -766,7 +766,8 @@ class AuthorizationServiceTest {
         assertThat(response.getDenialReason()).isEqualTo(DenialCode.VELOCITY_LIMIT_EXCEEDED);
         // Webhook must fire for first violation
         verify(webhookDispatcher).dispatch(eq(tenant.getId()), eq(WebhookEventType.VELOCITY_LIMIT_EXCEEDED), any());
-        verify(spendEventRepository).save(any());
+        // Two saves: initial event write + chainRootEventId self-reference patch (root denial)
+        verify(spendEventRepository, times(2)).save(any());
     }
 
     @Test
