@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "figuard-langchain"
+version = "1.1.0"
+description = "FiGuard pre-flight spend authorization for LangChain agents"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.9"
+keywords = ["langchain", "ai-agents", "spend-control", "budget-enforcement", "guardrails"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "figuard[langchain]>=1.1.0",
+]
+
+[project.urls]
+Homepage = "https://figuard.io"
+Repository = "https://github.com/figuard/figuard-core"
+Documentation = "https://figuard.io/docs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["figuard_langchain"]
