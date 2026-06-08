@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 1.1.0). Defaults to package.json version."
+        required: false
+        default: ""
 
 jobs:
   # -------------------------------------------------------------------------
@@ -30,8 +36,9 @@ jobs:
       - name: Set version from tag
         working-directory: sdk/typescript
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          npm version "$VERSION" --no-git-tag-version
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then VERSION="${GITHUB_REF_NAME#v}"; fi
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
           echo "Publishing version $VERSION"
 
       - name: Install dependencies
@@ -77,14 +84,15 @@ jobs:
         id: check
         working-directory: packages/mcp
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then VERSION="${GITHUB_REF_NAME#v}"; fi
           NAME=$(node -p "require('./package.json').name")
           if npm view "$NAME@$VERSION" version &>/dev/null; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "ℹ️ $NAME@$VERSION already on npm — skipping."
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
-            npm version "$VERSION" --no-git-tag-version
+            npm version "$VERSION" --no-git-tag-version --allow-same-version
             echo "✓ Will publish $NAME@$VERSION"
           fi
 
