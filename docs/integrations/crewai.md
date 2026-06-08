@@ -12,6 +12,23 @@ pip install "figuard[crewai]" crewai crewai-tools
 
 ---
 
+## The one-liner
+
+The fastest way to guard a CrewAI tool:
+
+```python
+from figuard import auto_guard_crewai
+
+auto_guard_crewai(my_tool, budget=500, velocity_max_per_minute=10)
+# pass the same tool to your Agent as normal
+```
+
+That's the on-ramp — it creates a budget and wraps the tool's `_run` in place. Use it when all tools share one budget ceiling.
+
+The rest of this guide shows the **explicit pattern**. Reach for it when you need per-agent delegation tokens (one cap per crew member), per-category allocations, or anomaly detection — things the one-liner intentionally doesn't expose.
+
+---
+
 ## Step 1: Run the demo in 5 minutes
 
 ```python
