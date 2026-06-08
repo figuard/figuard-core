@@ -689,6 +689,7 @@ def auto_guard_langchain(
     currency: str = "USD",
     agent_id: str = "langchain_agent",
     amount_param: str = "amount",
+    velocity_max_per_minute: Optional[int] = None,
     client: Optional[FiGuardClient] = None,
 ) -> Any:
     """
@@ -701,17 +702,25 @@ def auto_guard_langchain(
 
         from figuard.integrations.langchain import auto_guard_langchain
 
+        # Monetary budget — enforces dollar spend on tools with an "amount" parameter
         executor = auto_guard_langchain(executor, budget=500, currency="USD")
+
+        # Velocity control — catches runaway loops even when tool calls have no dollar amount
+        executor = auto_guard_langchain(executor, budget=500, velocity_max_per_minute=10)
+
         result = executor.invoke({"input": "Book a flight to NYC"})
 
-    :param executor:    LangChain AgentExecutor to wire up. Modified in-place.
-    :param budget:      Total spend limit in ``currency`` units (default 500).
-    :param currency:    ISO 4217 currency code (default "USD").
-    :param agent_id:    Agent identifier written to the FiGuard audit ledger.
-    :param amount_param: Tool input key that contains the spend amount (default "amount").
-    :param client:      Optional pre-built FiGuardClient. Pass one to reuse an existing
-                        client or to override sandbox fallback in tests.
-    :returns:           The same ``executor`` with FiGuardCallbackHandler wired in.
+    :param executor:               LangChain AgentExecutor to wire up. Modified in-place.
+    :param budget:                 Total spend limit in ``currency`` units (default 500).
+    :param currency:               ISO 4217 currency code (default "USD").
+    :param agent_id:               Agent identifier written to the FiGuard audit ledger.
+    :param amount_param:           Tool input key that contains the spend amount (default "amount").
+                                   Returns 0.0 (audit-only) when the key is absent.
+    :param velocity_max_per_minute: Max tool calls per 60-second window. Use when tools
+                                   lack a dollar amount — catches runaway loops by rate.
+    :param client:                 Optional pre-built FiGuardClient. Pass one to reuse an
+                                   existing client or to override sandbox fallback in tests.
+    :returns:                      The same ``executor`` with FiGuardCallbackHandler wired in.
     """
     _client = client or FiGuardClient()
     _budget = _client.create_budget(
@@ -719,6 +728,7 @@ def auto_guard_langchain(
         total_limit=budget,
         currency=currency,
         expires_in="24h",
+        velocity_max_per_minute=velocity_max_per_minute,
     )
     handler = FiGuardCallbackHandler(
         client=_client,

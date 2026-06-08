@@ -43,7 +43,7 @@ Full quickstart::
         print(f"Spend denied: {e.denial_reason}")
 """
 
-__version__ = "0.5.0"
+__version__ = "1.1.0"
 
 from .client import FiGuardClient
 from .exceptions import FiGuardApiError, FiGuardConnectionError, FiGuardDeniedException, FiGuardError, FiGuardWebhookVerificationError
@@ -82,6 +82,13 @@ from .models import (
     WebhookTestResult,
 )
 from .context import figuard_scope, figuard_run_in_executor, get_current_event_id, clear_current_event_id
+
+try:
+    from .integrations.langchain import auto_guard_langchain
+    from .integrations.crewai import auto_guard_crewai
+    _has_auto_guard = True
+except ImportError:
+    _has_auto_guard = False  # type: ignore[assignment]
 
 __all__ = [
     "__version__",
@@ -130,6 +137,9 @@ __all__ = [
 
 if _has_async:
     __all__ += ["AsyncFiGuardClient", "AsyncCompositeGuard", "AsyncGuardedResource"]
+
+if _has_auto_guard:
+    __all__ += ["auto_guard_langchain", "auto_guard_crewai"]
 
 # figuard.testing is a standalone module — not imported here to avoid
 # pulling test helpers into production bundles.

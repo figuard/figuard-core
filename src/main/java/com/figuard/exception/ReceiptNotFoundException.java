@@ -1,8 +1,11 @@
 package com.figuard.exception;
 
-public class ReceiptNotFoundException extends RuntimeException {
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
+public class ReceiptNotFoundException extends ResponseStatusException {
 
     public ReceiptNotFoundException(String token) {
-        super("Receipt not found: " + token);
+        super(HttpStatus.NOT_FOUND, "Receipt not found: " + token);
     }
 }

@@ -6,6 +6,49 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [v1.1.0] — 2026-06-07 — auto_guard one-liners + figuard-langchain
+
+### New: `auto_guard_langchain` and `auto_guard_crewai` one-liners
+
+Zero-config wrappers that create a budget, wire the callback handler, and return the
+executor in a single call. Works against the shared public sandbox by default.
+
+```python
+from figuard.integrations.langchain import auto_guard_langchain
+executor = auto_guard_langchain(executor, budget=500, velocity_max_per_minute=10)
+
+from figuard.integrations.crewai import auto_guard_crewai
+auto_guard_crewai(my_tool, budget=500, velocity_max_per_minute=10)
+```
+
+Both wrappers now accept `velocity_max_per_minute` — catches runaway loops even for
+agents whose tools carry no dollar amount (research agents, code agents, etc.).
+
+`auto_guard_langchain` and `auto_guard_crewai` are now exported from the top-level
+`figuard` namespace: `from figuard import auto_guard_langchain`.
+
+### New package: `figuard-langchain`
+
+Standalone PyPI package for LangChain-specific installs:
+
+```bash
+pip install figuard-langchain
+```
+
+Re-exports `FiGuardCallbackHandler`, `FiGuardToolGuard`, and `auto_guard_langchain`
+from a dedicated package with its own PyPI search presence.
+
+### Bug fix: `BudgetNotFoundException` returns 404 not 500
+
+`GET /budgets/{id}` with a non-existent or expired budget ID now returns a clean
+`404 Not Found` with `"Budget not found: {id}"`. Previously returned `500 Internal
+Server Error`, making it impossible for clients to distinguish "server error" from
+"this budget doesn't exist."
+
+### Python SDK: 0.5.0 → 1.1.0 · TypeScript SDK: 1.0.0 → 1.1.0 · MCP: 1.0.0 → 1.1.0
+
+---
+
 ## [v1.0.0] — 2026-06-02 — Initial OSS Release
 
 ### Core authorization engine

@@ -201,6 +201,7 @@ def auto_guard_crewai(
     currency: str = "USD",
     agent_id: str = "crewai_agent",
     amount_key: str = "amount",
+    velocity_max_per_minute: Optional[int] = None,
     client: Optional[FiGuardClient] = None,
 ) -> FiGuardCrewGuard:
     """
@@ -221,13 +222,15 @@ def auto_guard_crewai(
             tools=[book_flight_tool],
         )
 
-    :param tool:       CrewAI BaseTool to guard. Modified in-place.
-    :param budget:     Total spend limit in ``currency`` units (default 500).
-    :param currency:   ISO 4217 currency code (default "USD").
-    :param agent_id:   Agent identifier written to the FiGuard audit ledger.
-    :param amount_key: Keyword argument in tool kwargs holding the spend amount.
-    :param client:     Optional pre-built FiGuardClient (e.g. for tests).
-    :returns:          FiGuardCrewGuard that has already wrapped ``tool._run``.
+    :param tool:                   CrewAI BaseTool to guard. Modified in-place.
+    :param budget:                 Total spend limit in ``currency`` units (default 500).
+    :param currency:               ISO 4217 currency code (default "USD").
+    :param agent_id:               Agent identifier written to the FiGuard audit ledger.
+    :param amount_key:             Keyword argument in tool kwargs holding the spend amount.
+    :param velocity_max_per_minute: Max tool calls per 60-second window. Catches runaway
+                                   loops even when tool calls carry no dollar amount.
+    :param client:                 Optional pre-built FiGuardClient (e.g. for tests).
+    :returns:                      FiGuardCrewGuard that has already wrapped ``tool._run``.
     """
     _client = client or FiGuardClient()
     _budget = _client.create_budget(
@@ -235,6 +238,7 @@ def auto_guard_crewai(
         total_limit=budget,
         currency=currency,
         expires_in="24h",
+        velocity_max_per_minute=velocity_max_per_minute,
     )
     return FiGuardCrewGuard(
         tool=tool,
