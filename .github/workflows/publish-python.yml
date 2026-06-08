@@ -44,3 +44,39 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: sdk/python/dist/
+
+  publish-langchain:
+    name: Build and publish figuard-langchain to PyPI
+    runs-on: ubuntu-latest
+
+    # Required for PyPI trusted publishing (OIDC) — no token needed
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Stamp the tag version into the standalone package's static version field.
+      - name: Set version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/^version = .*/version = \"$VERSION\"/" sdk/figuard-langchain/pyproject.toml
+          echo "Publishing figuard-langchain version $VERSION"
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build sdist and wheel
+        working-directory: sdk/figuard-langchain
+        run: python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdk/figuard-langchain/dist/
