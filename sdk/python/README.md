@@ -36,15 +36,16 @@ client = FiGuardClient()
 Or with framework integrations — one line wires up the entire budget + callback:
 
 ```python
-# LangChain
-from figuard.integrations.langchain import auto_guard_langchain
+# LangChain (also available as: pip install figuard-langchain)
+from figuard import auto_guard_langchain
 
-executor = auto_guard_langchain(executor)  # $500 / 24h budget, zero config
+executor = auto_guard_langchain(executor, budget=500, velocity_max_per_minute=10)
+# velocity_max_per_minute catches runaway loops even when tools have no dollar amount
 
 # CrewAI
-from figuard.integrations.crewai import auto_guard_crewai
+from figuard import auto_guard_crewai
 
-auto_guard_crewai(book_flight_tool)  # wraps tool._run in-place, $500 / 24h budget
+auto_guard_crewai(book_flight_tool, budget=500, velocity_max_per_minute=10)
 ```
 
 > **Note:** The shared sandbox is for demos only. Data is wiped periodically.

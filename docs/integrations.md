@@ -4,11 +4,36 @@ FiGuard works with every major Python agent framework. Pick yours:
 
 | Framework | What you need | Guide |
 |-----------|--------------|-------|
-| **LangChain** | Callback handler — attach to `AgentExecutor`, no tool changes | [LangChain guide](integrations/langchain.md) |
+| **LangChain** | `auto_guard_langchain()` one-liner, or full callback handler | [LangChain guide](integrations/langchain.md) |
 | **LangGraph** | Same callback handler — passed via graph `config` | [LangGraph guide](integrations/langgraph.md) |
 | **OpenAI Agents SDK** | Decorator on tool functions — `@guarded_function_tool` | [OpenAI Agents guide](integrations/openai-agents.md) |
-| **CrewAI** | `FiGuardCrewGuard.wrap(crew)` — one call covers all agents | [CrewAI guide](integrations/crewai.md) |
+| **CrewAI** | `auto_guard_crewai()` one-liner, or `FiGuardCrewGuard` | [CrewAI guide](integrations/crewai.md) |
 | **Claude / Cursor / Claude Code** | MCP server — no Python needed | [MCP guide](integrations/mcp.md) |
+
+---
+
+## Zero-config one-liners (v1.1.0+)
+
+The fastest path — one import, one call, done:
+
+```python
+# LangChain — also installable as: pip install figuard-langchain
+from figuard import auto_guard_langchain
+
+executor = auto_guard_langchain(executor, budget=500, velocity_max_per_minute=10)
+# budget=500   → $500 ceiling for the session
+# velocity_max_per_minute=10 → blocks the 11th tool call in 60 seconds
+#                               catches runaway loops even when tools have no dollar amount
+
+# CrewAI
+from figuard import auto_guard_crewai
+
+auto_guard_crewai(book_flight_tool, budget=500, velocity_max_per_minute=10)
+```
+
+Both wrappers use zero-config: `FiGuardClient()` connects to the shared sandbox automatically. No API key or server setup required to try it.
+
+For advanced patterns — per-category allocations, delegation tokens, fleet budgets — use the full client directly:
 
 ---
 
