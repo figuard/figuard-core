@@ -231,6 +231,11 @@ def auto_guard_crewai(
                                    loops even when tool calls carry no dollar amount.
     :param client:                 Optional pre-built FiGuardClient (e.g. for tests).
     :returns:                      FiGuardCrewGuard that has already wrapped ``tool._run``.
+
+    For per-category allocations, anomaly detection, entity dedup, custom ``user_id``, or
+    budgets that last longer than 24 hours — create the budget manually and use
+    ``FiGuardCrewGuard`` directly. See docs/integrations/crewai.md.
+    """
     """
     _client = client or FiGuardClient()
     _budget = _client.create_budget(
