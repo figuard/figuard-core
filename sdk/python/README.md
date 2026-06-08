@@ -39,8 +39,9 @@ Or with framework integrations — one line wires up the entire budget + callbac
 # LangChain (also available as: pip install figuard-langchain)
 from figuard import auto_guard_langchain
 
+# Set FIGUARD_API_KEY + FIGUARD_BASE_URL for production — picked up automatically.
+# Without them, connects to the shared sandbox (demo only, data wiped periodically).
 executor = auto_guard_langchain(executor, budget=500, velocity_max_per_minute=10)
-# velocity_max_per_minute catches runaway loops even when tools have no dollar amount
 
 # CrewAI
 from figuard import auto_guard_crewai
@@ -49,9 +50,8 @@ auto_guard_crewai(book_flight_tool, budget=500, velocity_max_per_minute=10)
 ```
 
 > **Note:** The shared sandbox is for demos only. Data is wiped periodically.
-> For production, [self-host FiGuard](https://figuard.io/docs/self-hosting) and pass your API key:
-> `FiGuardClient(api_key="fg_live_...", base_url="https://your-figuard.example.com")`
-> or set `FIGUARD_API_KEY` / `FIGUARD_BASE_URL` environment variables.
+> For production, [self-host FiGuard](https://figuard.io/docs/self-hosting) and set
+> `FIGUARD_API_KEY` / `FIGUARD_BASE_URL` — the wrappers pick them up automatically.
 
 ## Quickstart
 

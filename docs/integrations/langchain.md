@@ -12,6 +12,22 @@ pip install "figuard[langchain]" langchain-openai
 
 ---
 
+## The one-liner
+
+The fastest way to put a budget on an existing agent:
+
+```python
+from figuard import auto_guard_langchain  # or: pip install figuard-langchain
+
+executor = auto_guard_langchain(executor, budget=500, velocity_max_per_minute=10)
+```
+
+That's the whole on-ramp — it creates a budget, wires the callback handler, and returns the executor. Use it when you just need "this agent can't spend more than X."
+
+The rest of this guide shows the **explicit pattern**. Reach for it when you need per-category allocations, anomaly detection, entity dedup, delegation tokens for a fleet, or a custom `user_id` — things the one-liner intentionally doesn't expose.
+
+---
+
 ## Step 1: Run the demo in 5 minutes
 
 Paste this and run it. No sign-up needed — the sandbox key is already in the code.

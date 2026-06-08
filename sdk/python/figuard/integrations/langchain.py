@@ -721,6 +721,10 @@ def auto_guard_langchain(
     :param client:                 Optional pre-built FiGuardClient. Pass one to reuse an
                                    existing client or to override sandbox fallback in tests.
     :returns:                      The same ``executor`` with FiGuardCallbackHandler wired in.
+
+    For per-category allocations, anomaly detection, entity dedup, custom ``user_id``, or
+    budgets that last longer than 24 hours — create the budget manually and use
+    ``FiGuardCallbackHandler`` directly. See docs/integrations/langchain.md.
     """
     _client = client or FiGuardClient()
     _budget = _client.create_budget(
