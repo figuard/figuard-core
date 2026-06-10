@@ -23,11 +23,15 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/figuard
       SPRING_DATASOURCE_USERNAME: figuard
       SPRING_DATASOURCE_PASSWORD: figuard_local
-      # DEV ONLY — replace with: openssl rand -base64 32
-      WEBHOOK_SECRET_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-      # Credential-hashing pepper — API keys/session tokens stored as HMAC-SHA256.
-      # DEV ONLY value. In production set a unique secret: openssl rand -base64 48
-      FIGUARD_TOKEN_PEPPER: bG9jYWwtZGV2LXBlcHBlci1ub3QtZm9yLXByb2R1Y3Rpb24tdXNl
+      # WEBHOOK_SECRET_KEY and FIGUARD_TOKEN_PEPPER are auto-generated on first boot
+      # and persisted to the figuard_data volume — unique per install, stable across
+      # restarts, zero config. To pin your own, uncomment and set them here:
+      #   WEBHOOK_SECRET_KEY: <openssl rand -base64 32>
+      #   FIGUARD_TOKEN_PEPPER: <openssl rand -base64 48>
+    volumes:
+      # Persists generated secrets alongside the database. If you lose this volume,
+      # generated secrets regenerate and existing token/key hashes stop matching.
+      - figuard_data:/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,3 +45,4 @@ services:
 
 volumes:
   postgres_data:
+  figuard_data:

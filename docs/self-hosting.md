@@ -74,9 +74,31 @@ The container reads these at startup. Override them by editing `docker-compose.y
 | `SPRING_DATASOURCE_USERNAME` | `figuard` | Database user |
 | `SPRING_DATASOURCE_PASSWORD` | `figuard_local` | Database password |
 | `FIGUARD_SEED_DEMO_KEY` | `true` | Seeds `fg_live_demo` key on first boot |
-| `WEBHOOK_SECRET_KEY` | insecure dev default | AES-256-GCM key for encrypting webhook secrets at rest. **Replace in production.** Generate with: `openssl rand -base64 32` |
+| `WEBHOOK_SECRET_KEY` | **auto-generated** | AES-256-GCM key for encrypting webhook secrets at rest. Generated on first boot if unset. |
+| `FIGUARD_TOKEN_PEPPER` | **auto-generated** | HMAC pepper for hashing API keys / session tokens at rest. Generated on first boot if unset. |
 
-For production, set `FIGUARD_SEED_DEMO_KEY=false`, rotate `SPRING_DATASOURCE_PASSWORD`, and set a real `WEBHOOK_SECRET_KEY`.
+### Secrets are auto-generated and secure by default
+
+On first boot, the container generates a unique `WEBHOOK_SECRET_KEY` and `FIGUARD_TOKEN_PEPPER`
+and persists them to the `figuard_data` volume (`/data/secrets.env`). Every install gets its
+own secrets with zero configuration, stable across restarts. An explicitly-set env var always
+takes precedence over the generated value.
+
+> **The `figuard_data` volume is part of your security state.** It holds the pepper that makes
+> stored token hashes useless to an attacker who only breached the database. Back it up with
+> `postgres_data`. If you lose it, the secrets regenerate and existing token/key hashes stop
+> matching — every active session token and API key is invalidated.
+
+To pin your own secrets instead (e.g. to share a pepper across replicas behind a load balancer),
+set them in `docker-compose.yml`:
+
+```yaml
+WEBHOOK_SECRET_KEY: <openssl rand -base64 32>
+FIGUARD_TOKEN_PEPPER: <openssl rand -base64 48>
+```
+
+For production, also set `FIGUARD_SEED_DEMO_KEY=false` (don't seed the public `fg_live_demo`
+key — create your own via the API-key endpoint) and rotate `SPRING_DATASOURCE_PASSWORD`.
 
 ---
 
