@@ -6,6 +6,38 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [v1.1.1] — 2026-06-10 — Security hardening
+
+Hardening pass focused on the credential and webhook surfaces. No API changes —
+existing integrations are unaffected.
+
+### Credential hashing — HMAC with a server-side pepper
+API keys and session tokens are now stored as HMAC-SHA256(credential, pepper) when
+`FIGUARD_TOKEN_PEPPER` is set (falls back to SHA-256 when unset, for local/dev). The pepper
+lives in the environment, never in the database — so a database-only breach yields hashes
+that cannot be verified offline.
+
+### Webhook SSRF protection
+Outbound webhook URLs are validated at both registration and delivery time. Requests to
+loopback, private, link-local (including cloud metadata endpoints), and multicast addresses
+are rejected; https is required; redirects are disabled. DNS is re-resolved at send time to
+defeat rebinding.
+
+### Secure-by-default secrets for self-hosters
+On first boot, the container generates and persists a unique credential pepper and
+webhook-encryption key to the data volume if they are not provided — every self-hosted
+install gets its own stable secrets with zero configuration. Explicit env vars take
+precedence.
+
+### Supply-chain scanning
+Dependabot (weekly) and Trivy (filesystem + container image) now run in CI, with results in
+the GitHub Security tab.
+
+### Versions
+Server / Docker image patched. SDK packages republished at 1.1.1 with no code changes.
+
+---
+
 ## [v1.1.0] — 2026-06-07 — auto_guard one-liners + figuard-langchain
 
 ### New: `auto_guard_langchain` and `auto_guard_crewai` one-liners
