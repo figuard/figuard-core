@@ -16,5 +16,9 @@ RUN ./mvnw package -DskipTests -q && cp target/core-*.jar target/app.jar
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 COPY --from=build /app/target/app.jar app.jar
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh && mkdir -p /data
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Entrypoint generates+persists a unique pepper and webhook key on first boot
+# unless they are explicitly provided. Persisted to /data (mount a volume there).
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

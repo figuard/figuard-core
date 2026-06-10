@@ -38,10 +38,12 @@ public class WebhookConfigService {
     private final WebhookDeliveryRepository webhookDeliveryRepository;
     private final WebhookDispatcher webhookDispatcher;
     private final WebhookSecretEncryptor secretEncryptor;
+    private final com.figuard.security.WebhookUrlValidator urlValidator;
 
     @Transactional
     public WebhookConfigResponse createConfig(CreateWebhookConfigRequest request, Tenant tenant) {
         validateEventTypes(request.getEvents());
+        urlValidator.validate(request.getUrl());   // SSRF guard — reject private/loopback/link-local
 
         WebhookConfig config = new WebhookConfig();
         config.setTenant(tenant);

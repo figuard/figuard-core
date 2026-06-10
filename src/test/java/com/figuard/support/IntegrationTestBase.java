@@ -45,6 +45,8 @@ public abstract class IntegrationTestBase {
         registry.add("spring.datasource.hikari.minimum-idle", () -> "10");
         registry.add("spring.datasource.hikari.connection-timeout", () -> "60000");
         registry.add("spring.datasource.hikari.keepalive-time", () -> "30000");
+        // Webhook integration tests POST to a localhost mock server — permit private targets.
+        registry.add("figuard.security.webhook-ssrf-guard.allow-private", () -> "true");
     }
 
     protected static final String TEST_API_KEY = "fg_live_integrationtest";

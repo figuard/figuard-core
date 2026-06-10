@@ -35,7 +35,7 @@ public class DemoSeedController {
     @Transactional
     public ResponseEntity<Map<String, String>> seed(@RequestBody Map<String, String> body) {
         String rawKey = body.getOrDefault("apiKey", "fg_live_integrationtest");
-        String keyHash = HashUtil.sha256(rawKey);
+        String keyHash = HashUtil.tokenHash(rawKey);
 
         if (apiKeyRepository.findByKeyHash(keyHash).isPresent()) {
             return ResponseEntity.ok(Map.of("status", "already_exists"));
