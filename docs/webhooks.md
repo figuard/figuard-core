@@ -268,11 +268,13 @@ Most events include additional fields. Key ones:
   "requestedQuantity": 150.00,
   "confirmedQuantity": 142.50,
   "agentId": "travel_agent",
+  "category": "flights",
   "totalLimit": 500.00,
   "quantitySpent": 142.50,
   "availableQuantity": 357.50
 }
 ```
+`category` is the event's `claimedCategory` (null if none was set) — use it for per-category cost attribution.
 
 **`BUDGET_EXHAUSTED` / `BUDGET_90_PCT`**
 ```json
@@ -303,7 +305,8 @@ Most events include additional fields. Key ones:
   "requestedQuantity": 300.00,
   "denialReason": "BUDGET_EXHAUSTED",
   "denialMessage": "$0.00 remaining, $300.00 requested",
-  "agentId": "travel_agent"
+  "agentId": "travel_agent",
+  "category": "flights"
 }
 ```
 

@@ -44,6 +44,7 @@ public class WebhookPayloadBuilder {
         payload.put("denialReason",      event.getDenialReason());
         payload.put("denialMessage",     event.getDenialMessage());
         payload.put("agentId",           event.getAgentId());
+        payload.put("category",          event.getClaimedCategory());
         payload.put("currency",          event.getCurrency());
         return payload;
     }
@@ -101,6 +102,7 @@ public class WebhookPayloadBuilder {
         payload.put("requestedQuantity", event.getRequestedQuantity());
         payload.put("confirmedQuantity", event.getConfirmedQuantity());
         payload.put("agentId",           event.getAgentId());
+        payload.put("category",          event.getClaimedCategory());
         payload.put("currency",          event.getCurrency());
         payload.put("totalLimit",        budget.getTotalLimit());
         payload.put("quantitySpent",     budget.getQuantitySpent());

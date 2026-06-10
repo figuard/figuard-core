@@ -46,6 +46,7 @@ class WebhookPayloadBuilderTest {
         event.setRequestedQuantity(new BigDecimal("80.00"));
         event.setConfirmedQuantity(new BigDecimal("78.00"));
         event.setAgentId("agent_001");
+        event.setClaimedCategory("research");
         event.setCurrency("USD");
         event.setFailureReason("PAYMENT_DECLINED");
         event.setDenialReason("INSUFFICIENT_FUNDS");
@@ -114,6 +115,8 @@ class WebhookPayloadBuilderTest {
         assertThat(payload.get("requestedQuantity")).isEqualTo(event.getRequestedQuantity());
         assertThat(payload.get("denialReason")).isEqualTo("INSUFFICIENT_FUNDS");
         assertThat(payload.get("agentId")).isEqualTo("agent_001");
+        // category drives per-category cost attribution for downstream consumers
+        assertThat(payload.get("category")).isEqualTo("research");
     }
 
     // -------------------------------------------------------------------------
@@ -129,6 +132,7 @@ class WebhookPayloadBuilderTest {
         assertThat(payload.get("requestedQuantity")).isEqualTo(event.getRequestedQuantity());
         assertThat(payload.get("confirmedQuantity")).isEqualTo(event.getConfirmedQuantity());
         assertThat(payload.get("agentId")).isEqualTo("agent_001");
+        assertThat(payload.get("category")).isEqualTo("research");
         assertThat(payload).containsKey("availableQuantity");
     }
 
