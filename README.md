@@ -5,7 +5,7 @@
 
 [![CI](https://github.com/figuard/figuard-core/actions/workflows/ci.yml/badge.svg)](https://github.com/figuard/figuard-core/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-0A5C38.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-401%20passing-0A5C38)](#)
+[![Tests](https://img.shields.io/badge/tests-620%20passing-0A5C38)](#)
 [![PyPI](https://img.shields.io/pypi/v/figuard?color=0A5C38)](https://pypi.org/project/figuard/)
 [![npm](https://img.shields.io/npm/v/figuard?label=npm%20(ts-sdk)&color=0A5C38)](https://www.npmjs.com/package/figuard)
 [![npm](https://img.shields.io/npm/v/figuard-mcp?label=figuard-mcp&color=0A5C38)](https://www.npmjs.com/package/figuard-mcp)
