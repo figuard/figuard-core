@@ -28,7 +28,11 @@ jobs:
 
       - name: Scan repository dependencies
         run: |
+          # --offline-scan: don't resolve Java deps from Maven Central (gets 429-rate-limited
+          # on CI). Lockfile-based ecosystems (npm/pip) are still scanned; the image scan
+          # below covers the full Java dependency tree from the built jar.
           trivy fs \
+            --offline-scan \
             --severity CRITICAL,HIGH \
             --ignore-unfixed \
             --format sarif \
