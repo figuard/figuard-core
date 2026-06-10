@@ -5,8 +5,17 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     labels: ["dependencies", "java"]
+    # One grouped PR for minor/patch updates instead of one PR per dependency.
+    groups:
+      maven-minor-patch:
+        update-types: ["minor", "patch"]
+    # Suppress routine major bumps — they break framework APIs and must be done
+    # deliberately. Security updates are not affected by this and still open PRs.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # Python SDK
   - package-ecosystem: "pip"
@@ -15,6 +24,12 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
     labels: ["dependencies", "python"]
+    groups:
+      pip-minor-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # TypeScript SDK
   - package-ecosystem: "npm"
@@ -23,6 +38,12 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
     labels: ["dependencies", "typescript"]
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # MCP server
   - package-ecosystem: "npm"
@@ -31,10 +52,20 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
     labels: ["dependencies", "mcp"]
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
-  # GitHub Actions themselves
+  # GitHub Actions themselves — majors here are low-risk and worth staying current,
+  # so group everything (including majors) into a single PR.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     labels: ["dependencies", "ci"]
+    groups:
+      github-actions:
+        patterns: ["*"]
