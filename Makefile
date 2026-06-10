@@ -1,4 +1,4 @@
-.PHONY: run stop reset logs test test-ts test-mcp test-all test-live dashboard publish
+.PHONY: run stop reset logs test test-ts test-mcp test-all test-live bench dashboard publish
 
 run:
 	docker compose up --build -d
@@ -57,6 +57,14 @@ test-live: test
 	@echo "[FiGuard] Running live integration tests (container must be running)..."
 	@cd sdk/python && python -m pytest tests/live/ -v --tb=short
 	@echo "[FiGuard] Live tests passed."
+
+# ── Concurrency stress benchmark ─────────────────────────────────────────────
+
+bench:
+	@echo "[FiGuard] Concurrency stress harness (stack must be running — 'make run')..."
+	@pip install httpx --quiet 2>/dev/null || true
+	@python bench/stress.py
+	@echo "[FiGuard] See bench/stress.py for options: --workers --runs --keys --fires"
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 

@@ -270,9 +270,19 @@ Full setup guide, environment variables, Postgres configuration, and production 
 
 ## Performance
 
-Authorize calls complete in under 10ms p99 on a local deployment with a warm connection pool. The authorize path acquires a pessimistic row lock, writes the reservation, and returns — there is no external network hop. In practice the overhead is smaller than a typical database query in your existing stack.
+The headline isn't speed — it's correctness under concurrency. The stress harness
+([`bench/stress.py`](bench/stress.py)) verifies the invariants directly against the
+Postgres ledger, not the HTTP responses:
 
-For production benchmarks, run the self-hosted Docker setup against a local Postgres instance — the sandbox is an evaluation environment, not a performance reference.
+- **0 overspends** across concurrent authorizations on a shared budget — 100 agents race for a $1,000 budget, exactly 20 win, the budget lands at exactly $1,000.00, never over.
+- **0 double-charges** across retried requests — the same idempotency key fired 50× in parallel produces exactly one event.
+
+Typical authorize latency (each call on its own budget, M1 / Docker): **p50 17ms, p99 74ms.**
+Under deliberate single-budget contention the pessimistic lock serializes requests — they
+queue rather than race, which is the price of never overspending.
+
+Full methodology, numbers, and reproduction in **[BENCHMARKS.md](BENCHMARKS.md)** — or run
+it yourself: `make bench`.
 
 ---
 
