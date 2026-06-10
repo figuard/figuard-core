@@ -43,7 +43,7 @@ Full quickstart::
         print(f"Spend denied: {e.denial_reason}")
 """
 
-__version__ = "1.1.1"
+__version__ = "1.1.2"
 
 from .client import FiGuardClient
 from .exceptions import FiGuardApiError, FiGuardConnectionError, FiGuardDeniedException, FiGuardError, FiGuardWebhookVerificationError

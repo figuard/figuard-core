@@ -236,7 +236,6 @@ def auto_guard_crewai(
     budgets that last longer than 24 hours — create the budget manually and use
     ``FiGuardCrewGuard`` directly. See docs/integrations/crewai.md.
     """
-    """
     _client = client or FiGuardClient()
     _budget = _client.create_budget(
         user_id=str(uuid4()),

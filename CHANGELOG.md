@@ -6,6 +6,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [v1.1.2] — 2026-06-10 — Fix: broken Python import with langchain installed
+
+**Critical fix.** A duplicate triple-quote in `figuard/integrations/crewai.py` (shipped in
+1.1.0 and 1.1.1) caused a `SyntaxError` when `from figuard import ...` was run with the
+`langchain` extra installed — the langchain import succeeds, then crewai.py is parsed and
+fails. Plain `figuard` (no extras) and `figuard[crewai]`-only were unaffected.
+
+1.1.0 and 1.1.1 are yanked on PyPI. Upgrade with `pip install -U figuard`.
+
+Added a regression test that `ast.parse`s every integration module so a syntax error in an
+optional-dependency module is caught even when that dependency is not installed in CI (the
+gap that let this ship — the framework tests `importorskip` the module).
+
+---
+
 ## [v1.1.1] — 2026-06-10 — Security hardening
 
 Hardening pass focused on the credential and webhook surfaces. No API changes —
