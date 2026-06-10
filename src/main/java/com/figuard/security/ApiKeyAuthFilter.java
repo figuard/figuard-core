@@ -104,7 +104,8 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
         response.getWriter().write("{\"error\":\"" + message + "\"}");
     }
 
+    /** Hashes an API key for storage/lookup — peppered HMAC-SHA256 when configured. */
     public static String sha256(String input) {
-        return HashUtil.sha256(input);
+        return HashUtil.tokenHash(input);
     }
 }

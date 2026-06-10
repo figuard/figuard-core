@@ -25,9 +25,9 @@ public class SessionTokenService {
         return sb.toString();
     }
 
-    // SHA-256 hex of the raw token — this is what gets stored in the DB
+    // Peppered HMAC-SHA256 (or SHA-256 if no pepper) — this is what gets stored in the DB
     public String hashToken(String rawToken) {
-        return HashUtil.sha256(rawToken);
+        return HashUtil.tokenHash(rawToken);
     }
 
     // First 12 chars for display/debugging — never the full token

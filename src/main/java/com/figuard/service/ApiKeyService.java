@@ -42,7 +42,7 @@ public class ApiKeyService {
         String rawKey = generateRawKey();
         ApiKey key = new ApiKey();
         key.setTenant(tenant);
-        key.setKeyHash(HashUtil.sha256(rawKey));
+        key.setKeyHash(HashUtil.tokenHash(rawKey));
         key.setKeyPrefix(rawKey.substring(0, Math.min(8, rawKey.length())));
         key.setDescription(request.getDescription());
         key.setActive(true);
@@ -91,7 +91,7 @@ public class ApiKeyService {
         String rawKey = generateRawKey();
         ApiKey newKey = new ApiKey();
         newKey.setTenant(tenant);
-        newKey.setKeyHash(HashUtil.sha256(rawKey));
+        newKey.setKeyHash(HashUtil.tokenHash(rawKey));
         newKey.setKeyPrefix(rawKey.substring(0, Math.min(8, rawKey.length())));
         newKey.setDescription(old.getDescription());
         newKey.setActive(true);

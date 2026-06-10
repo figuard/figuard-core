@@ -53,6 +53,7 @@ public class WebhookDispatcher {
     private final WebhookDeliveryRepository deliveryRepository;
     private final ObjectMapper objectMapper;
     private final WebhookSecretEncryptor secretEncryptor;
+    private final com.figuard.security.WebhookUrlValidator urlValidator;
 
     // -------------------------------------------------------------------------
     // Public API — called after authorize/void/sweep events
@@ -109,6 +110,14 @@ public class WebhookDispatcher {
             return;
         }
 
+        // SSRF re-check at send time — DNS can rebind between registration and delivery.
+        if (!urlValidator.isSafe(url)) {
+            delivery.setStatus(WebhookDeliveryStatus.FAILED);
+            delivery.setResponseBody("Blocked by SSRF guard: URL resolves to a private address");
+            deliveryRepository.save(delivery);
+            return;
+        }
+
         // Sign with a synthetic secret derived from tenantId (or URL host) so the receiver can verify
         String signingKey = tenantId != null ? tenantId.toString() : url;
         String signature;
@@ -122,6 +131,7 @@ public class WebhookDispatcher {
         }
 
         HttpClient httpClient = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NEVER)
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
@@ -190,6 +200,14 @@ public class WebhookDispatcher {
             return;
         }
 
+        // SSRF re-check at send time — DNS can rebind between registration and delivery.
+        if (!urlValidator.isSafe(config.getUrl())) {
+            delivery.setStatus(WebhookDeliveryStatus.FAILED);
+            delivery.setResponseBody("Blocked by SSRF guard: URL resolves to a private address");
+            deliveryRepository.save(delivery);
+            return;
+        }
+
         String signature;
         try {
             signature = hmacSha256(payloadJson, secretEncryptor.decrypt(config.getSecret()));
@@ -201,6 +219,7 @@ public class WebhookDispatcher {
         }
 
         HttpClient httpClient = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NEVER)
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
@@ -290,6 +309,7 @@ public class WebhookDispatcher {
         }
 
         HttpClient httpClient = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NEVER)
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
@@ -367,6 +387,7 @@ public class WebhookDispatcher {
         delivery.setAttemptCount(delivery.getAttemptCount() + 1);
 
         HttpClient httpClient = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NEVER)
             .connectTimeout(Duration.ofSeconds(5))
             .build();
         try {
