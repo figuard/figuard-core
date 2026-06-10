@@ -20,7 +20,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class TokenPepperInitializer {
 
-    @Value("${figuard.security.token-pepper:}")
+    // Accept either the property figuard.security.token-pepper or the FIGUARD_TOKEN_PEPPER
+    // env var directly (the name documented in README/spec/compose), falling back to empty.
+    @Value("${figuard.security.token-pepper:${FIGUARD_TOKEN_PEPPER:}}")
     private String pepper;
 
     @PostConstruct

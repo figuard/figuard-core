@@ -25,6 +25,9 @@ services:
       SPRING_DATASOURCE_PASSWORD: figuard_local
       # DEV ONLY — replace with: openssl rand -base64 32
       WEBHOOK_SECRET_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      # Credential-hashing pepper — API keys/session tokens stored as HMAC-SHA256.
+      # DEV ONLY value. In production set a unique secret: openssl rand -base64 48
+      FIGUARD_TOKEN_PEPPER: bG9jYWwtZGV2LXBlcHBlci1ub3QtZm9yLXByb2R1Y3Rpb24tdXNl
     depends_on:
       postgres:
         condition: service_healthy
