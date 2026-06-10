@@ -467,8 +467,7 @@ public class AuthorizationService {
 
                 if (!budget.canAccommodateWith(request.getRequestedQuantity(), effectiveReserved)) {
                     yield deny(budget, lockedAllocation, request, parentEvent, DenialCode.INSUFFICIENT_FUNDS,
-                        "Budget has " + budget.availableQuantityWith(effectiveReserved) + " available, requested " +
-                        request.getRequestedQuantity(), delegatedToken);
+                        insufficientFundsMessage(budget, request, effectiveReserved), delegatedToken);
                 }
 
                 yield approve(budget, lockedAllocation, request, parentEvent, delegatedToken,
@@ -520,11 +519,31 @@ public class AuthorizationService {
 
         if (!budget.canAccommodateWith(request.getRequestedQuantity(), effectiveReserved)) {
             return deny(budget, null, request, parentEvent, DenialCode.INSUFFICIENT_FUNDS,
-                "Budget has " + budget.availableQuantityWith(effectiveReserved) + " available, requested " +
-                request.getRequestedQuantity(), delegatedToken);
+                insufficientFundsMessage(budget, request, effectiveReserved), delegatedToken);
         }
         return approve(budget, null, request, parentEvent, delegatedToken, lockedDelegateCap,
             entitlementItem);
+    }
+
+    /**
+     * Build the INSUFFICIENT_FUNDS denial message. When capacity is held by unconfirmed
+     * authorizations (reserved > 0) rather than actually spent, say so explicitly — otherwise
+     * the caller sees "0 available" while nothing has been spent and cannot tell that a parent
+     * or orchestrator reservation is holding the whole budget. Confirming or voiding those
+     * outstanding authorizations releases the capacity.
+     */
+    private String insufficientFundsMessage(AgentBudget budget, AuthorizeSpendRequest request,
+                                            BigDecimal effectiveReserved) {
+        String base = "Budget has " + budget.availableQuantityWith(effectiveReserved)
+            + " available, requested " + request.getRequestedQuantity();
+        boolean heldByReservations = effectiveReserved.compareTo(BigDecimal.ZERO) > 0
+            && budget.getQuantitySpent().compareTo(budget.getTotalLimit()) < 0;
+        if (!heldByReservations) {
+            return base;
+        }
+        return base + ". " + effectiveReserved + " is reserved by unconfirmed authorizations (only "
+            + budget.getQuantitySpent() + " of " + budget.getTotalLimit()
+            + " actually spent) — confirm or void them to free capacity";
     }
 
     // -------------------------------------------------------------------------
