@@ -49,6 +49,12 @@ jobs:
     name: Build and publish figuard-langchain to PyPI
     runs-on: ubuntu-latest
 
+    # Non-blocking until a PyPI trusted publisher is configured for figuard-langchain.
+    # The package has never published; this job will start succeeding once the pending
+    # publisher is set up on PyPI. Until then it must not redden the release — the main
+    # `figuard` package is the critical artifact and publishes in the job above.
+    continue-on-error: true
+
     # Required for PyPI trusted publishing (OIDC) — no token needed
     permissions:
       id-token: write
