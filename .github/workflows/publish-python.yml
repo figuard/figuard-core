@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 1.1.2). Used to re-publish a single package out of band, e.g. after configuring a new trusted publisher."
+        required: true
+        type: string
 
 jobs:
   publish:
@@ -27,9 +33,10 @@ jobs:
       # manual version-bump PR is needed before tagging. The file on
       # main stays as a "last published" marker; the tag is the source
       # of truth for what actually gets published.
-      - name: Set version from tag
+      - name: Set version from tag or dispatch input
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ github.event.inputs.version }}"
+          [ -z "$VERSION" ] && VERSION="${GITHUB_REF_NAME#v}"
           sed -i "s/__version__ = .*/__version__ = \"$VERSION\"/" sdk/python/figuard/__init__.py
           echo "Publishing version $VERSION"
 
@@ -44,6 +51,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: sdk/python/dist/
+          skip-existing: true
 
   publish-langchain:
     name: Build and publish figuard-langchain to PyPI
@@ -69,9 +77,10 @@ jobs:
           python-version: "3.11"
 
       # Stamp the tag version into the standalone package's static version field.
-      - name: Set version from tag
+      - name: Set version from tag or dispatch input
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ github.event.inputs.version }}"
+          [ -z "$VERSION" ] && VERSION="${GITHUB_REF_NAME#v}"
           sed -i "s/^version = .*/version = \"$VERSION\"/" sdk/figuard-langchain/pyproject.toml
           echo "Publishing figuard-langchain version $VERSION"
 
@@ -86,3 +95,4 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: sdk/figuard-langchain/dist/
+          skip-existing: true
