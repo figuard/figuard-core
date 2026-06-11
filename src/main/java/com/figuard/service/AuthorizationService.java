@@ -465,7 +465,9 @@ public class AuthorizationService {
                     yield denialResponse;
                 }
 
-                if (!budget.canAccommodateWith(request.getRequestedQuantity(), effectiveReserved)) {
+                // reserve=false holds no capacity — skip the budget-capacity check.
+                if (request.isReserve()
+                        && !budget.canAccommodateWith(request.getRequestedQuantity(), effectiveReserved)) {
                     yield deny(budget, lockedAllocation, request, parentEvent, DenialCode.INSUFFICIENT_FUNDS,
                         insufficientFundsMessage(budget, request, effectiveReserved), delegatedToken);
                 }
@@ -517,7 +519,10 @@ public class AuthorizationService {
             }
         }
 
-        if (!budget.canAccommodateWith(request.getRequestedQuantity(), effectiveReserved)) {
+        // reserve=false holds no capacity, so the budget-capacity check does not apply
+        // (a tree-root/coordinator marker always proceeds — it reserves nothing).
+        if (request.isReserve()
+                && !budget.canAccommodateWith(request.getRequestedQuantity(), effectiveReserved)) {
             return deny(budget, null, request, parentEvent, DenialCode.INSUFFICIENT_FUNDS,
                 insufficientFundsMessage(budget, request, effectiveReserved), delegatedToken);
         }
@@ -561,7 +566,12 @@ public class AuthorizationService {
         SpendEvent event = buildEvent(budget, allocation, request, parentEvent, SpendDecision.AUTHORIZED,
             null, null, null, delegatedToken);
         event.setCreatedAt(now);
-        event.setConfirmationTimeoutAt(now.plusSeconds(confirmationTimeoutSeconds));
+        event.setReserved(request.isReserve());
+        // reserve=false (tree-root/coordinator marker): no confirmation timeout, so the
+        // sweep never auto-voids it — it stays a stable chain root for the whole task.
+        if (request.isReserve()) {
+            event.setConfirmationTimeoutAt(now.plusSeconds(confirmationTimeoutSeconds));
+        }
 
         // Dry-run: return the authorization decision without writing, reserving funds,
         // or firing webhooks. All enforcement checks above have already run.
@@ -577,24 +587,29 @@ public class AuthorizationService {
         // Capture available quantity before reservation to detect threshold crossings
         BigDecimal prevAvailable = budget.availableQuantity();
 
-        // Reserve at delegation cap level (most specific) before fleet allocation and budget.
-        // This keeps lock ordering consistent: budget → delegate cap → fleet allocation.
-        if (delegateCap != null) {
-            delegateCap.setQuantityReserved(
-                delegateCap.getQuantityReserved().add(request.getRequestedQuantity()));
-            delegatedTokenAllocationRepository.save(delegateCap);
-        }
+        // reserve=false holds no capacity: skip every reservation write. The event is
+        // still recorded (below) and can anchor a causal chain, but available/reserved
+        // are unchanged at delegate-cap, allocation, and budget level.
+        if (request.isReserve()) {
+            // Reserve at delegation cap level (most specific) before fleet allocation and budget.
+            // This keeps lock ordering consistent: budget → delegate cap → fleet allocation.
+            if (delegateCap != null) {
+                delegateCap.setQuantityReserved(
+                    delegateCap.getQuantityReserved().add(request.getRequestedQuantity()));
+                delegatedTokenAllocationRepository.save(delegateCap);
+            }
 
-        // Reserve at allocation level, then budget level
-        if (allocation != null) {
-            allocation.setQuantityReserved(
-                allocation.getQuantityReserved().add(request.getRequestedQuantity()));
-            allocationRepository.save(allocation);
-        }
+            // Reserve at allocation level, then budget level
+            if (allocation != null) {
+                allocation.setQuantityReserved(
+                    allocation.getQuantityReserved().add(request.getRequestedQuantity()));
+                allocationRepository.save(allocation);
+            }
 
-        budget.setQuantityReserved(
-            budget.getQuantityReserved().add(request.getRequestedQuantity()));
-        budgetRepository.save(budget);
+            budget.setQuantityReserved(
+                budget.getQuantityReserved().add(request.getRequestedQuantity()));
+            budgetRepository.save(budget);
+        }
 
         SpendEvent saved = spendEventRepository.save(event);
 
@@ -607,7 +622,8 @@ public class AuthorizationService {
 
         // Consume from entitlement item (entitlement-backed budgets only).
         // Must happen after SpendEvent is saved so the event ID is available for linking.
-        if (entitlementItem != null) {
+        // reserve=false consumes nothing, including entitlement.
+        if (entitlementItem != null && request.isReserve()) {
             entitlementEnforcementService.consume(entitlementItem, request.getRequestedQuantity(), saved);
         }
 

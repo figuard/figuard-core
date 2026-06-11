@@ -99,6 +99,11 @@ public class SpendEvent {
 
     private OffsetDateTime confirmationTimeoutAt;
 
+    // false for a reserve=false tree-root / coordinator marker: the event holds no
+    // capacity, so it is excluded from "currently reserved" sums. Defaults to true.
+    @Column(nullable = false)
+    private boolean reserved = true;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 12)
     private SpendDecision decision;

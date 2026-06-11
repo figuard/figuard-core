@@ -73,4 +73,13 @@ public class AuthorizeSpendRequest {
     // is returned, but nothing is written to the ledger and no webhooks fire.
     // Use during integration testing to verify enforcement logic without creating records.
     private boolean dryRun;
+
+    // When false, this is a tree-root / coordinator marker: the AUTHORIZED event is
+    // written and can anchor a causal chain, but it holds NO capacity (nothing added to
+    // quantityReserved at any level, capacity checks skipped) and has NO confirmation
+    // timeout (it is never auto-voided by the sweep). It remains confirmable — a
+    // coordinator can still confirm its own actual consumption, which counts as spent.
+    // Use for an orchestrator root so sub-agents draw from the full budget and a
+    // long-running task's root is not swept mid-run. Defaults to true (normal reserve).
+    private boolean reserve = true;
 }

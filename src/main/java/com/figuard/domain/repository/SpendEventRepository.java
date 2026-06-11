@@ -55,13 +55,15 @@ public interface SpendEventRepository extends JpaRepository<SpendEvent, UUID> {
     @Query("SELECT COUNT(e) FROM SpendEvent e WHERE e.decision = 'AUTHORIZED'")
     long countPendingAuthorizations();
 
-    // Ledger integrity — sum of requestedQuantity for AUTHORIZED events per budget
-    @Query("SELECT COALESCE(SUM(e.requestedQuantity), 0) FROM SpendEvent e WHERE e.budget.id = :budgetId AND e.decision = 'AUTHORIZED'")
+    // Ledger integrity — sum of requestedQuantity for AUTHORIZED events per budget.
+    // reserve=false events hold no capacity (not in quantityReserved), so exclude them.
+    @Query("SELECT COALESCE(SUM(e.requestedQuantity), 0) FROM SpendEvent e WHERE e.budget.id = :budgetId AND e.decision = 'AUTHORIZED' AND e.reserved = true")
     java.math.BigDecimal sumAuthorizedAmountByBudget(@Param("budgetId") UUID budgetId);
 
     // Lazy auto-expiry — sum of requestedQuantity for AUTHORIZED events created after cutoff.
     // Used when authorizationExpirySeconds is set: older events are excluded from capacity calc.
-    @Query("SELECT COALESCE(SUM(e.requestedQuantity), 0) FROM SpendEvent e WHERE e.budget.id = :budgetId AND e.decision = 'AUTHORIZED' AND e.createdAt > :cutoff")
+    // reserve=false events hold no capacity, so exclude them too.
+    @Query("SELECT COALESCE(SUM(e.requestedQuantity), 0) FROM SpendEvent e WHERE e.budget.id = :budgetId AND e.decision = 'AUTHORIZED' AND e.reserved = true AND e.createdAt > :cutoff")
     java.math.BigDecimal sumAuthorizedQuantityAfter(@Param("budgetId") UUID budgetId, @Param("cutoff") java.time.OffsetDateTime cutoff);
 
     // Ledger traceId filter — paginated events for a budget filtered by traceId
