@@ -1007,6 +1007,34 @@ class TestAuthorizeOptionalParams:
         assert request_body["metadata"] == {"priority": "high"}
 
     @resp_lib.activate
+    def test_reserve_false_sent_in_body(self, client: FiGuardClient) -> None:
+        resp_lib.add(resp_lib.POST, f"{BASE}/api/v1/authorize",
+                     json=_authorized_payload(), status=200)
+
+        client.authorize(
+            session_token=SESSION_TOKEN, agent_id="orchestrator",
+            action_type="task", description="chain root", requested_quantity=0.0,
+            reserve=False,
+        )
+        import json as json_lib
+        body = json_lib.loads(resp_lib.calls[0].request.body)
+        assert body["reserve"] is False
+
+    @resp_lib.activate
+    def test_reserve_omitted_from_body_by_default(self, client: FiGuardClient) -> None:
+        resp_lib.add(resp_lib.POST, f"{BASE}/api/v1/authorize",
+                     json=_authorized_payload(), status=200)
+
+        client.authorize(
+            session_token=SESSION_TOKEN, agent_id="agent",
+            action_type="PURCHASE", description="spend", requested_quantity=10.0,
+        )
+        import json as json_lib
+        body = json_lib.loads(resp_lib.calls[0].request.body)
+        # Default reserve=True is the server default — don't bloat the request with it.
+        assert "reserve" not in body
+
+    @resp_lib.activate
     def test_allocation_snapshot_parsed_when_present(self, client: FiGuardClient) -> None:
         payload = {
             **_authorized_payload(),

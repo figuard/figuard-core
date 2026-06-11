@@ -570,6 +570,7 @@ class AsyncFiGuardClient:
         metadata: Optional[Dict[str, Any]] = None,
         max_subtree_quantity: Optional[float] = None,
         dry_run: bool = False,
+        reserve: bool = True,
         **kwargs: Any,
     ) -> AuthorizationResult:
         """
@@ -630,6 +631,8 @@ class AsyncFiGuardClient:
             body["maxSubtreeQuantity"] = max_subtree_quantity
         if dry_run:
             body["dryRun"] = True
+        if not reserve:
+            body["reserve"] = False
 
         token_prefix = session_token[:8] if len(session_token) >= 8 else "???"
         logger.debug(

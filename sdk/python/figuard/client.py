@@ -904,6 +904,7 @@ class FiGuardClient:
         metadata: Optional[Dict[str, Any]] = None,
         max_subtree_quantity: Optional[float] = None,
         dry_run: bool = False,
+        reserve: bool = True,
         **kwargs: Any,
     ) -> AuthorizationResult:
         """
@@ -920,6 +921,14 @@ class FiGuardClient:
         :param dry_run: When ``True``, all enforcement checks run and a full
             ``AUTHORIZED`` or ``DENIED`` result is returned, but nothing is written
             to the ledger and no webhooks fire. Use during integration testing.
+        :param reserve: Defaults to ``True``. Pass ``False`` to create a tree-root /
+            coordinator marker: the event anchors a causal chain (use it as
+            ``parent_event_id`` for sub-agents) but holds **no** capacity and has **no**
+            confirmation timeout, so it never self-denies sub-agents and is never swept
+            mid-run. It is still confirmable — a coordinator can confirm its own actual
+            consumption, which counts as spent. Use for an orchestrator root so
+            sub-agents draw from the full budget. (Don't pair with a real spend amount
+            you expect to be enforced — reserve=false reserves nothing.)
 
         :returns: ``AuthorizationResult`` — check ``.is_authorized`` or call
             ``.raise_if_denied()`` for exception-driven flow.
@@ -968,6 +977,8 @@ class FiGuardClient:
             body["maxSubtreeQuantity"] = max_subtree_quantity
         if dry_run:
             body["dryRun"] = True
+        if not reserve:
+            body["reserve"] = False
 
         # Log only the prefix — the raw token must never appear in logs
         token_prefix = session_token[:8] if len(session_token) >= 8 else "???"

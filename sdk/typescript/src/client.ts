@@ -241,6 +241,14 @@ export interface AuthorizeOptions {
    * Use during integration testing.
    */
   dryRun?: boolean;
+  /**
+   * Defaults to true. Pass false to create a tree-root / coordinator marker: the
+   * event anchors a causal chain (use it as parentEventId for sub-agents) but holds
+   * no capacity and has no confirmation timeout — it never self-denies sub-agents and
+   * is never swept mid-run. Still confirmable (confirm counts as spent). Use for an
+   * orchestrator root so sub-agents draw from the full budget.
+   */
+  reserve?: boolean;
 }
 
 export interface ConfirmEventOptions {
@@ -951,6 +959,7 @@ export class FiGuardClient {
     if (options.metadata !== undefined) body["metadata"] = options.metadata;
     if (options.maxSubtreeQuantity !== undefined) body["maxSubtreeQuantity"] = options.maxSubtreeQuantity;
     if (options.dryRun) body["dryRun"] = true;
+    if (options.reserve === false) body["reserve"] = false;
 
     return withAuthorizeSpan(
       {
