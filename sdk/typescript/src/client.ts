@@ -205,6 +205,24 @@ export interface ExtendBudgetOptions {
   expiresIn?: string | number;
 }
 
+export interface UpdateBudgetOptions {
+  budgetId: string;
+  /** "SHADOW" (run all checks, block nothing) or "FULL_ENFORCEMENT". */
+  trustMode?: string;
+  /** New total spend limit. For credit/debit with audit semantics, prefer fundBudget. */
+  totalLimit?: number;
+  /** New per-minute authorize cap. */
+  velocityMaxPerMinute?: number;
+  /** New per-hour amount cap. */
+  velocityMaxAmountPerHour?: number;
+  /** New per-day authorize cap. */
+  velocityMaxPerDay?: number;
+  /** New absolute ISO 8601 expiry. See also extendBudget. */
+  expiresAt?: string;
+  /** Budget status override (advanced). */
+  status?: string;
+}
+
 export interface AuthorizeOptions {
   sessionToken: string;
   agentId: string;
@@ -434,6 +452,33 @@ export class FiGuardClient {
       expiresAt: resolveExpiresAt(options.expiresAt, options.expiresIn),
     };
     const data = await this.request("POST", `/api/v1/budgets/${options.budgetId}/extend`, {
+      body,
+      retryable: false,
+    });
+    return makeBudget(data);
+  }
+
+  /**
+   * Update a budget's policy in place (PATCH /budgets/{id}).
+   *
+   * Only the fields you pass are changed; everything omitted is left as-is. The
+   * common case is leaving shadow mode: create with trustMode "SHADOW" to observe
+   * without blocking, then updateBudget({ budgetId, trustMode: "FULL_ENFORCEMENT" })
+   * to start enforcing.
+   */
+  async updateBudget(options: UpdateBudgetOptions): Promise<Budget> {
+    const body: Record<string, unknown> = {};
+    if (options.trustMode !== undefined) body["trustMode"] = options.trustMode;
+    if (options.totalLimit !== undefined) body["totalLimit"] = options.totalLimit;
+    if (options.velocityMaxPerMinute !== undefined)
+      body["velocityMaxPerMinute"] = options.velocityMaxPerMinute;
+    if (options.velocityMaxAmountPerHour !== undefined)
+      body["velocityMaxAmountPerHour"] = options.velocityMaxAmountPerHour;
+    if (options.velocityMaxPerDay !== undefined)
+      body["velocityMaxPerDay"] = options.velocityMaxPerDay;
+    if (options.expiresAt !== undefined) body["expiresAt"] = options.expiresAt;
+    if (options.status !== undefined) body["status"] = options.status;
+    const data = await this.request("PATCH", `/api/v1/budgets/${options.budgetId}`, {
       body,
       retryable: false,
     });

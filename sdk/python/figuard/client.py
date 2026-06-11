@@ -317,6 +317,57 @@ class FiGuardClient:
         )
         return _parse_budget(data)
 
+    def update_budget(
+        self,
+        budget_id: str,
+        trust_mode: Optional[str] = None,
+        total_limit: Optional[float] = None,
+        velocity_max_per_minute: Optional[int] = None,
+        velocity_max_amount_per_hour: Optional[float] = None,
+        velocity_max_per_day: Optional[int] = None,
+        expires_at: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Budget:
+        """
+        Update a budget's policy in place (``PATCH /budgets/{id}``).
+
+        Only the fields you pass are changed; everything omitted is left as-is.
+
+        The common case is leaving shadow mode after a trial run: create with
+        ``trust_mode="SHADOW"`` to observe without blocking, then call
+        ``update_budget(budget_id, trust_mode="FULL_ENFORCEMENT")`` to start enforcing.
+
+        :param trust_mode: ``"SHADOW"`` (run all checks, block nothing) or
+            ``"FULL_ENFORCEMENT"`` (block denied spends).
+        :param total_limit: New total spend limit. For credit/debit adjustments with
+            audit semantics, prefer :meth:`fund_budget` instead.
+        :param velocity_max_per_minute: New per-minute authorize cap.
+        :param velocity_max_amount_per_hour: New per-hour amount cap.
+        :param velocity_max_per_day: New per-day authorize cap.
+        :param expires_at: New absolute ISO 8601 expiry. See also :meth:`extend_budget`.
+        :param status: Budget status override (advanced).
+        :returns: The updated :class:`Budget`.
+        """
+        body: Dict[str, Any] = {}
+        if trust_mode is not None:
+            body["trustMode"] = trust_mode
+        if total_limit is not None:
+            body["totalLimit"] = total_limit
+        if velocity_max_per_minute is not None:
+            body["velocityMaxPerMinute"] = velocity_max_per_minute
+        if velocity_max_amount_per_hour is not None:
+            body["velocityMaxAmountPerHour"] = velocity_max_amount_per_hour
+        if velocity_max_per_day is not None:
+            body["velocityMaxPerDay"] = velocity_max_per_day
+        if expires_at is not None:
+            body["expiresAt"] = expires_at
+        if status is not None:
+            body["status"] = status
+        data = self._request(
+            "PATCH", f"/api/v1/budgets/{budget_id}", json=body, retryable=False
+        )
+        return _parse_budget(data)
+
     def cancel_batch(self, budget_ids: List[str]) -> List[Budget]:
         """
         Cancel up to 100 budgets in a single call.

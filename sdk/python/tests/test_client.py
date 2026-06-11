@@ -435,6 +435,36 @@ class TestResumeBudget:
         assert exc_info.value.status_code == 409
 
 
+class TestUpdateBudget:
+
+    @resp_lib.activate
+    def test_update_flips_trust_mode_via_patch(self, client: FiGuardClient) -> None:
+        resp_lib.add(resp_lib.PATCH, f"{BASE}/api/v1/budgets/{BUDGET_ID}",
+                     json=_budget_payload(), status=200)
+
+        budget = client.update_budget(
+            BUDGET_ID,
+            trust_mode="FULL_ENFORCEMENT",
+            velocity_max_per_minute=10,
+        )
+
+        assert budget.id == BUDGET_ID
+        # Only the provided fields are sent; omitted ones are not in the body.
+        import json as _json
+        sent = _json.loads(resp_lib.calls[0].request.body)
+        assert sent == {"trustMode": "FULL_ENFORCEMENT", "velocityMaxPerMinute": 10}
+
+    @resp_lib.activate
+    def test_update_sends_empty_body_when_nothing_provided(self, client: FiGuardClient) -> None:
+        resp_lib.add(resp_lib.PATCH, f"{BASE}/api/v1/budgets/{BUDGET_ID}",
+                     json=_budget_payload(), status=200)
+
+        client.update_budget(BUDGET_ID)
+
+        import json as _json
+        assert _json.loads(resp_lib.calls[0].request.body) == {}
+
+
 # ---------------------------------------------------------------------------
 # Retry behaviour
 # ---------------------------------------------------------------------------
