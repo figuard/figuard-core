@@ -1,6 +1,6 @@
 {
   "name": "figuard-mcp",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "mcpName": "io.github.figuard/figuard-mcp",
   "description": "FiGuard MCP server — use FiGuard from Claude Code, Cursor, or Claude Desktop without writing SDK code",
   "main": "./dist/index.js",
@@ -52,7 +52,7 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "figuard": "^0.5.0"
+    "figuard": "^1.2.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

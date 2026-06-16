@@ -170,6 +170,10 @@ export const TOOLS = [
           type: "boolean",
           description: "When true, runs all enforcement checks and returns AUTHORIZED/DENIED but writes nothing to the ledger. Use for testing.",
         },
+        reserve: {
+          type: "boolean",
+          description: "Optional (default true). Set false for an orchestrator/coordinator spend-tree root that should hold NO capacity and have no confirmation timeout — sub-agents authorize against the budget directly. Use only for low/zero-consumption coordinators.",
+        },
       },
       required: ["session_token", "agent_id", "action_type", "description", "requested_quantity"],
     },
@@ -482,6 +486,69 @@ export const TOOLS = [
         },
       },
       required: ["budget_id", "operation", "amount"],
+    },
+  },
+
+  {
+    name: "figuard_get_spend_tree",
+    description:
+      "Get the hierarchical spend tree for a budget — every event and its causal children (parent → child chains). " +
+      "Use to inspect what an agent (and its sub-agents) actually spent, including denied attempts. Returns roots and a total event count.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        budget_id: {
+          type: "string",
+          description: "The budget ID (starts with 'bgt_').",
+        },
+      },
+      required: ["budget_id"],
+    },
+  },
+
+  {
+    name: "figuard_update_budget",
+    description:
+      "Update an existing budget's settings: total limit, velocity caps, expiry, trust mode, or status. " +
+      "Use trust_mode='FULL_ENFORCEMENT' to leave shadow mode and start blocking, or 'SHADOW' to observe without blocking. " +
+      "For crediting/debiting funds with audit semantics, prefer figuard_fund_budget instead.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        budget_id: {
+          type: "string",
+          description: "The budget ID (starts with 'bgt_').",
+        },
+        trust_mode: {
+          type: "string",
+          description: "'SHADOW' (run all checks, block nothing) or 'FULL_ENFORCEMENT' (block denied spends).",
+        },
+        total_limit: {
+          type: "number",
+          description: "New total spend limit.",
+        },
+        velocity_max_per_minute: {
+          type: "number",
+          description: "New per-minute authorize cap.",
+        },
+        velocity_max_amount_per_hour: {
+          type: "number",
+          description: "New per-hour amount cap.",
+        },
+        velocity_max_per_day: {
+          type: "number",
+          description: "New per-day authorize cap.",
+        },
+        expires_at: {
+          type: "string",
+          description: "New absolute ISO 8601 expiry (e.g. '2026-12-31T23:59:59Z').",
+        },
+        status: {
+          type: "string",
+          description: "Budget status override (advanced).",
+        },
+      },
+      required: ["budget_id"],
     },
   },
 ] as const;

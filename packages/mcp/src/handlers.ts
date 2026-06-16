@@ -3,7 +3,7 @@
  * Returns a plain object that index.ts wraps in MCP content blocks.
  */
 
-import { FiGuardClient } from "figuard";
+import { FiGuardClient, SpendTreeNode } from "figuard";
 
 // ---------------------------------------------------------------------------
 // Argument types (loosely typed — MCP passes Record<string,unknown>)
@@ -100,6 +100,7 @@ export async function handleAuthorize(client: FiGuardClient, args: Args): Promis
     parentEventId: optStr(args, "parent_event_id"),
     traceId: optStr(args, "trace_id"),
     dryRun: optBool(args, "dry_run"),
+    reserve: optBool(args, "reserve"),
   });
 
   if (result.isAuthorized) {
@@ -353,5 +354,43 @@ export async function handleFundBudget(client: FiGuardClient, args: Args): Promi
     status: result.status,
     reason: result.reason,
     message: `Budget ${result.operation} applied. New totalLimit: ${result.totalLimit}, available: ${result.availableQuantity}.`,
+  };
+}
+
+export async function handleGetSpendTree(client: FiGuardClient, args: Args): Promise<unknown> {
+  const tree = await client.getSpendTree(str(args, "budget_id"));
+  const node = (n: SpendTreeNode): Record<string, unknown> => ({
+    event_id: n.event.id,
+    decision: n.event.decision,
+    requested_quantity: n.event.requestedQuantity,
+    confirmed_quantity: n.event.confirmedQuantity,
+    description: n.event.description,
+    children: n.children.map(node),
+  });
+  return {
+    budget_id: tree.budgetId,
+    total_events: tree.totalEvents,
+    roots: tree.roots.map(node),
+  };
+}
+
+export async function handleUpdateBudget(client: FiGuardClient, args: Args): Promise<unknown> {
+  const budget = await client.updateBudget({
+    budgetId: str(args, "budget_id"),
+    trustMode: optStr(args, "trust_mode"),
+    totalLimit: optNum(args, "total_limit"),
+    velocityMaxPerMinute: optNum(args, "velocity_max_per_minute"),
+    velocityMaxAmountPerHour: optNum(args, "velocity_max_amount_per_hour"),
+    velocityMaxPerDay: optNum(args, "velocity_max_per_day"),
+    expiresAt: optStr(args, "expires_at"),
+    status: optStr(args, "status"),
+  });
+  return {
+    budget_id: budget.id,
+    status: budget.status,
+    total_limit: budget.totalLimit,
+    available: budget.availableQuantity,
+    expires_at: budget.expiresAt,
+    message: "Budget updated.",
   };
 }
