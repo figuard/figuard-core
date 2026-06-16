@@ -27,7 +27,7 @@ from figuard import FiGuardClient
 from figuard.integrations.langchain import FiGuardCallbackHandler
 
 # FiGuard setup
-client = FiGuardClient()  # zero-config sandbox
+client = FiGuardClient()  # zero-config: runs locally (embedded SQLite). Set FIGUARD_API_KEY + FIGUARD_BASE_URL for a server.
 budget = client.create_budget(
     user_id="user_123",
     total_limit=500.00,
@@ -190,6 +190,8 @@ Without `void_tree`, each child reservation stays frozen until `authorization_ex
 ## Step 5: Per-agent spending caps in a multi-agent graph
 
 When your graph has multiple specialist agents sharing a parent budget, give each a delegation token:
+
+> **Fleet / delegation requires a FiGuard server** — delegation tokens aren't available on the embedded backend. Point the client at a server: `FiGuardClient(api_key="fg_live_...", base_url="https://figuard.mycompany.internal")`.
 
 ```python
 # Create scoped tokens per agent

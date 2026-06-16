@@ -89,6 +89,14 @@ _SANDBOX_API_KEY = "sb_live_demo"
 _SANDBOX_BASE_URL = "https://figuard-sandbox-g1ha.onrender.com"
 _SANDBOX_WARNING_SHOWN = False  # module-level flag: warn at most once per process
 
+
+def _default_embedded_db() -> str:
+    """Default embedded store: a persistent SQLite file under the user's home dir, so
+    budgets survive process restarts. Created on first use."""
+    d = os.path.join(os.path.expanduser("~"), ".figuard")
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, "figuard.db")
+
 # Retry configuration
 _MAX_RETRIES = 3
 _RETRY_BACKOFF_BASE = 1.0  # seconds; doubles each retry (1s, 2s, 4s)
@@ -104,19 +112,18 @@ class FiGuardClient:
     **Zero-config usage** — no arguments required for demos and notebooks::
 
         client = FiGuardClient()
-        # Connects to the shared public sandbox automatically.
+        # Zero-config: enforces locally in-process (embedded SQLite) — no server, no API key.
 
-    **Configuration resolution order:**
+    **Configuration resolution (first match wins):**
 
-    1. Explicit constructor arguments
-    2. Environment variables: ``FIGUARD_API_KEY``, ``FIGUARD_BASE_URL``
-    3. Shared public sandbox (``sb_live_demo`` / ``figuard-sandbox-g1ha.onrender.com``)
+    1. ``mode="sandbox"`` → shared public demo (explicit; prints a one-time warning,
+       suppress with ``FIGUARD_SUPPRESS_SANDBOX_WARNING=1``)
+    2. ``mode="embedded"`` or ``database=`` → local SQLite (embedded)
+    3. ``api_key`` / ``base_url`` (or ``FIGUARD_API_KEY`` / ``FIGUARD_BASE_URL``) → remote server
+    4. nothing configured → embedded local SQLite (zero-config default)
 
-    When the sandbox fallback is used, a one-time warning is printed to stdout.
-    Suppress it with ``FIGUARD_SUPPRESS_SANDBOX_WARNING=1``.
-
-    :param api_key:  Your ``fg_live_...`` or ``fg_test_...`` API key.
-                     Defaults to ``FIGUARD_API_KEY`` env var, then sandbox key.
+    :param api_key:  Your ``fg_live_...`` or ``fg_test_...`` API key (selects server mode).
+                     Optional; defaults to the ``FIGUARD_API_KEY`` env var.
     :param base_url: Override for self-hosted deployments.
                      Defaults to ``FIGUARD_BASE_URL`` env var, then sandbox URL.
     :param timeout:  Per-request timeout in seconds (default 30).
@@ -128,28 +135,64 @@ class FiGuardClient:
         base_url: Optional[str] = None,
         timeout: int = 30,
         fail_open: bool = False,
+        mode: Optional[str] = None,
+        database: Optional[str] = None,
+        log: bool = True,
     ) -> None:
+        """Embedded-by-default; graduate to a server by config \u2014 same calls either way.
+
+        Resolution (first match): mode="sandbox" \u2192 shared demo; mode="embedded"/database= \u2192
+        local SQLite; api_key/base_url/mode="server" \u2192 remote server; nothing configured \u2192
+        embedded local SQLite (your data stays on your machine \u2014 never silently the sandbox).
+        ``client.backend`` \u2208 {"embedded","server","sandbox"} reports the active backend.
+        """
         global _SANDBOX_WARNING_SHOWN
 
         resolved_key = api_key or os.environ.get("FIGUARD_API_KEY")
         resolved_url = base_url or os.environ.get("FIGUARD_BASE_URL")
+        resolved_db = database or os.environ.get("FIGUARD_DATABASE")
 
-        if not resolved_key:
-            resolved_key = _SANDBOX_API_KEY
-            resolved_url = resolved_url or _SANDBOX_BASE_URL
+        self._embedded = None
+        self._timeout = timeout
+        self._fail_open = fail_open
+
+        # ---- embedded (explicit, or the zero-config default) ----
+        if mode == "embedded" or (mode != "sandbox" and resolved_db is not None) or (
+            mode is None and resolved_key is None and resolved_url is None and resolved_db is None
+        ):
+            from ._embedded import EmbeddedBackend
+            # Persist by default so budgets survive restarts (multi-day budgets just work).
+            # Pass database=":memory:" for an ephemeral store (tests, throwaway scripts).
+            db = resolved_db or _default_embedded_db()
+            self._embedded = EmbeddedBackend(db)
+            self.backend = "embedded"
+            self._api_key = None
+            self._base_url = ""
+            self._session = None
+            if log:
+                print(f"FiGuard: enforcing locally (embedded SQLite: {db})")
+            return
+
+        # ---- server / sandbox ----
+        if mode == "sandbox" or (resolved_key is None and resolved_url is None):
+            resolved_key = resolved_key or _SANDBOX_API_KEY
+            resolved_url = _SANDBOX_BASE_URL
+            self.backend = "sandbox"
             if not _SANDBOX_WARNING_SHOWN and not os.environ.get("FIGUARD_SUPPRESS_SANDBOX_WARNING"):
                 print(
-                    "\n\u26a0\ufe0f  FiGuard: No configuration found \u2014 connecting to the shared public sandbox.\n"
+                    "\n\u26a0\ufe0f  FiGuard: using the shared public sandbox.\n"
                     "    \u2192 Data is wiped periodically. Not for production use.\n"
-                    "    \u2192 Self-host: https://figuard.io/docs/self-hosting\n"
+                    "    \u2192 Run locally instead: FiGuardClient(mode=\"embedded\")\n"
                     "    \u2192 Suppress this warning: set FIGUARD_SUPPRESS_SANDBOX_WARNING=1\n"
                 )
                 _SANDBOX_WARNING_SHOWN = True
+        else:
+            resolved_key = resolved_key or _SANDBOX_API_KEY
+            resolved_url = resolved_url or _SANDBOX_BASE_URL
+            self.backend = "sandbox" if resolved_url == _SANDBOX_BASE_URL else "server"
 
         self._api_key = resolved_key
         self._base_url = (resolved_url or _SANDBOX_BASE_URL).rstrip("/")
-        self._timeout = timeout
-        self._fail_open = fail_open
         self._session = requests.Session()
         from . import __version__
         self._session.headers.update(
@@ -160,6 +203,8 @@ class FiGuardClient:
                 "User-Agent": f"figuard-python/{__version__}",
             }
         )
+        if log and self.backend == "server":
+            print(f"FiGuard: connected to server at {self._base_url}")
 
     # -----------------------------------------------------------------------
     # Budget management
@@ -221,11 +266,14 @@ class FiGuardClient:
         :returns: ``Budget`` with ``tokens`` populated — store
                   ``budget.primary_token.session_token`` securely; it is never returned again.
         """
-        body: Dict[str, Any] = {
-            "userId": user_id,
-            "totalLimit": total_limit,
-            "expiresAt": _resolve_expires_at(expires_at, expires_in),
-        }
+        body: Dict[str, Any] = {"userId": user_id, "totalLimit": total_limit}
+        if expires_at is not None or expires_in is not None:
+            body["expiresAt"] = _resolve_expires_at(expires_at, expires_in)
+        elif self._embedded is None:
+            # The server requires an explicit expiry (session-token security). Embedded budgets
+            # have no session semantics, so they are long-lived by default — but if you DO set
+            # an expiry, embedded enforces it exactly like the server.
+            body["expiresAt"] = _resolve_expires_at(expires_at, expires_in)  # raises: required
         if currency is not None:
             body["currency"] = currency
         if unit is not None:
@@ -314,6 +362,57 @@ class FiGuardClient:
         }
         data = self._request(
             "POST", f"/api/v1/budgets/{budget_id}/extend", json=body, retryable=False
+        )
+        return _parse_budget(data)
+
+    def update_budget(
+        self,
+        budget_id: str,
+        trust_mode: Optional[str] = None,
+        total_limit: Optional[float] = None,
+        velocity_max_per_minute: Optional[int] = None,
+        velocity_max_amount_per_hour: Optional[float] = None,
+        velocity_max_per_day: Optional[int] = None,
+        expires_at: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Budget:
+        """
+        Update a budget's policy in place (``PATCH /budgets/{id}``).
+
+        Only the fields you pass are changed; everything omitted is left as-is.
+
+        The common case is leaving shadow mode after a trial run: create with
+        ``trust_mode="SHADOW"`` to observe without blocking, then call
+        ``update_budget(budget_id, trust_mode="FULL_ENFORCEMENT")`` to start enforcing.
+
+        :param trust_mode: ``"SHADOW"`` (run all checks, block nothing) or
+            ``"FULL_ENFORCEMENT"`` (block denied spends).
+        :param total_limit: New total spend limit. For credit/debit adjustments with
+            audit semantics, prefer :meth:`fund_budget` instead.
+        :param velocity_max_per_minute: New per-minute authorize cap.
+        :param velocity_max_amount_per_hour: New per-hour amount cap.
+        :param velocity_max_per_day: New per-day authorize cap.
+        :param expires_at: New absolute ISO 8601 expiry. See also :meth:`extend_budget`.
+        :param status: Budget status override (advanced).
+        :returns: The updated :class:`Budget`.
+        """
+        body: Dict[str, Any] = {}
+        if trust_mode is not None:
+            body["trustMode"] = trust_mode
+        if total_limit is not None:
+            body["totalLimit"] = total_limit
+        if velocity_max_per_minute is not None:
+            body["velocityMaxPerMinute"] = velocity_max_per_minute
+        if velocity_max_amount_per_hour is not None:
+            body["velocityMaxAmountPerHour"] = velocity_max_amount_per_hour
+        if velocity_max_per_day is not None:
+            body["velocityMaxPerDay"] = velocity_max_per_day
+        if expires_at is not None:
+            body["expiresAt"] = expires_at
+        if status is not None:
+            body["status"] = status
+        data = self._request(
+            "PATCH", f"/api/v1/budgets/{budget_id}", json=body, retryable=False
         )
         return _parse_budget(data)
 
@@ -887,11 +986,11 @@ class FiGuardClient:
 
     def authorize(
         self,
-        session_token: str,
-        agent_id: str,
-        action_type: str,
-        description: str,
-        requested_quantity: float,
+        session_token: Optional[str] = None,
+        agent_id: str = "agent",
+        action_type: str = "SPEND",
+        description: str = "spend",
+        requested_quantity: Optional[float] = None,
         idempotency_key: Optional[str] = None,
         currency: Optional[str] = None,
         intent_context: Optional[str] = None,
@@ -904,6 +1003,10 @@ class FiGuardClient:
         metadata: Optional[Dict[str, Any]] = None,
         max_subtree_quantity: Optional[float] = None,
         dry_run: bool = False,
+        reserve: bool = True,
+        *,
+        budget: Optional["Budget"] = None,
+        amount: Optional[float] = None,
         **kwargs: Any,
     ) -> AuthorizationResult:
         """
@@ -920,10 +1023,30 @@ class FiGuardClient:
         :param dry_run: When ``True``, all enforcement checks run and a full
             ``AUTHORIZED`` or ``DENIED`` result is returned, but nothing is written
             to the ledger and no webhooks fire. Use during integration testing.
+        :param reserve: Defaults to ``True``. Pass ``False`` to create a tree-root /
+            coordinator marker: the event anchors a causal chain (use it as
+            ``parent_event_id`` for sub-agents) but holds **no** capacity and has **no**
+            confirmation timeout, so it never self-denies sub-agents and is never swept
+            mid-run. It is still confirmable — a coordinator can confirm its own actual
+            consumption, which counts as spent. Use for an orchestrator root so
+            sub-agents draw from the full budget. (Don't pair with a real spend amount
+            you expect to be enforced — reserve=false reserves nothing.)
 
         :returns: ``AuthorizationResult`` — check ``.is_authorized`` or call
             ``.raise_if_denied()`` for exception-driven flow.
         """
+        # Ergonomic shorthand: authorize(budget=b, amount=3). `budget` may be a Budget object
+        # (its session token is used) or a raw session-token string. The verbose
+        # session_token/agent_id/action_type/description form still works exactly as before.
+        if session_token is None and budget is not None:
+            session_token = getattr(budget, "session_token", None) or budget
+        if requested_quantity is None:
+            requested_quantity = amount
+        if session_token is None:
+            raise ValueError("authorize: pass budget= (from create_budget) or session_token=")
+        if requested_quantity is None:
+            raise ValueError("authorize: pass amount= or requested_quantity=")
+
         if not idempotency_key or not idempotency_key.strip():
             idempotency_key = str(uuid.uuid4())
 
@@ -968,6 +1091,8 @@ class FiGuardClient:
             body["maxSubtreeQuantity"] = max_subtree_quantity
         if dry_run:
             body["dryRun"] = True
+        if not reserve:
+            body["reserve"] = False
 
         # Log only the prefix — the raw token must never appear in logs
         token_prefix = session_token[:8] if len(session_token) >= 8 else "???"
@@ -1017,6 +1142,16 @@ class FiGuardClient:
     # -----------------------------------------------------------------------
     # Payment lifecycle
     # -----------------------------------------------------------------------
+
+    def confirm(self, event, amount: float) -> SpendEventResponse:
+        """Shorthand for :meth:`confirm_event`. ``event`` may be an ``AuthorizationResult``
+        (or ``SpendEventResponse``) or a raw ``event_id`` string::
+
+            auth = fg.authorize(budget=b, amount=3)
+            fg.confirm(auth, 2.5)
+        """
+        event_id = getattr(event, "event_id", None) or getattr(event, "id", None) or event
+        return self.confirm_event(event_id, amount)
 
     def confirm_event(
         self,
@@ -1070,6 +1205,10 @@ class FiGuardClient:
             data = self._request(
                 "POST", f"/api/v1/events/{event_id}/fail", json=body, retryable=True
             )
+        # The event is now terminal — drop it as the ambient causal-chain parent so a later
+        # un-scoped authorize() doesn't auto-parent to it (which would raise INVALID_PARENT).
+        if get_current_event_id() == event_id:
+            _set_current_event_id(None)
         return _parse_spend_event(data)
 
     def void_event(
@@ -1095,6 +1234,9 @@ class FiGuardClient:
         data = self._request(
             "POST", f"/api/v1/events/{event_id}/void", json=body, retryable=True
         )
+        # Terminal now — drop it as the ambient causal-chain parent (see fail_event).
+        if get_current_event_id() == event_id:
+            _set_current_event_id(None)
         return VoidResult(event=_parse_spend_event(data))
 
     def void_tree(self, event_id: str, reason: str) -> VoidTreeResult:
@@ -1477,6 +1619,10 @@ class FiGuardClient:
 
         Never retries 4xx (these are caller errors and won't change on retry).
         """
+        if self._embedded is not None:
+            # Embedded backend serves the same contract in-process; no network, no retries.
+            return self._embedded.request(method, path, json=json, params=params, headers=headers)
+
         url = f"{self._base_url}{path}"
         last_exc: Optional[Exception] = None
         attempts = _MAX_RETRIES if retryable else 1

@@ -719,7 +719,8 @@ def auto_guard_langchain(
     :param velocity_max_per_minute: Max tool calls per 60-second window. Use when tools
                                    lack a dollar amount — catches runaway loops by rate.
     :param client:                 Optional pre-built FiGuardClient. Pass one to reuse an
-                                   existing client or to override sandbox fallback in tests.
+                                   existing client or to point at a server/sandbox instead of
+                                   the embedded (local SQLite) default.
     :returns:                      The same ``executor`` with FiGuardCallbackHandler wired in.
 
     For per-category allocations, anomaly detection, entity dedup, custom ``user_id``, or

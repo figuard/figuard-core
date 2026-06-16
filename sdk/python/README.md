@@ -24,69 +24,62 @@ pip install figuard[all]            # everything above
 
 Requires Python 3.9+.
 
-## Zero-config demo (no account needed)
+## Quickstart — zero infra, runs in-process
 
-```python
-from figuard import FiGuardClient
-
-# No arguments — connects to the shared public sandbox automatically
-client = FiGuardClient()
-```
-
-Or with framework integrations — one line wires up the entire budget + callback:
-
-```python
-# LangChain (also available as: pip install figuard-langchain)
-from figuard import auto_guard_langchain
-
-# Set FIGUARD_API_KEY + FIGUARD_BASE_URL for production — picked up automatically.
-# Without them, connects to the shared sandbox (demo only, data wiped periodically).
-executor = auto_guard_langchain(executor, budget=500, velocity_max_per_minute=10)
-
-# CrewAI
-from figuard import auto_guard_crewai
-
-auto_guard_crewai(book_flight_tool, budget=500, velocity_max_per_minute=10)
-```
-
-> **Note:** The shared sandbox is for demos only. Data is wiped periodically.
-> For production, [self-host FiGuard](https://figuard.io/docs/self-hosting) and set
-> `FIGUARD_API_KEY` / `FIGUARD_BASE_URL` — the wrappers pick them up automatically.
-
-## Quickstart
+No server, no database, no account. `FiGuardClient()` runs enforcement **locally**, in your
+process, against a SQLite file in your home dir:
 
 ```python
 from figuard import FiGuardClient, FiGuardDeniedException
 
-client = FiGuardClient(api_key="fg_live_...")
+fg = FiGuardClient()                       # embedded by default — local, zero infra
 
-# 1. Create a budget for your user's session
-budget = client.create_budget(
-    user_id="user_123",
-    total_limit=500.00,
-    expires_in="24h",
-)
+# 1. Create a budget
+budget = fg.create_budget(user_id="user_123", total_limit=500.00, currency="USD")
 
 # 2. Pre-authorize every spend before it happens
 try:
-    result = client.authorize(
-        session_token=budget.primary_token.session_token,
-        agent_id="agent_flight_booker",
-        action_type="PURCHASE",
-        description="NYC to LAX flight",
-        requested_quantity=299.00,
-        idempotency_key="txn-abc-001",  # required — use a stable unique key
-    ).raise_if_denied()
+    auth = fg.authorize(budget=budget, amount=299.00).raise_if_denied()
 
-    # 3. Execute the real transaction, then confirm
-    external_tx_id = payment_processor.charge(299.00)
-    client.confirm_event(result.event_id, confirmed_quantity=299.00,
-                         external_transaction_id=external_tx_id)
+    # 3. Do the real work, then confirm what was actually spent
+    payment_processor.charge(299.00)
+    fg.confirm(auth, 299.00)
 
 except FiGuardDeniedException as e:
-    print(f"Spend denied: {e.denial_reason}")
-    # e.g. INSUFFICIENT_FUNDS, BUDGET_PAUSED, ANOMALY_DETECTED
+    print(f"Spend denied: {e.denial_reason}")   # INSUFFICIENT_FUNDS, BUDGET_PAUSED, ...
 ```
+
+That's the whole reserve → confirm loop — and it ran with no server.
+
+### Graduate to a shared server
+
+When several agents/processes need to share **one** budget, point the *same* client at a
+FiGuard server. Same calls, one config change:
+
+```python
+fg = FiGuardClient(api_key="fg_live_...", base_url="https://figuard.mycompany.internal")
+```
+
+`fg.backend` is `"embedded"`, `"server"`, or `"sandbox"`, and it's logged on startup so you
+always know where enforcement runs. To try the shared hosted demo (public, wiped
+periodically): `FiGuardClient(mode="sandbox")`.
+
+> The verbose form still works unchanged — `authorize(session_token=…, agent_id=…,
+> action_type=…, description=…, requested_quantity=…)` and `confirm_event(event_id, …)` —
+> use it when you want richer audit metadata or a scoped session token per agent.
+
+### Framework integrations — one line
+
+```python
+from figuard import auto_guard_langchain
+executor = auto_guard_langchain(executor, budget=500, velocity_max_per_minute=10)
+
+from figuard import auto_guard_crewai
+auto_guard_crewai(book_flight_tool, budget=500, velocity_max_per_minute=10)
+```
+
+These use the default client (embedded) unless you set `FIGUARD_API_KEY` + `FIGUARD_BASE_URL`
+(or `mode="sandbox"`) to point them at a server.
 
 ## Async (LangChain / CrewAI / OpenAI Agents)
 

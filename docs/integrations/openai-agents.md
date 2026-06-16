@@ -20,7 +20,7 @@ from figuard import FiGuardClient
 from figuard.integrations.openai_agents import guarded_function_tool
 
 # --- FiGuard setup ---
-client = FiGuardClient()  # zero-config: connects to shared sandbox automatically
+client = FiGuardClient()  # zero-config: runs locally (embedded SQLite). Set FIGUARD_API_KEY + FIGUARD_BASE_URL for a server.
 budget = client.create_budget(
     user_id="demo_user",
     total_limit=100.00,
@@ -144,6 +144,8 @@ Now a flight that would push the flights allocation past $700 is denied with `AL
 
 When one agent orchestrates others, give each sub-agent a scoped delegation token:
 
+> **Fleet / delegation requires a FiGuard server** — delegation tokens aren't available on the embedded backend. Point the client at a server: `FiGuardClient(api_key="fg_live_...", base_url="https://figuard.mycompany.internal")`.
+
 ```python
 researcher_token = client.create_delegation_token(
     budget_id=budget.id,
@@ -175,7 +177,7 @@ Both client and guard are async-compatible:
 from figuard import AsyncFiGuardClient
 from figuard.integrations.openai_agents import guarded_function_tool
 
-client = AsyncFiGuardClient()  # zero-config: same sandbox fallback as FiGuardClient
+client = AsyncFiGuardClient()  # zero-config: runs locally (embedded). Set FIGUARD_API_KEY + FIGUARD_BASE_URL for a server.
 
 # Same decorator pattern — guarded_function_tool detects async context automatically
 @function_tool

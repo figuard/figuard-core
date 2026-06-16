@@ -1,11 +1,18 @@
 """
 FiGuard Python SDK — pre-flight spend authorization for AI agents.
 
-Zero-config demo (no account needed)::
+Zero-config, zero-infra (runs in-process, no server)::
 
     from figuard import FiGuardClient
 
-    client = FiGuardClient()  # connects to shared public sandbox automatically
+    fg = FiGuardClient()                       # embedded-by-default: local SQLite, no server
+    b  = fg.create_budget(user_id="u1", total_limit=10, currency="USD")
+    a  = fg.authorize(budget=b, amount=3)
+    if a.is_authorized:
+        fg.confirm(a, 2.5)
+
+    # graduate to a server — same calls, one config change:
+    fg = FiGuardClient(api_key="fg_live_...", base_url="https://figuard.mycompany.internal")
 
 One-line framework wiring::
 
@@ -43,10 +50,10 @@ Full quickstart::
         print(f"Spend denied: {e.denial_reason}")
 """
 
-__version__ = "1.1.2"
+__version__ = "1.2.0"
 
 from .client import FiGuardClient
-from .exceptions import FiGuardApiError, FiGuardConnectionError, FiGuardDeniedException, FiGuardError, FiGuardWebhookVerificationError
+from .exceptions import FiGuardApiError, FiGuardCapabilityError, FiGuardConnectionError, FiGuardDeniedException, FiGuardError, FiGuardWebhookVerificationError
 from .composite import CompositeGuard, GuardedResource, CompositeAuthorizationResult
 from .denial_reasons import DenialReason
 
@@ -98,6 +105,7 @@ __all__ = [
     # Exceptions
     "FiGuardError",
     "FiGuardApiError",
+    "FiGuardCapabilityError",
     "FiGuardDeniedException",
     "FiGuardConnectionError",
     "FiGuardWebhookVerificationError",

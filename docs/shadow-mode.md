@@ -1,5 +1,7 @@
 # Shadow Mode: Observe Before You Enforce
 
+> **Server feature.** Shadow mode (`trust_mode="SHADOW"`) is a server-side budget mode — it is not available on the embedded backend. Use a FiGuard server (set `api_key`/`base_url`).
+
 Shadow mode lets you run FiGuard in your production pipeline **without blocking any agent actions**. You get the full audit trail, anomaly detection signals, and budget utilization data — but every authorization returns AUTHORIZED regardless of limit.
 
 Use it to build confidence before flipping enforcement on.
@@ -33,7 +35,7 @@ Set both when creating the budget:
 ```python
 from figuard import FiGuardClient
 
-client = FiGuardClient()
+client = FiGuardClient(api_key="fg_live_...", base_url="https://figuard.mycompany.internal")
 
 budget = client.create_budget(
     user_id="user_123",
@@ -46,7 +48,7 @@ budget = client.create_budget(
 ```
 
 ```typescript
-const client = new FiGuardClient();
+const client = new FiGuardClient({ apiKey: 'fg_live_...', baseUrl: 'https://figuard.mycompany.internal' });
 
 const budget = await client.createBudget({
   userId: "user_123",

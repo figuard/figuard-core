@@ -1,5 +1,7 @@
 # Audit & Replay
 
+> **Server feature.** Spend replay / point-in-time audit endpoints are served by the FiGuard server; they are not available on the embedded backend.
+
 FiGuard records every authorization decision — authorized, denied, confirmed, failed, voided — in an append-only ledger. Nothing is ever overwritten. The replay API lets you read that history in several ways depending on what you need.
 
 ---

@@ -5,7 +5,7 @@ Usage::
 
     from figuard import AsyncFiGuardClient
 
-    async with AsyncFiGuardClient() as client:  # zero-config: sandbox fallback
+    async with AsyncFiGuardClient() as client:  # zero-config: enforces locally (embedded SQLite)
         budget = await client.create_budget(
             user_id="user_123",
             total_limit=500.00,
@@ -52,6 +52,13 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 from .client import _resolve_expires_at
+
+
+def _budget_expiry(is_embedded: bool, expires_at, expires_in):
+    """Embedded budgets are long-lived by default (no expiry); the server requires one."""
+    if expires_at is None and expires_in is None and is_embedded:
+        return None
+    return _resolve_expires_at(expires_at, expires_in)
 from .exceptions import FiGuardApiError, FiGuardConnectionError
 from .models import (
     AllocationResponse,
@@ -106,7 +113,7 @@ class AsyncFiGuardClient:
 
     Supports ``async with`` for managed session lifecycle::
 
-        async with AsyncFiGuardClient() as client:  # zero-config sandbox
+        async with AsyncFiGuardClient() as client:  # zero-config: embedded (local SQLite)
             budget = await client.create_budget(...)
 
     Or construct manually and call ``await client.close()`` when done::
@@ -117,11 +124,12 @@ class AsyncFiGuardClient:
         finally:
             await client.close()
 
-    Configuration resolution order (same as ``FiGuardClient``):
+    Configuration resolution (same as ``FiGuardClient``, first match wins):
 
-    1. Explicit ``api_key`` / ``base_url`` parameters
-    2. ``FIGUARD_API_KEY`` / ``FIGUARD_BASE_URL`` environment variables
-    3. Shared public sandbox (``sb_live_demo``)
+    1. ``mode="sandbox"`` → shared public demo
+    2. ``mode="embedded"`` or ``database=`` → local SQLite (embedded)
+    3. ``api_key`` / ``base_url`` (or ``FIGUARD_API_KEY`` / ``FIGUARD_BASE_URL``) → remote server
+    4. nothing configured → embedded local SQLite (zero-config default)
 
     :param api_key:  Your ``fg_live_...`` or ``fg_test_...`` API key. Optional.
     :param base_url: Override for self-hosted deployments. Optional.
@@ -136,12 +144,43 @@ class AsyncFiGuardClient:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         timeout: int = 30,
+        mode: Optional[str] = None,
+        database: Optional[str] = None,
+        log: bool = True,
     ) -> None:
+        """Embedded-by-default, like the sync FiGuardClient. Same resolution: mode="sandbox" →
+        demo; mode="embedded"/database= → local SQLite; api_key/base_url → server; nothing →
+        embedded. ``backend`` reports the active backend."""
         resolved_key = api_key or os.environ.get("FIGUARD_API_KEY")
         resolved_url = base_url or os.environ.get("FIGUARD_BASE_URL")
-        self._api_key = resolved_key or self._SANDBOX_API_KEY
-        self._base_url = (resolved_url or self._SANDBOX_BASE_URL).rstrip("/")
+        resolved_db = database or os.environ.get("FIGUARD_DATABASE")
+        self._embedded = None
         self._timeout = aiohttp.ClientTimeout(total=timeout)
+        self._session: Optional[aiohttp.ClientSession] = None
+
+        if mode == "embedded" or (mode != "sandbox" and resolved_db is not None) or (
+            mode is None and resolved_key is None and resolved_url is None and resolved_db is None
+        ):
+            from ._embedded import EmbeddedBackend
+            from .client import _default_embedded_db
+            db = resolved_db or _default_embedded_db()
+            self._embedded = EmbeddedBackend(db)
+            self.backend = "embedded"
+            self._api_key = None
+            self._base_url = ""
+            self._default_headers = {}
+            if log:
+                print(f"FiGuard: enforcing locally (embedded SQLite: {db})")
+            return
+
+        if mode == "sandbox" or (resolved_key is None and resolved_url is None):
+            self._api_key = resolved_key or self._SANDBOX_API_KEY
+            self._base_url = self._SANDBOX_BASE_URL
+            self.backend = "sandbox"
+        else:
+            self._api_key = resolved_key or self._SANDBOX_API_KEY
+            self._base_url = (resolved_url or self._SANDBOX_BASE_URL).rstrip("/")
+            self.backend = "sandbox" if self._base_url == self._SANDBOX_BASE_URL else "server"
         from . import __version__
         self._default_headers: Dict[str, str] = {
             "X-Agent-Budget-Key": self._api_key,
@@ -149,17 +188,17 @@ class AsyncFiGuardClient:
             "Accept": "application/json",
             "User-Agent": f"figuard-python/{__version__}",
         }
-        self._session: Optional[aiohttp.ClientSession] = None
 
     # -----------------------------------------------------------------------
     # Context manager
     # -----------------------------------------------------------------------
 
     async def __aenter__(self) -> "AsyncFiGuardClient":
-        self._session = aiohttp.ClientSession(
-            headers=self._default_headers,
-            timeout=self._timeout,
-        )
+        if self._embedded is None:
+            self._session = aiohttp.ClientSession(
+                headers=self._default_headers,
+                timeout=self._timeout,
+            )
         return self
 
     async def __aexit__(self, *_: Any) -> None:
@@ -233,7 +272,7 @@ class AsyncFiGuardClient:
         body: Dict[str, Any] = {
             "userId": user_id,
             "totalLimit": total_limit,
-            "expiresAt": _resolve_expires_at(expires_at, expires_in),
+            "expiresAt": _budget_expiry(self._embedded is not None, expires_at, expires_in),
         }
         if currency is not None:
             body["currency"] = currency
@@ -314,10 +353,59 @@ class AsyncFiGuardClient:
         :raises FiGuardApiError: HTTP 400 if ``expires_at`` is before the current one.
         """
         body: Dict[str, Any] = {
-            "expiresAt": _resolve_expires_at(expires_at, expires_in),
+            "expiresAt": _budget_expiry(self._embedded is not None, expires_at, expires_in),
         }
         data = await self._request(
             "POST", f"/api/v1/budgets/{budget_id}/extend", json=body, retryable=False
+        )
+        return _parse_budget(data)
+
+    async def update_budget(
+        self,
+        budget_id: str,
+        trust_mode: Optional[str] = None,
+        total_limit: Optional[float] = None,
+        velocity_max_per_minute: Optional[int] = None,
+        velocity_max_amount_per_hour: Optional[float] = None,
+        velocity_max_per_day: Optional[int] = None,
+        expires_at: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Budget:
+        """
+        Update a budget's policy in place (``PATCH /budgets/{id}``).
+
+        Only the fields you pass are changed; everything omitted is left as-is. The
+        common case is leaving shadow mode: create with ``trust_mode="SHADOW"`` to
+        observe without blocking, then call
+        ``update_budget(budget_id, trust_mode="FULL_ENFORCEMENT")`` to start enforcing.
+
+        :param trust_mode: ``"SHADOW"`` or ``"FULL_ENFORCEMENT"``.
+        :param total_limit: New total spend limit (for credit/debit with audit
+            semantics, prefer :meth:`fund_budget`).
+        :param velocity_max_per_minute: New per-minute authorize cap.
+        :param velocity_max_amount_per_hour: New per-hour amount cap.
+        :param velocity_max_per_day: New per-day authorize cap.
+        :param expires_at: New absolute ISO 8601 expiry (see also :meth:`extend_budget`).
+        :param status: Budget status override (advanced).
+        :returns: The updated :class:`Budget`.
+        """
+        body: Dict[str, Any] = {}
+        if trust_mode is not None:
+            body["trustMode"] = trust_mode
+        if total_limit is not None:
+            body["totalLimit"] = total_limit
+        if velocity_max_per_minute is not None:
+            body["velocityMaxPerMinute"] = velocity_max_per_minute
+        if velocity_max_amount_per_hour is not None:
+            body["velocityMaxAmountPerHour"] = velocity_max_amount_per_hour
+        if velocity_max_per_day is not None:
+            body["velocityMaxPerDay"] = velocity_max_per_day
+        if expires_at is not None:
+            body["expiresAt"] = expires_at
+        if status is not None:
+            body["status"] = status
+        data = await self._request(
+            "PATCH", f"/api/v1/budgets/{budget_id}", json=body, retryable=False
         )
         return _parse_budget(data)
 
@@ -553,11 +641,11 @@ class AsyncFiGuardClient:
 
     async def authorize(
         self,
-        session_token: str,
-        agent_id: str,
-        action_type: str,
-        description: str,
-        requested_quantity: float,
+        session_token: Optional[str] = None,
+        agent_id: str = "agent",
+        action_type: str = "SPEND",
+        description: str = "spend",
+        requested_quantity: Optional[float] = None,
         idempotency_key: Optional[str] = None,
         currency: Optional[str] = None,
         intent_context: Optional[str] = None,
@@ -570,6 +658,10 @@ class AsyncFiGuardClient:
         metadata: Optional[Dict[str, Any]] = None,
         max_subtree_quantity: Optional[float] = None,
         dry_run: bool = False,
+        reserve: bool = True,
+        *,
+        budget: Optional[Any] = None,
+        amount: Optional[float] = None,
         **kwargs: Any,
     ) -> AuthorizationResult:
         """
@@ -590,6 +682,17 @@ class AsyncFiGuardClient:
         :returns: ``AuthorizationResult`` — check ``.is_authorized`` or call
             ``.raise_if_denied()`` for exception-driven flow.
         """
+        # Ergonomic shorthand: authorize(budget=b, amount=3). The verbose
+        # session_token/agent_id/action_type/description/requested_quantity form still works.
+        if session_token is None and budget is not None:
+            session_token = getattr(budget, "session_token", None) or budget
+        if requested_quantity is None:
+            requested_quantity = amount
+        if session_token is None:
+            raise ValueError("authorize: pass budget= (from create_budget) or session_token=")
+        if requested_quantity is None:
+            raise ValueError("authorize: pass amount= or requested_quantity=")
+
         if not idempotency_key or not idempotency_key.strip():
             idempotency_key = str(uuid.uuid4())
 
@@ -630,6 +733,8 @@ class AsyncFiGuardClient:
             body["maxSubtreeQuantity"] = max_subtree_quantity
         if dry_run:
             body["dryRun"] = True
+        if not reserve:
+            body["reserve"] = False
 
         token_prefix = session_token[:8] if len(session_token) >= 8 else "???"
         logger.debug(
@@ -659,6 +764,12 @@ class AsyncFiGuardClient:
     # -----------------------------------------------------------------------
     # Payment lifecycle
     # -----------------------------------------------------------------------
+
+    async def confirm(self, event: Any, amount: float) -> SpendEventResponse:
+        """Shorthand for :meth:`confirm_event`: ``await fg.confirm(auth, 2.5)``. Accepts an
+        AuthorizationResult, a SpendEventResponse, or a raw event_id string."""
+        event_id = getattr(event, "event_id", None) or getattr(event, "id", None) or event
+        return await self.confirm_event(event_id, amount)
 
     async def confirm_event(
         self,
@@ -704,6 +815,10 @@ class AsyncFiGuardClient:
             data = await self._request(
                 "POST", f"/api/v1/events/{event_id}/fail", json=body, retryable=True
             )
+        # Terminal now — drop it as the ambient causal-chain parent so a later un-scoped
+        # authorize() doesn't auto-parent to it (which would raise INVALID_PARENT).
+        if get_current_event_id() == event_id:
+            _set_current_event_id(None)
         return _parse_spend_event(data)
 
     async def void_event(
@@ -726,6 +841,9 @@ class AsyncFiGuardClient:
         data = await self._request(
             "POST", f"/api/v1/events/{event_id}/void", json=body, retryable=True
         )
+        # Terminal now — drop it as the ambient causal-chain parent (see fail_event).
+        if get_current_event_id() == event_id:
+            _set_current_event_id(None)
         return VoidResult(event=_parse_spend_event(data))
 
     async def void_tree(self, event_id: str, reason: str) -> VoidTreeResult:
@@ -1002,6 +1120,9 @@ class AsyncFiGuardClient:
 
         Never retries 4xx — these are caller errors and won't change on retry.
         """
+        if self._embedded is not None:
+            # Embedded backend serves the same contract in-process; no network, no retries.
+            return self._embedded.request(method, path, json=json, params=params, headers=headers)
         url = f"{self._base_url}{path}"
         session = self._get_session()
         attempts = _MAX_RETRIES if retryable else 1

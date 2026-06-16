@@ -39,7 +39,7 @@ from figuard import FiGuardClient
 from figuard.integrations.crewai import FiGuardCrewGuard
 
 # --- FiGuard setup ---
-client = FiGuardClient()  # zero-config: connects to shared sandbox automatically
+client = FiGuardClient()  # zero-config: runs locally (embedded SQLite). Set FIGUARD_API_KEY + FIGUARD_BASE_URL for a server.
 budget = client.create_budget(
     user_id="demo_user",
     total_limit=200.00,
@@ -134,6 +134,8 @@ result = crew.kickoff()
 ## Step 3: Per-agent spending limits
 
 Give each agent a delegation token so they have their own cap:
+
+> **Fleet / delegation requires a FiGuard server** — delegation tokens aren't available on the embedded backend. Point the client at a server: `FiGuardClient(api_key="fg_live_...", base_url="https://figuard.mycompany.internal")`.
 
 ```python
 planner_token = client.create_delegation_token(

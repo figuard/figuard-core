@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "figuard-lite"
+version = "0.0.1"
+description = "In-process FiGuard enforcement against local SQLite. Zero infra — same semantics as the server."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+# Core has NO runtime deps (stdlib sqlite3 + decimal). pyyaml is only for the conformance runner.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pyyaml>=6.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/figuard_lite"]

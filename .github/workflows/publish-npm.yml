@@ -84,8 +84,13 @@ jobs:
         id: check
         working-directory: packages/mcp
         run: |
+          # MCP is versioned INDEPENDENTLY of core: use its own package.json version, NOT the
+          # core tag. So a core `v*` tag only publishes the MCP when packages/mcp/package.json
+          # was actually bumped (otherwise that version is already on npm → skip). This keeps the
+          # MCP a deliberate fast-follow (it must build against the *published* figuard SDK)
+          # instead of a core tag silently shipping a stale MCP at the core version number.
           VERSION="${{ github.event.inputs.version }}"
-          if [ -z "$VERSION" ]; then VERSION="${GITHUB_REF_NAME#v}"; fi
+          if [ -z "$VERSION" ]; then VERSION=$(node -p "require('./package.json').version"); fi
           NAME=$(node -p "require('./package.json').name")
           if npm view "$NAME@$VERSION" version &>/dev/null; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
