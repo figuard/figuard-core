@@ -72,49 +72,34 @@ pip install figuard
 ```python
 from figuard import FiGuardClient
 
-# Zero-config — connects to the shared public sandbox automatically.
-# For production: set FIGUARD_API_KEY + FIGUARD_BASE_URL, or see Self-Hosting below.
+# Zero-config, zero-infra — runs enforcement locally (embedded SQLite, no server).
+# To share one budget across agents/processes, point at a server:
+#   FiGuardClient(api_key="fg_live_...", base_url="https://figuard.mycompany.internal")
 client = FiGuardClient()
 
 budget = client.create_budget(
     user_id="agent_001",
     total_limit=500.00,
     currency="USD",
-    expires_in="24h",
-    authorization_expiry_seconds=300,
     intent_context="travel booking session",
 )
 
-auth = client.authorize(
-    session_token=budget.primary_token.session_token,
-    agent_id="travel_agent",
-    action_type="PURCHASE",
-    description="JetBlue SFO→JFK roundtrip",
-    requested_quantity=270.00,
-    idempotency_key="booking-001",
-)
-
+auth = client.authorize(budget=budget, amount=270.00)
 print(auth.decision)          # AUTHORIZED
 print(auth.approved_quantity) # 270.0
 
 # Confirm with actual charged amount — may differ from requested (taxes, FX, discounts)
-client.confirm_event(auth.event_id, confirmed_quantity=267.00)
+client.confirm(auth, 267.00)
 
 # Second spend — exceeds what's left ($500 - $267 = $233 remaining)
-auth2 = client.authorize(
-    session_token=budget.primary_token.session_token,
-    agent_id="travel_agent",
-    action_type="PURCHASE",
-    description="Marriott Times Square 3 nights",
-    requested_quantity=350.00,
-    idempotency_key="hotel-001",
-)
-
+auth2 = client.authorize(budget=budget, amount=350.00)
 print(auth2.decision)       # DENIED
 print(auth2.denial_reason)  # INSUFFICIENT_FUNDS
 ```
 
-Every authorization, denial, and confirmation shows up in the spend tree at `https://figuard-sandbox-g1ha.onrender.com/ui` in real time.
+Same calls run against a self-hosted server — and there, every authorization, denial, and
+confirmation shows up in the live spend-tree dashboard. (Embedded keeps the same ledger in
+your local SQLite; the live dashboard is a server feature.)
 
 Not sure what limits to set? Add `trust_mode="SHADOW"` to `create_budget` — all checks run, nothing is blocked, and `auth.would_have_been` tells you what would have happened. When the limits look right, switch to enforcement without recreating the budget: `client.update_budget(budget.id, trust_mode="FULL_ENFORCEMENT")`.
 

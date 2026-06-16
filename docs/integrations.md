@@ -31,7 +31,7 @@ from figuard import auto_guard_crewai
 auto_guard_crewai(book_flight_tool, budget=500, velocity_max_per_minute=10)
 ```
 
-Both wrappers use zero-config: `FiGuardClient()` connects to the shared sandbox automatically. No API key or server setup required to try it.
+Both wrappers use zero-config: `FiGuardClient()` runs locally (embedded SQLite) — no API key or server needed to try it. Set `FIGUARD_API_KEY` + `FIGUARD_BASE_URL` to enforce against a shared server.
 
 For advanced patterns — per-category allocations, delegation tokens, fleet budgets — use the full client directly:
 
@@ -56,7 +56,7 @@ Regardless of framework, budget creation is the same:
 ```python
 from figuard import FiGuardClient
 
-client = FiGuardClient()  # zero-config: connects to shared sandbox automatically
+client = FiGuardClient()  # zero-config: runs locally (embedded SQLite). Set FIGUARD_API_KEY + FIGUARD_BASE_URL for a server.
 budget = client.create_budget(
     user_id="agent_001",
     total_limit=500.00,

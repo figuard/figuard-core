@@ -30,7 +30,7 @@ The rest of this guide shows the **explicit pattern**. Reach for it when you nee
 
 ## Step 1: Run the demo in 5 minutes
 
-Paste this and run it. No sign-up needed — the sandbox key is already in the code.
+Paste this and run it. No sign-up, no server — it runs locally (embedded SQLite) by default.
 
 ```python
 from langchain_openai import ChatOpenAI
@@ -41,7 +41,7 @@ from figuard import FiGuardClient
 from figuard.integrations.langchain import FiGuardCallbackHandler
 
 # --- FiGuard setup ---
-client = FiGuardClient()  # zero-config: connects to shared sandbox automatically
+client = FiGuardClient()  # zero-config: runs locally (embedded SQLite). Set FIGUARD_API_KEY + FIGUARD_BASE_URL for a server.
 budget = client.create_budget(
     user_id="demo_user",
     total_limit=100.00,   # $100 total
@@ -163,6 +163,8 @@ $300.00 already spent
 ## Step 4: Multi-agent (fleet) setup
 
 When you have multiple agents sharing a parent budget, use delegation tokens so each agent has its own spending cap:
+
+> **Fleet / delegation requires a FiGuard server** — delegation tokens aren't available on the embedded backend. Point the client at a server: `FiGuardClient(api_key="fg_live_...", base_url="https://figuard.mycompany.internal")`.
 
 ```python
 token = client.create_delegation_token(

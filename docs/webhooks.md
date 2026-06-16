@@ -1,5 +1,7 @@
 # Webhooks
 
+> **Server feature.** Webhooks are delivered by the FiGuard server; the embedded backend has no webhook delivery. Use a FiGuard server (set `api_key`/`base_url`).
+
 FiGuard sends real-time events to your server when budget and spend state changes. Use webhooks to trigger orchestration logic, update your UI, or alert on-call without polling the API.
 
 ---
@@ -42,7 +44,7 @@ Pick the events you care about and provide a secret — at least 16 characters �
 # Python
 from figuard import FiGuardClient
 
-client = FiGuardClient()
+client = FiGuardClient(api_key="fg_live_...", base_url="https://figuard.mycompany.internal")
 
 webhook = client.create_webhook(
     url="https://yourapp.example.com/webhooks/figuard",
@@ -56,7 +58,7 @@ print(webhook.id)   # save this — you'll need it to delete or inspect the webh
 // TypeScript
 import { FiGuardClient } from "figuard";
 
-const client = new FiGuardClient();
+const client = new FiGuardClient({ apiKey: 'fg_live_...', baseUrl: 'https://figuard.mycompany.internal' });
 
 const webhook = await client.createWebhook(
   "https://yourapp.example.com/webhooks/figuard",
