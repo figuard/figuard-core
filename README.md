@@ -236,9 +236,12 @@ FiGuard is a single Docker container alongside your existing infrastructure — 
 ```bash
 git clone https://github.com/figuard/figuard-core
 cd figuard-core
-docker compose up -d
+docker compose -f docker-compose.prod.yml up -d   # pulls the released image
 # Ready at http://localhost:8080
 ```
+
+> `docker-compose.prod.yml` pulls the published `ghcr.io/figuard/figuard-core:latest` (the
+> last released version). The default `docker-compose.yml` builds from source — for contributors.
 
 Point your client at it:
 
