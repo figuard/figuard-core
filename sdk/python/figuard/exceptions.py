@@ -14,6 +14,21 @@ class FiGuardError(Exception):
     """Base class for all FiGuard SDK exceptions."""
 
 
+class FiGuardCapabilityError(FiGuardError):
+    """Raised when a server-only capability (delegation, subscriptions, webhooks, replay, …)
+    is used while the client is running on the embedded backend. Move to a server to use it::
+
+        client = FiGuardClient(api_key="fg_live_…", base_url="https://figuard.mycompany.internal")
+    """
+
+    def __init__(self, feature: str) -> None:
+        self.feature = feature
+        super().__init__(
+            f"{feature} requires the FiGuard server (multi-agent fleets). "
+            f"You're on the embedded backend — pass api_key/base_url to use a server."
+        )
+
+
 class FiGuardApiError(FiGuardError):
     """
     An HTTP error response from the FiGuard API (4xx or 5xx that was not retried away).

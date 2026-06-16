@@ -38,6 +38,7 @@
  */
 
 import { FiGuardApiError, FiGuardConnectionError, FiGuardWebhookVerificationError } from "./errors";
+import { EmbeddedBackend } from "./_embedded/backend";
 import {
   AllocationResponse,
   ApiKey,
@@ -90,6 +91,19 @@ const SANDBOX_API_KEY = "sb_live_demo";
 const SANDBOX_BASE_URL = "https://figuard-sandbox-g1ha.onrender.com";
 let _sandboxWarnShown = false;
 
+/** Default embedded store: a persistent JSON file under the home dir, so budgets survive
+ *  restarts. Falls back to in-memory in non-Node environments. */
+function defaultEmbeddedDb(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const os = require("os");
+    const path = require("path");
+    return path.join(os.homedir(), ".figuard", "figuard.json");
+  } catch {
+    return ":memory:";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public option types
 // ---------------------------------------------------------------------------
@@ -105,6 +119,16 @@ export interface FiGuardClientOptions {
    * Defaults to `FIGUARD_BASE_URL` env var, then the shared public sandbox URL.
    */
   baseUrl?: string;
+  /**
+   * Backend mode: "embedded" (in-process, local), "server", or "sandbox". When omitted,
+   * resolves to embedded unless apiKey/baseUrl (or env) point at a server.
+   */
+  mode?: "embedded" | "server" | "sandbox";
+  /**
+   * Embedded store path (JSON file). Defaults to ~/.figuard/figuard.json so budgets persist.
+   * Pass ":memory:" for an ephemeral store. Implies embedded mode.
+   */
+  database?: string;
   /** Per-request timeout in milliseconds (default: 30_000). */
   timeoutMs?: number;
   /**
@@ -206,11 +230,15 @@ export interface ExtendBudgetOptions {
 }
 
 export interface AuthorizeOptions {
-  sessionToken: string;
-  agentId: string;
-  actionType: string;
-  description: string;
-  requestedQuantity: number;
+  /** A Budget from createBudget (its session token is used). Alternative to sessionToken. */
+  budget?: Budget;
+  sessionToken?: string;
+  agentId?: string;
+  actionType?: string;
+  description?: string;
+  /** The amount to authorize. Alias for requestedQuantity. */
+  amount?: number;
+  requestedQuantity?: number;
   /**
    * Optional. A unique key for this request so retries are safe and never
    * double-spend. When omitted, a UUID v4 is generated automatically. Pass an
@@ -337,6 +365,9 @@ export class FiGuardClient {
   private readonly timeoutMs: number;
   private readonly _failOpen: boolean;
   private readonly _userAgent: string;
+  private readonly embedded?: EmbeddedBackend;
+  /** Active backend: "embedded" | "server" | "sandbox". */
+  readonly backend!: string;
 
   /**
    * Create a FiGuardClient.
@@ -349,36 +380,48 @@ export class FiGuardClient {
    * When the sandbox fallback is used, a one-time warning is printed to stdout.
    * Suppress it with `FIGUARD_SUPPRESS_SANDBOX_WARNING=1`.
    */
-  constructor({ apiKey, baseUrl, timeoutMs = 30_000, failOpen = false, userAgent }: FiGuardClientOptions = {}) {
-    const resolvedKey =
-      apiKey ??
-      (typeof process !== "undefined" ? process.env["FIGUARD_API_KEY"] : undefined);
-    const resolvedUrl =
-      baseUrl ??
-      (typeof process !== "undefined" ? process.env["FIGUARD_BASE_URL"] : undefined);
-
-    if (!resolvedKey) {
-      if (
-        !_sandboxWarnShown &&
-        (typeof process === "undefined" || !process.env["FIGUARD_SUPPRESS_SANDBOX_WARNING"])
-      ) {
-        console.log(
-          "\n⚠️  FiGuard: No configuration found — connecting to the shared public sandbox.\n" +
-          "    → Data is wiped periodically. Not for production use.\n" +
-          "    → Self-host: https://figuard.io/docs/self-hosting\n" +
-          "    → Suppress this warning: set FIGUARD_SUPPRESS_SANDBOX_WARNING=1\n"
-        );
-        _sandboxWarnShown = true;
-      }
-      this.apiKey = SANDBOX_API_KEY;
-      this.baseUrl = (resolvedUrl ?? SANDBOX_BASE_URL).replace(/\/$/, "");
-    } else {
-      this.apiKey = resolvedKey;
-      this.baseUrl = (resolvedUrl ?? SANDBOX_BASE_URL).replace(/\/$/, "");
-    }
+  constructor(
+    { apiKey, baseUrl, timeoutMs = 30_000, failOpen = false, userAgent, mode, database, log = true }:
+      FiGuardClientOptions & { log?: boolean } = {},
+  ) {
+    const env = (k: string) => (typeof process !== "undefined" ? process.env[k] : undefined);
+    const resolvedKey = apiKey ?? env("FIGUARD_API_KEY");
+    const resolvedUrl = baseUrl ?? env("FIGUARD_BASE_URL");
+    const resolvedDb = database ?? env("FIGUARD_DATABASE");
     this.timeoutMs = timeoutMs;
     this._failOpen = failOpen;
     this._userAgent = userAgent ?? "figuard-typescript/0.5.0";
+
+    // ---- embedded (explicit, or the zero-config default) ----
+    if (mode === "embedded" || (mode !== "sandbox" && resolvedDb) || (mode == null && !resolvedKey && !resolvedUrl)) {
+      const db = resolvedDb ?? defaultEmbeddedDb();
+      this.embedded = new EmbeddedBackend(db);
+      this.backend = "embedded";
+      this.apiKey = "";
+      this.baseUrl = "";
+      if (log) console.log(`FiGuard: enforcing locally (embedded: ${db})`);
+      return;
+    }
+
+    // ---- server / sandbox ----
+    if (mode === "sandbox" || (!resolvedKey && !resolvedUrl)) {
+      if (!_sandboxWarnShown && (typeof process === "undefined" || !process.env["FIGUARD_SUPPRESS_SANDBOX_WARNING"])) {
+        console.log(
+          "\n⚠️  FiGuard: using the shared public sandbox.\n" +
+          "    → Data is wiped periodically. Not for production use.\n" +
+          "    → Run locally instead: new FiGuardClient({ mode: \"embedded\" })\n" +
+          "    → Suppress: set FIGUARD_SUPPRESS_SANDBOX_WARNING=1\n"
+        );
+        _sandboxWarnShown = true;
+      }
+      this.apiKey = resolvedKey ?? SANDBOX_API_KEY;
+      this.baseUrl = SANDBOX_BASE_URL;
+      this.backend = "sandbox";
+    } else {
+      this.apiKey = resolvedKey ?? SANDBOX_API_KEY;
+      this.baseUrl = (resolvedUrl ?? SANDBOX_BASE_URL).replace(/\/$/, "");
+      this.backend = this.baseUrl === SANDBOX_BASE_URL ? "sandbox" : "server";
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -389,8 +432,13 @@ export class FiGuardClient {
     const body: Record<string, unknown> = {
       userId: options.userId,
       totalLimit: options.totalLimit,
-      expiresAt: resolveExpiresAt(options.expiresAt, options.expiresIn),
     };
+    if (options.expiresAt !== undefined || options.expiresIn !== undefined) {
+      body["expiresAt"] = resolveExpiresAt(options.expiresAt, options.expiresIn);
+    } else if (!this.embedded) {
+      // Server requires an explicit expiry; embedded budgets are long-lived by default.
+      body["expiresAt"] = resolveExpiresAt(options.expiresAt, options.expiresIn); // throws: required
+    }
     if (options.currency !== undefined) body["currency"] = options.currency;
     if (options.unit !== undefined) body["unit"] = options.unit;
     if (options.intentContext !== undefined) body["intentContext"] = options.intentContext;
@@ -932,20 +980,29 @@ export class FiGuardClient {
   // -------------------------------------------------------------------------
 
   async authorize(options: AuthorizeOptions): Promise<AuthorizationResult> {
+    // Ergonomic shorthand: authorize({ budget, amount }). The verbose
+    // sessionToken/agentId/actionType/description/requestedQuantity form still works.
+    const sessionToken = options.sessionToken ?? options.budget?.tokens?.[0]?.sessionToken;
+    const requestedQuantity = options.requestedQuantity ?? options.amount;
+    const agentId = options.agentId ?? "agent";
+    const actionType = options.actionType ?? "SPEND";
+    const description = options.description ?? "spend";
+    if (sessionToken == null) throw new Error("authorize: pass budget or sessionToken");
+    if (requestedQuantity == null) throw new Error("authorize: pass amount or requestedQuantity");
+
     const idempotencyKey =
       options.idempotencyKey && options.idempotencyKey.trim()
         ? options.idempotencyKey
         : crypto.randomUUID();
 
     // Forward the active OTEL trace ID to the server for ledger correlation.
-    // Caller-supplied traceId takes precedence; OTEL is used only as a fallback.
     const effectiveTraceId = options.traceId ?? getCurrentTraceId();
 
     const body: Record<string, unknown> = {
-      agentId: options.agentId,
-      actionType: options.actionType,
-      description: options.description,
-      requestedQuantity: options.requestedQuantity,
+      agentId,
+      actionType,
+      description,
+      requestedQuantity,
       idempotencyKey,
     };
     if (options.currency !== undefined) body["currency"] = options.currency;
@@ -963,9 +1020,9 @@ export class FiGuardClient {
 
     return withAuthorizeSpan(
       {
-        agentId: options.agentId,
-        actionType: options.actionType,
-        requestedQuantity: options.requestedQuantity,
+        agentId,
+        actionType,
+        requestedQuantity,
         claimedCategory: options.claimedCategory,
         parentEventId: options.parentEventId,
         dryRun: options.dryRun,
@@ -975,18 +1032,18 @@ export class FiGuardClient {
         try {
           const data = await this.request("POST", "/api/v1/authorize", {
             body,
-            headers: { "X-Session-Token": options.sessionToken },
+            headers: { "X-Session-Token": sessionToken },
             retryable: true,
           });
           result = makeAuthorizationResult(data);
         } catch (err) {
           if (this._failOpen && err instanceof FiGuardConnectionError) {
             console.warn(
-              `figuard: server unreachable (failOpen=true) — authorizing agent=${options.agentId} ` +
-              `action=${options.actionType} quantity=${options.requestedQuantity} as fallback. ` +
+              `figuard: server unreachable (failOpen=true) — authorizing agent=${agentId} ` +
+              `action=${actionType} quantity=${requestedQuantity} as fallback. ` +
               `No ledger entry was created. Error: ${err.message}`,
             );
-            result = makeFallbackAuthorizationResult(idempotencyKey, options.requestedQuantity);
+            result = makeFallbackAuthorizationResult(idempotencyKey, requestedQuantity);
           } else {
             throw err;
           }
@@ -1000,6 +1057,21 @@ export class FiGuardClient {
   // -------------------------------------------------------------------------
   // Payment lifecycle
   // -------------------------------------------------------------------------
+
+  /**
+   * Shorthand for {@link confirmEvent}: `fg.confirm(authResult, 2.5)`. Accepts an
+   * AuthorizationResult, a SpendEventResponse, or a raw eventId string.
+   */
+  async confirm(
+    event: AuthorizationResult | SpendEventResponse | string,
+    amount: number,
+  ): Promise<SpendEventResponse> {
+    const eventId =
+      typeof event === "string"
+        ? event
+        : (event as AuthorizationResult).eventId ?? (event as SpendEventResponse).id;
+    return this.confirmEvent({ eventId, confirmedQuantity: amount });
+  }
 
   async confirmEvent(options: ConfirmEventOptions): Promise<SpendEventResponse> {
     if (options.eventId.startsWith("fallback_")) {
@@ -1368,6 +1440,10 @@ export class FiGuardClient {
       retryable?: boolean;
     } = {},
   ): Promise<Record<string, unknown>> {
+    if (this.embedded) {
+      // Embedded backend serves the same contract in-process; no network, no retries.
+      return this.embedded.request(method, path, { body: options.body, headers: options.headers });
+    }
     const url = `${this.baseUrl}${path}`;
     const attempts = options.retryable ? MAX_RETRIES : 1;
     let lastError: unknown;

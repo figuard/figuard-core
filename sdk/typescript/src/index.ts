@@ -54,6 +54,7 @@ export type {
 export {
   FiGuardError,
   FiGuardApiError,
+  FiGuardCapabilityError,
   FiGuardDeniedException,
   FiGuardConnectionError,
   FiGuardWebhookVerificationError,

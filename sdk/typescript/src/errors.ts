@@ -14,6 +14,22 @@ export class FiGuardError extends Error {
 }
 
 /**
+ * Raised when a server-only capability (delegation, subscriptions, webhooks, replay, …) is
+ * used while the client is on the embedded backend. Pass apiKey/baseUrl to use a server.
+ */
+export class FiGuardCapabilityError extends FiGuardError {
+  readonly feature: string;
+  constructor(feature: string) {
+    super(
+      `${feature} requires the FiGuard server (multi-agent fleets). ` +
+        `You're on the embedded backend — pass apiKey/baseUrl to use a server.`,
+    );
+    this.name = "FiGuardCapabilityError";
+    this.feature = feature;
+  }
+}
+
+/**
  * An HTTP error response from the FiGuard API (4xx or 5xx that was not retried away).
  */
 export class FiGuardApiError extends FiGuardError {
