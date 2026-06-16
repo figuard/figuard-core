@@ -1,0 +1,73 @@
+name: Publish figuard-mcp to npm
+
+# figuard-mcp is versioned and released INDEPENDENTLY of the core figuard SDK,
+# because it must build against an already-published `figuard` npm package.
+# Release it by pushing an `mcp-v<version>` tag (e.g. `mcp-v1.2.0`) — never a
+# core `v*` tag (those publish the SDK + server, not the MCP).
+on:
+  push:
+    tags:
+      - "mcp-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 1.2.0). Defaults to the mcp-v<ver> tag, then package.json."
+        required: false
+        default: ""
+
+jobs:
+  publish:
+    name: Publish figuard-mcp
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+          cache-dependency-path: packages/mcp/package-lock.json
+
+      - name: Resolve version + skip if already published
+        id: check
+        working-directory: packages/mcp
+        run: |
+          # Version precedence: workflow_dispatch input → `mcp-v<ver>` tag → package.json.
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            case "${GITHUB_REF_NAME}" in
+              mcp-v*) VERSION="${GITHUB_REF_NAME#mcp-v}" ;;
+              *)      VERSION=$(node -p "require('./package.json').version") ;;
+            esac
+          fi
+          NAME=$(node -p "require('./package.json').name")
+          if npm view "$NAME@$VERSION" version &>/dev/null; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ $NAME@$VERSION already on npm — skipping."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            npm version "$VERSION" --no-git-tag-version --allow-same-version
+            echo "✓ Will publish $NAME@$VERSION"
+          fi
+
+      - name: Install dependencies
+        if: steps.check.outputs.skip == 'false'
+        run: npm ci
+        working-directory: packages/mcp
+
+      - name: Build
+        if: steps.check.outputs.skip == 'false'
+        run: npm run build
+        working-directory: packages/mcp
+
+      - name: Publish to npm
+        if: steps.check.outputs.skip == 'false'
+        run: npm publish --access public
+        working-directory: packages/mcp
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
