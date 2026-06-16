@@ -481,10 +481,12 @@ describe("TOOLS definitions", () => {
     "figuard_create_delegation_token",
     "figuard_revoke_delegation_token",
     "figuard_get_delegation_token",
+    "figuard_get_spend_tree",
+    "figuard_update_budget",
   ];
 
-  it("exports exactly 14 tools", () => {
-    expect(TOOLS).toHaveLength(14);
+  it("exports exactly 16 tools", () => {
+    expect(TOOLS).toHaveLength(16);
   });
 
   it("has all expected tool names", () => {

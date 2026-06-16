@@ -2,12 +2,15 @@
 /**
  * FiGuard MCP Server
  *
- * Exposes 13 FiGuard tools to any MCP client (Claude Code, Cursor, Claude Desktop).
+ * Exposes 16 FiGuard tools to any MCP client (Claude Code, Cursor, Claude Desktop).
  * Runs as a local stdio process — no cloud hosting required.
  *
- * Configuration (set in your MCP client config):
- *   FIGUARD_API_KEY   — your FiGuard API key (required)
- *   FIGUARD_BASE_URL  — FiGuard server URL (default: http://localhost:8080)
+ * Configuration (all optional — embedded-by-default, no API key needed to start):
+ *   (nothing)         — embedded: in-process enforcement against a local SQLite file
+ *   FIGUARD_DATABASE  — embedded, at a specific SQLite path
+ *   FIGUARD_API_KEY   — your FiGuard API key (selects a remote server)
+ *   FIGUARD_BASE_URL  — FiGuard server URL
+ *   FIGUARD_MODE      — "embedded" | "server" | "sandbox"
  *
  * Usage:
  *   npx figuard-mcp
@@ -36,29 +39,36 @@ import {
   handleCreateDelegationToken,
   handleRevokeDelegationToken,
   handleGetDelegationToken,
+  handleGetSpendTree,
+  handleUpdateBudget,
 } from "./handlers.js";
 
 // ---------------------------------------------------------------------------
-// Validate environment
+// Configuration — embedded-by-default, zero infra.
+//
+//   (nothing set)               → embedded: in-process enforcement against a local SQLite file
+//   FIGUARD_DATABASE=<path>     → embedded, at that path
+//   FIGUARD_API_KEY/BASE_URL    → remote FiGuard server
+//   FIGUARD_MODE=sandbox        → shared public demo
+//
+// No API key required to get started — `npx figuard-mcp` just works.
 // ---------------------------------------------------------------------------
 
 const API_KEY = process.env["FIGUARD_API_KEY"];
-const BASE_URL = process.env["FIGUARD_BASE_URL"] ?? "http://localhost:8080";
-
-if (!API_KEY) {
-  console.error(
-    "[figuard-mcp] Error: FIGUARD_API_KEY environment variable is not set.\n" +
-    "Add it to your MCP client configuration:\n\n" +
-    '  "env": { "FIGUARD_API_KEY": "fg_live_..." }\n',
-  );
-  process.exit(1);
-}
+const BASE_URL = process.env["FIGUARD_BASE_URL"];
+const DATABASE = process.env["FIGUARD_DATABASE"];
+const MODE = process.env["FIGUARD_MODE"] as "embedded" | "server" | "sandbox" | undefined;
 
 // ---------------------------------------------------------------------------
 // FiGuard client (single instance, shared across all tool calls)
 // ---------------------------------------------------------------------------
 
-const client = new FiGuardClient({ apiKey: API_KEY, baseUrl: BASE_URL });
+const client = new FiGuardClient({
+  ...(API_KEY ? { apiKey: API_KEY } : {}),
+  ...(BASE_URL ? { baseUrl: BASE_URL } : {}),
+  ...(DATABASE ? { database: DATABASE } : {}),
+  ...(MODE ? { mode: MODE } : {}),
+});
 
 // ---------------------------------------------------------------------------
 // MCP server
@@ -128,6 +138,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "figuard_get_delegation_token":
         result = await handleGetDelegationToken(client, args as Record<string, unknown>);
         break;
+      case "figuard_get_spend_tree":
+        result = await handleGetSpendTree(client, args as Record<string, unknown>);
+        break;
+      case "figuard_update_budget":
+        result = await handleUpdateBudget(client, args as Record<string, unknown>);
+        break;
       default:
         return {
           content: [{ type: "text", text: `Unknown tool: ${name}` }],
@@ -156,7 +172,7 @@ async function main() {
   await server.connect(transport);
   // Note: do not log to stdout — it's used for MCP protocol messages.
   // Log to stderr only.
-  console.error(`[figuard-mcp] Server running. Base URL: ${BASE_URL}`);
+  console.error(`[figuard-mcp] Server running. Backend: ${client.backend}`);
 }
 
 main().catch((err) => {
