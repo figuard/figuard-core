@@ -1,0 +1,246 @@
+# Conformance scenarios — the language-neutral behavioral contract.
+# Money as decimal-strings (never floats). Steps reference earlier outputs via $steps[i].field.
+# These same scenarios must pass against the Java core (golden vectors) — they ARE the
+# embedded↔server parity guarantee. Asserted fields are compared numerically when both sides
+# parse as Decimal, else by exact string (enums/denial codes).
+
+- id: reserve-confirm-happy-path
+  description: reserve then confirm moves reserved into spent; the rest is freed.
+  budget: { total_limit: "10.00", currency: USD }
+  steps:
+    - op: authorize
+      request: { amount: "3.00", idempotency_key: a1 }
+      expect:  { decision: AUTHORIZED, approved_quantity: "3.00" }
+    - op: confirm
+      request: { event_ref: "$steps[0].event_id", confirmed_quantity: "2.50" }
+      expect:  { decision: CONFIRMED }
+  final_state: { quantity_spent: "2.50", quantity_reserved: "0.00", available: "7.50" }
+
+- id: over-budget-denial
+  description: a request larger than available is denied INSUFFICIENT_FUNDS, nothing reserved.
+  budget: { total_limit: "5.00", currency: USD }
+  steps:
+    - op: authorize
+      request: { amount: "9.00", idempotency_key: a1 }
+      expect:  { decision: DENIED, denial_reason: INSUFFICIENT_FUNDS }
+  final_state: { quantity_spent: "0.00", quantity_reserved: "0.00", available: "5.00" }
+
+- id: reservation-then-second-request-blocked
+  description: an outstanding reservation reduces available for the next request.
+  budget: { total_limit: "10.00", currency: USD }
+  steps:
+    - op: authorize
+      request: { amount: "7.00", idempotency_key: a1 }
+      expect:  { decision: AUTHORIZED }
+    - op: authorize
+      request: { amount: "5.00", idempotency_key: a2 }
+      expect:  { decision: DENIED, denial_reason: INSUFFICIENT_FUNDS }
+  final_state: { quantity_spent: "0.00", quantity_reserved: "7.00", available: "3.00" }
+
+- id: void-releases-reservation
+  description: voiding an AUTHORIZED event returns its reservation to available.
+  budget: { total_limit: "10.00", currency: USD }
+  steps:
+    - op: authorize
+      request: { amount: "4.00", idempotency_key: a1 }
+      expect:  { decision: AUTHORIZED }
+    - op: void
+      request: { event_ref: "$steps[0].event_id" }
+      expect:  { decision: VOIDED }
+  final_state: { quantity_spent: "0.00", quantity_reserved: "0.00", available: "10.00" }
+
+- id: fail-releases-reservation
+  description: failing an AUTHORIZED event releases the reservation without spending.
+  budget: { total_limit: "10.00", currency: USD }
+  steps:
+    - op: authorize
+      request: { amount: "4.00", idempotency_key: a1 }
+      expect:  { decision: AUTHORIZED }
+    - op: fail
+      request: { event_ref: "$steps[0].event_id", reason: payment_declined }
+      expect:  { decision: FAILED }
+  final_state: { quantity_spent: "0.00", quantity_reserved: "0.00", available: "10.00" }
+
+- id: partial-confirm
+  description: confirming less than reserved spends the actual amount, frees the remainder.
+  budget: { total_limit: "10.00", currency: USD }
+  steps:
+    - op: authorize
+      request: { amount: "5.00", idempotency_key: a1 }
+      expect:  { decision: AUTHORIZED }
+    - op: confirm
+      request: { event_ref: "$steps[0].event_id", confirmed_quantity: "3.00" }
+      expect:  { decision: CONFIRMED }
+  final_state: { quantity_spent: "3.00", quantity_reserved: "0.00", available: "7.00" }
+
+- id: max-transaction-denial
+  description: a request above maxTransactionQuantity is denied EXCEEDS_QUANTITY_LIMIT.
+  budget: { total_limit: "100.00", currency: USD, max_transaction_quantity: "10.00" }
+  steps:
+    - op: authorize
+      request: { amount: "25.00", idempotency_key: a1 }
+      expect:  { decision: DENIED, denial_reason: EXCEEDS_QUANTITY_LIMIT }
+  final_state: { quantity_spent: "0.00", quantity_reserved: "0.00", available: "100.00" }
+
+- id: entity-dedup
+  description: a second live authorize for the same entityId is denied ENTITY_ALREADY_AUTHORIZED.
+  budget: { total_limit: "100.00", currency: USD, entity_dedup_enabled: true }
+  steps:
+    - op: authorize
+      request: { amount: "5.00", entity_id: invoice-42, idempotency_key: a1 }
+      expect:  { decision: AUTHORIZED }
+    - op: authorize
+      request: { amount: "5.00", entity_id: invoice-42, idempotency_key: a2 }
+      expect:  { decision: DENIED, denial_reason: ENTITY_ALREADY_AUTHORIZED }
+  final_state: { quantity_spent: "0.00", quantity_reserved: "5.00", available: "95.00" }
+
+- id: reserve-false-holds-nothing
+  description: reserve=false skips the capacity check and reserves nothing (tree-root marker).
+  budget: { total_limit: "10.00", currency: USD }
+  steps:
+    - op: authorize
+      request: { amount: "100.00", reserve: false, idempotency_key: a1 }
+      expect:  { decision: AUTHORIZED }   # reserve=false proven by final_state (nothing reserved)
+  final_state: { quantity_spent: "0.00", quantity_reserved: "0.00", available: "10.00" }
+
+- id: reserve-false-confirm
+  description: confirming a reserve=false event records the coordinator's actual as spend; the
+    reservation (which was never held) must NOT be touched.
+  budget: { total_limit: "10.00", currency: USD }
+  steps:
+    - op: authorize
+      request: { amount: "6.00", reserve: false, idempotency_key: a1 }
+      expect:  { decision: AUTHORIZED }
+    - op: confirm
+      request: { event_ref: "$steps[0].event_id", confirmed_quantity: "6.00" }
+      expect:  { decision: CONFIRMED }
+  final_state: { quantity_spent: "6.00", quantity_reserved: "0.00", available: "4.00" }
+
+- id: reserve-false-void
+  description: voiding a reserve=false event changes nothing on the budget (nothing was held).
+  budget: { total_limit: "10.00", currency: USD }
+  steps:
+    - op: authorize
+      request: { amount: "5.00", reserve: false, idempotency_key: a1 }
+      expect:  { decision: AUTHORIZED }
+    - op: void
+      request: { event_ref: "$steps[0].event_id" }
+      expect:  { decision: VOIDED }
+  final_state: { quantity_spent: "0.00", quantity_reserved: "0.00", available: "10.00" }
+
+- id: paused-budget-denial
+  description: a paused budget denies all spend BUDGET_PAUSED.
+  budget: { total_limit: "10.00", currency: USD, status: PAUSED }
+  steps:
+    - op: authorize
+      request: { amount: "1.00", idempotency_key: a1 }
+      expect:  { decision: DENIED, denial_reason: BUDGET_PAUSED }
+  final_state: { quantity_spent: "0.00", quantity_reserved: "0.00", available: "10.00" }
+
+- id: idempotency-replay
+  description: a repeated idempotency key returns the original decision and does not re-reserve.
+  budget: { total_limit: "10.00", currency: USD }
+  steps:
+    - op: authorize
+      request: { amount: "3.00", idempotency_key: dup }
+      expect:  { decision: AUTHORIZED }
+    - op: authorize
+      request: { amount: "3.00", idempotency_key: dup }
+      expect:  { decision: AUTHORIZED }   # replay returns original decision; no double-reserve proven by final_state
+  final_state: { quantity_spent: "0.00", quantity_reserved: "3.00", available: "7.00" }
+
+# --- velocity (rolling-window rate limits) ---
+
+- id: velocity-per-minute
+  description: the 3rd authorize within a minute is denied when maxPerMinute=2 (count window).
+  budget: { total_limit: "1000.00", currency: USD, velocity_max_per_minute: 2 }
+  steps:
+    - op: authorize
+      request: { amount: "1.00", idempotency_key: a1 }
+      expect:  { decision: AUTHORIZED }
+    - op: authorize
+      request: { amount: "1.00", idempotency_key: a2 }
+      expect:  { decision: AUTHORIZED }
+    - op: authorize
+      request: { amount: "1.00", idempotency_key: a3 }
+      expect:  { decision: DENIED, denial_reason: VELOCITY_LIMIT_EXCEEDED }
+  final_state: { quantity_spent: "0.00", quantity_reserved: "2.00", available: "998.00" }
+
+- id: velocity-amount-per-hour
+  description: a request that would push the hourly attempted amount over the cap is denied.
+  budget: { total_limit: "1000.00", currency: USD, velocity_max_amount_per_hour: "10.00" }
+  steps:
+    - op: authorize
+      request: { amount: "6.00", idempotency_key: a1 }
+      expect:  { decision: AUTHORIZED }
+    - op: authorize
+      request: { amount: "6.00", idempotency_key: a2 }
+      expect:  { decision: DENIED, denial_reason: VELOCITY_LIMIT_EXCEEDED }
+  final_state: { quantity_spent: "0.00", quantity_reserved: "6.00", available: "994.00" }
+
+# --- causal chain (parent_event) ---
+
+- id: valid-parent-chain
+  description: a child authorize with a live (AUTHORIZED) parent is accepted.
+  budget: { total_limit: "20.00", currency: USD }
+  steps:
+    - op: authorize
+      request: { amount: "4.00", idempotency_key: a1 }
+      expect:  { decision: AUTHORIZED }
+    - op: authorize
+      request: { amount: "3.00", parent_event_id: "$steps[0].event_id", idempotency_key: a2 }
+      expect:  { decision: AUTHORIZED }
+  final_state: { quantity_spent: "0.00", quantity_reserved: "7.00", available: "13.00" }
+
+- id: invalid-parent-error
+  description: a parentEventId that does not exist is a request error (INVALID_PARENT_EVENT), not a denial.
+  budget: { total_limit: "20.00", currency: USD }
+  steps:
+    - op: authorize
+      request: { amount: "5.00", parent_event_id: "00000000-0000-0000-0000-000000000000", idempotency_key: a1 }
+      expect:  { error: INVALID_PARENT_EVENT }
+  final_state: { quantity_spent: "0.00", quantity_reserved: "0.00", available: "20.00" }
+
+- id: terminal-parent-error
+  description: referencing a VOIDED parent is rejected — only AUTHORIZED/CONFIRMED parents may anchor a child.
+  budget: { total_limit: "20.00", currency: USD }
+  steps:
+    - op: authorize
+      request: { amount: "5.00", idempotency_key: a1 }
+      expect:  { decision: AUTHORIZED }
+    - op: void
+      request: { event_ref: "$steps[0].event_id" }
+      expect:  { decision: VOIDED }
+    - op: authorize
+      request: { amount: "3.00", parent_event_id: "$steps[0].event_id", idempotency_key: a2 }
+      expect:  { error: INVALID_PARENT_EVENT }
+  final_state: { quantity_spent: "0.00", quantity_reserved: "0.00", available: "20.00" }
+
+# --- intent scope (flat-budget soft intent gate) ---
+
+- id: intent-scope-match
+  description: a request whose intentContext contains a budget intentTag (case-insensitive) is allowed.
+  budget: { total_limit: "20.00", currency: USD, intent_tags: ["research"] }
+  steps:
+    - op: authorize
+      request: { amount: "5.00", intent_context: "Doing RESEARCH on competitors", idempotency_key: a1 }
+      expect:  { decision: AUTHORIZED }
+  final_state: { quantity_spent: "0.00", quantity_reserved: "5.00", available: "15.00" }
+
+- id: intent-scope-missing-context
+  description: a budget with intentTags denies a request that carries no intentContext.
+  budget: { total_limit: "20.00", currency: USD, intent_tags: ["research"] }
+  steps:
+    - op: authorize
+      request: { amount: "5.00", idempotency_key: a1 }
+      expect:  { decision: DENIED, denial_reason: INTENT_SCOPE_VIOLATION }
+  final_state: { quantity_spent: "0.00", quantity_reserved: "0.00", available: "20.00" }
+
+- id: intent-scope-no-match
+  description: an intentContext that matches no tag is denied INTENT_SCOPE_VIOLATION.
+  budget: { total_limit: "20.00", currency: USD, intent_tags: ["research", "analysis"] }
+  steps:
+    - op: authorize
+      request: { amount: "5.00", intent_context: "buying coffee", idempotency_key: a1 }
+      expect:  { decision: DENIED, denial_reason: INTENT_SCOPE_VIOLATION }
+  final_state: { quantity_spent: "0.00", quantity_reserved: "0.00", available: "20.00" }
