@@ -5,7 +5,7 @@ Usage::
 
     from figuard import AsyncFiGuardClient
 
-    async with AsyncFiGuardClient() as client:  # zero-config: sandbox fallback
+    async with AsyncFiGuardClient() as client:  # zero-config: enforces locally (embedded SQLite)
         budget = await client.create_budget(
             user_id="user_123",
             total_limit=500.00,
@@ -113,7 +113,7 @@ class AsyncFiGuardClient:
 
     Supports ``async with`` for managed session lifecycle::
 
-        async with AsyncFiGuardClient() as client:  # zero-config sandbox
+        async with AsyncFiGuardClient() as client:  # zero-config: embedded (local SQLite)
             budget = await client.create_budget(...)
 
     Or construct manually and call ``await client.close()`` when done::
@@ -124,11 +124,12 @@ class AsyncFiGuardClient:
         finally:
             await client.close()
 
-    Configuration resolution order (same as ``FiGuardClient``):
+    Configuration resolution (same as ``FiGuardClient``, first match wins):
 
-    1. Explicit ``api_key`` / ``base_url`` parameters
-    2. ``FIGUARD_API_KEY`` / ``FIGUARD_BASE_URL`` environment variables
-    3. Shared public sandbox (``sb_live_demo``)
+    1. ``mode="sandbox"`` → shared public demo
+    2. ``mode="embedded"`` or ``database=`` → local SQLite (embedded)
+    3. ``api_key`` / ``base_url`` (or ``FIGUARD_API_KEY`` / ``FIGUARD_BASE_URL``) → remote server
+    4. nothing configured → embedded local SQLite (zero-config default)
 
     :param api_key:  Your ``fg_live_...`` or ``fg_test_...`` API key. Optional.
     :param base_url: Override for self-hosted deployments. Optional.

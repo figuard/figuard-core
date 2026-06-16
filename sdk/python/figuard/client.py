@@ -112,19 +112,18 @@ class FiGuardClient:
     **Zero-config usage** — no arguments required for demos and notebooks::
 
         client = FiGuardClient()
-        # Connects to the shared public sandbox automatically.
+        # Zero-config: enforces locally in-process (embedded SQLite) — no server, no API key.
 
-    **Configuration resolution order:**
+    **Configuration resolution (first match wins):**
 
-    1. Explicit constructor arguments
-    2. Environment variables: ``FIGUARD_API_KEY``, ``FIGUARD_BASE_URL``
-    3. Shared public sandbox (``sb_live_demo`` / ``figuard-sandbox-g1ha.onrender.com``)
+    1. ``mode="sandbox"`` → shared public demo (explicit; prints a one-time warning,
+       suppress with ``FIGUARD_SUPPRESS_SANDBOX_WARNING=1``)
+    2. ``mode="embedded"`` or ``database=`` → local SQLite (embedded)
+    3. ``api_key`` / ``base_url`` (or ``FIGUARD_API_KEY`` / ``FIGUARD_BASE_URL``) → remote server
+    4. nothing configured → embedded local SQLite (zero-config default)
 
-    When the sandbox fallback is used, a one-time warning is printed to stdout.
-    Suppress it with ``FIGUARD_SUPPRESS_SANDBOX_WARNING=1``.
-
-    :param api_key:  Your ``fg_live_...`` or ``fg_test_...`` API key.
-                     Defaults to ``FIGUARD_API_KEY`` env var, then sandbox key.
+    :param api_key:  Your ``fg_live_...`` or ``fg_test_...`` API key (selects server mode).
+                     Optional; defaults to the ``FIGUARD_API_KEY`` env var.
     :param base_url: Override for self-hosted deployments.
                      Defaults to ``FIGUARD_BASE_URL`` env var, then sandbox URL.
     :param timeout:  Per-request timeout in seconds (default 30).
