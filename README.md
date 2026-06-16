@@ -12,11 +12,11 @@
 
 ---
 
-A travel-booking agent hit a Stripe timeout. It retried. Then retried again. The customer's card was charged **three times for the same flight** before an engineer noticed the anomaly in the logs — 40 minutes later.
+A travel-booking agent hit a Stripe timeout and retried twice. The customer's card was charged **three times for the same flight** before anyone noticed — 40 minutes later.
 
 No alert fired. No limit existed. The agent had a valid API key and no concept of "I already did this."
 
-FiGuard gives agents a budget. They ask permission before spending. You set the ceiling, the retry rules, and the idempotency policy once. Every spend attempt — authorized or denied — lands in an audit log.
+FiGuard gives agents **bounded resources** — money, tokens, API calls, GPU hours, any unit you define — and they ask permission before consuming them. You set the ceiling, the retry rules, and the idempotency policy once. Every attempt, authorized or denied, lands in an append-only audit log.
 
 That exact failure is in the stress harness: a retried charge produces **0 double-charges**, and 100 agents racing one budget produce **0 overspends** — verified against the ledger, reproducibly (`make bench`).
 
@@ -172,7 +172,7 @@ qty spent released released
         └───────────────────────────────────┘
 ```
 
-A budget issues session tokens. An agent's `authorize` call reserves capacity. Execution happens externally — FiGuard never sees the data, never proxies the call. The agent reports back via `confirm`, `void`, or `fail`. Every state transition lands in the append-only ledger. The spend tree shows the full causal chain across an orchestrator and its sub-agents:
+The diagram shows server mode; **in embedded mode the flow is identical minus the token-issuance step** — you call `authorize`/`confirm` directly on the budget, no session or delegation tokens. A budget issues session tokens. An agent's `authorize` call reserves capacity. Execution happens externally — FiGuard never sees the data, never proxies the call. The agent reports back via `confirm`, `void`, or `fail`. Every state transition lands in the append-only ledger. The spend tree shows the full causal chain across an orchestrator and its sub-agents:
 
 ![FiGuard Spend Tree — orchestrator with confirmed and denied sub-agent events](docs/spend-tree.png)
 
@@ -326,6 +326,10 @@ Interactive API docs: [localhost:8080/swagger-ui](http://localhost:8080/swagger-
 ---
 
 ## Roadmap
+
+**Recently shipped (v1.2.0):** **embedded mode** — `pip install figuard` runs enforcement in-process against a local SQLite file, zero infra, same engine as the server; plus `update_budget()`, `get_spend_tree()` in embedded, and persistent local budgets.
+
+**Next:**
 
 - **Scoped tokens** — derived session tokens with hard restrictions on action types, categories, and max transaction amount; for untrusted sub-agent delegation
 - **Overdraft policies** — per-budget `REJECT` / `ALLOW_IF_AVAILABLE` / `ALLOW_WITH_OVERDRAFT` modes
