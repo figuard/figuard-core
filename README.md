@@ -18,6 +18,8 @@ No alert fired. No limit existed. The agent had a valid API key and no concept o
 
 FiGuard gives agents a budget. They ask permission before spending. You set the ceiling, the retry rules, and the idempotency policy once. Every spend attempt — authorized or denied — lands in an audit log.
 
+That exact failure is in the stress harness: a retried charge produces **0 double-charges**, and 100 agents racing one budget produce **0 overspends** — verified against the ledger, reproducibly (`make bench`).
+
 Your framework decides what to do next. FiGuard decides whether the resource-consuming action is allowed.
 
 ```
@@ -45,7 +47,8 @@ Your framework decides what to do next. FiGuard decides whether the resource-con
 ![FiGuard demo](https://github.com/user-attachments/assets/e953a132-c379-45fe-9796-644a4ec84c5d)
 
 **Try it now — no setup, no signup:**  
-→ [Run in Colab](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/01_infinite_loop.ipynb)  
+→ `pip install figuard` — runs locally on your machine, nothing hosted ([Quickstart](#quickstart))  
+→ [Run in Colab](https://colab.research.google.com/github/figuard/figuard-notebooks/blob/main/agent-incidents/01_infinite_loop.ipynb) — or try it in the browser  
 → [Live dashboard](https://figuard-sandbox-g1ha.onrender.com/ui)
 
 > FiGuard is the authorization and ledger layer — not a payment processor, not a policy DSL, not an adversarial-agent firewall. [Full scope →](#what-figuard-is-not)
@@ -106,6 +109,13 @@ Not sure what limits to set? Add `trust_mode="SHADOW"` to `create_budget` — al
 ---
 
 ## How It Works
+
+> **Embedded and server run the same engine.** These four operations — and all **29 structured
+> denial codes** — behave identically whether you `pip install figuard` and run **embedded**
+> (in-process, against a local SQLite file) or point the client at a **self-hosted server**.
+> Session tokens, delegation tokens, and the live spend-tree *dashboard* shown below are
+> **server-mode** features; embedded keeps the same append-only ledger in your local file and
+> exposes the tree programmatically via `get_spend_tree()`.
 
 Four operations. Everything else is detail.
 
@@ -231,14 +241,19 @@ Observability tools record what happened after execution. LLM gateways manage mo
 
 ## Self-Hosting
 
-FiGuard is a single Docker container alongside your existing infrastructure — same as adding Postgres or Redis. Your spend data never leaves your environment.
+**Most teams start with embedded mode above — `pip install figuard`, zero infra.** Self-host when you need a budget shared across multiple processes or machines, delegation tokens for a fleet, or the live spend-tree dashboard. It's the graduation tier, not a prerequisite.
+
+Self-hosting is then a single Docker container alongside your existing infrastructure — same as adding Postgres or Redis. Your spend data never leaves your environment.
 
 ```bash
 git clone https://github.com/figuard/figuard-core
 cd figuard-core
-docker compose up -d
+docker compose -f docker-compose.prod.yml up -d   # pulls the released image
 # Ready at http://localhost:8080
 ```
+
+> `docker-compose.prod.yml` pulls the published `ghcr.io/figuard/figuard-core:latest` (the
+> last released version). The default `docker-compose.yml` builds from source — for contributors.
 
 Point your client at it:
 
@@ -262,9 +277,12 @@ Postgres ledger, not the HTTP responses:
 - **0 overspends** across concurrent authorizations on a shared budget — 100 agents race for a $1,000 budget, exactly 20 win, the budget lands at exactly $1,000.00, never over.
 - **0 double-charges** across retried requests — the same idempotency key fired 50× in parallel produces exactly one event.
 
-Typical authorize latency (each call on its own budget, M1 / Docker): **p50 17ms, p99 74ms.**
-Under deliberate single-budget contention the pessimistic lock serializes requests — they
-queue rather than race, which is the price of never overspending.
+Typical authorize latency against the server (each call on its own budget, M1 / Docker):
+**p50 17ms, p99 74ms.** Under deliberate single-budget contention the pessimistic lock
+serializes requests — they queue rather than race, which is the price of never overspending.
+
+In **embedded** mode there's no network hop and no Postgres — an authorize is an in-process
+SQLite transaction — so latency is lower still, and there's nothing to deploy.
 
 Full methodology, numbers, and reproduction in **[BENCHMARKS.md](BENCHMARKS.md)** — or run
 it yourself: `make bench`.

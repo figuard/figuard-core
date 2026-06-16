@@ -127,12 +127,17 @@ async function run() {
   console.log("1. list_tools");
   const listResult = await rpc("tools/list");
   const tools = listResult.tools ?? [];
-  check("returns 14 tools", tools.length === 14, `got ${tools.length}`);
+  // Sanity floor only — the exact tool count is enforced on PRs by the unit test
+  // (tests/handlers.test.ts). Keeping this a floor means adding a tool never breaks
+  // the post-merge E2E (which doesn't run on PRs).
+  check("exposes the expected tool set (>= 14)", tools.length >= 14, `got ${tools.length}`);
   const toolNames = tools.map((t) => t.name);
   check("figuard_create_budget present",    toolNames.includes("figuard_create_budget"));
   check("figuard_authorize present",        toolNames.includes("figuard_authorize"));
   check("figuard_confirm present",          toolNames.includes("figuard_confirm"));
   check("figuard_get_delegation_token present", toolNames.includes("figuard_get_delegation_token"));
+  check("figuard_get_spend_tree present",   toolNames.includes("figuard_get_spend_tree"));
+  check("figuard_update_budget present",    toolNames.includes("figuard_update_budget"));
 
   // ── 2. Create budget ───────────────────────────────────────────────────────
   console.log("\n2. figuard_create_budget");

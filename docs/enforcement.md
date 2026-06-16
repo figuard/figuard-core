@@ -6,6 +6,8 @@ Every `authorize()` call either succeeds or returns a structured denial. The den
 
 ## Denial codes
 
+FiGuard defines **29** structured denial codes (the `DenialCode` enum). A denied authorization returns exactly one in the `denial_reason` field — the full set:
+
 | Code | Meaning | When it fires |
 |---|---|---|
 | `INSUFFICIENT_FUNDS` | Requested quantity exceeds available balance | Budget has some funds remaining, but less than `requested_quantity` |
@@ -28,6 +30,15 @@ Every `authorize()` call either succeeds or returns a structured denial. The den
 | `VELOCITY_LIMIT_EXCEEDED` | Too many authorize attempts within the rolling window | `velocity_max_per_minute`, `velocity_max_amount_per_hour`, or `velocity_max_per_day` limit reached |
 | `INVALID_SESSION_TOKEN` | Session token not found or expired | Token was never issued, already voided, or the budget has expired — HTTP 401 |
 | `SUBTREE_CAP_EXCEEDED` | Causal chain total would exceed the subtree cap | Adding this authorization would push the total spend across the causal chain over `max_subtree_quantity` |
+| `INVALID_PARENT_EVENT` | `parent_event_id` is invalid for this budget | The referenced parent belongs to a different budget, or isn't in an AUTHORIZED/CONFIRMED state (HTTP 400) |
+| `CAUSAL_CYCLE_DETECTED` | `parent_event_id` would create a cycle | The declared parent chain loops back on itself |
+| `CAUSAL_CHAIN_TOO_DEEP` | Causal chain exceeds the depth limit | The `parent_event_id` chain is deeper than 10 levels |
+| `ENTITLEMENT_LIMIT_REACHED` | Metered entitlement item exhausted | An entitlement item's balance is used up under a BLOCK overage policy |
+| `ENTITLEMENT_NOT_FOUND` | No matching entitlement item | The `subscription_id` in the session token has no entitlement item for this request |
+| `SUBSCRIPTION_PAUSED` | Subscription is paused | The budget's subscription is paused — no spend allowed |
+| `SUBSCRIPTION_CANCELLED` | Subscription was cancelled | The budget's subscription has been cancelled |
+| `MISSING_SESSION_TOKEN` | No session token on the request | The `X-Session-Token` header was absent (HTTP 401) |
+| `TENANT_MISMATCH` | API key tenant ≠ budget tenant | The API key belongs to a different tenant than the budget (HTTP 403) |
 
 > **`INSUFFICIENT_FUNDS` vs `BUDGET_EXHAUSTED`:** These are distinct. `INSUFFICIENT_FUNDS` means the budget has *some* funds remaining but not enough for this request — the agent could retry with a smaller amount. `BUDGET_EXHAUSTED` means the budget has reached its limit and is now in EXHAUSTED status — no further authorizations will pass regardless of amount.
 
