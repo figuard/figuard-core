@@ -2,6 +2,56 @@
 
 All endpoints are prefixed with your base URL (e.g. `https://api.figuard.io`).
 
+## Authorization lifecycle
+
+The full server-mode flow — budget creation, session/delegation tokens, the authorize → confirm/fail/void path, and the append-only ledger. (In embedded mode the flow is identical minus the token-issuance step — you call `authorize`/`confirm` directly on the budget.)
+
+```
+  Developer
+  ──────────▶ create budget ──▶ session token issued to agent
+              ($500 USD  or  100k tokens  or  any unit)
+                        │
+           ┌────────────┴────────────────────────────┐
+           │                                         │
+     single agent                            fleet agent
+           │                          issue delegation tokens
+           │                          ├─▶ sub-agent A ($3k refunds)
+           │                          └─▶ sub-agent B ($5k compute)
+           │                                         │
+           └────────────┬────────────────────────────┘
+                        │
+              ┌─────────┴──────────┐
+        monetary budget      resource budget
+        currency: "USD"      unit: "tokens"
+              └─────────┬──────────┘
+                        │
+                        ▼
+  authorize()    ← nothing has moved yet
+  checks: limit · category · expiry · anomaly · dedup
+                        │
+           ┌────────────┴────────────┐
+        AUTHORIZED               DENIED
+        funds reserved         nothing moves
+           │                   structured denial code
+           ▼
+  [agent executes action]
+  payment / API call / compute
+           │
+  ┌────────┼────────┐
+succeeds  fails  cancelled
+   │        │        │
+confirm() fail()  void()
+qty spent released released
+   └────────┴────────┘
+                        │
+                        ▼
+        ┌───────────────────────────────────┐
+        │  every decision recorded in the   │
+        │  append-only ledger — authorized, │
+        │  denied, confirmed, failed, voided│
+        └───────────────────────────────────┘
+```
+
 ## Authentication
 
 Every request (except receipt display) requires an API key in the `X-Agent-Budget-Key` header:
