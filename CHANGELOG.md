@@ -6,6 +6,48 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [v1.2.0] — 2026-06-16 — Embedded mode (FiGuard Lite) + reserve=false + update_budget
+
+Developer ergonomics and zero-infra adoption. No breaking changes — every existing
+integration keeps working; all new surface is additive.
+
+### Embedded mode — "FiGuard Lite"
+`pip install figuard` / `npm install figuard` now run enforcement **in-process against a
+local SQLite file** — no server, no Postgres, no API key. `FiGuardClient()` is
+embedded-by-default; resolution is: `mode="sandbox"` → shared demo; `mode="embedded"` or
+`database=` → local SQLite; `api_key`/`base_url` → remote server; nothing configured →
+embedded local. The same `authorize`/`confirm`/`fail`/`void` lifecycle and identical denial
+codes as the server — the two implementations are held in lockstep by a shared conformance
+suite. Graduate to the server by pointing the client at it; no code change.
+
+- **Scope** (the frozen kernel): budgets, reserve/confirm/fail/void, capacity,
+  max-transaction, entity dedup, velocity (per-minute / per-hour amount / per-day), intent
+  scope, currency, causal chains (`parent_event_id`), idempotency replay, expiry, and
+  `get_spend_tree()`. Server-only features (delegation, subscriptions/entitlements, anomaly,
+  webhooks, category allocations, shadow mode) raise `FiGuardCapabilityError` with an upgrade
+  pointer — and are refused at budget-creation time too, so a budget never *looks* configured
+  while enforcing nothing.
+- **Persistence**: budgets live in `~/.figuard/figuard.{db,json}` by default and are
+  long-lived (no forced expiry); session tokens are persisted (SHA-256-hashed) so a budget
+  created in one process stays authorizable in the next (multi-day budgets).
+- **Concurrency**: one client is safe to share across threads; multiple processes sharing a
+  budget is the server's job.
+- Available in the Python SDK (sync + async) and the TypeScript SDK; both embedded-by-default.
+- `client.backend` ∈ `{embedded, server, sandbox}` and the active backend is logged at startup.
+
+### `reserve=false` chain-root
+`authorize(..., reserve=false)` creates an `AUTHORIZED` spend-tree root that holds **zero**
+capacity and sets no confirmation timeout — for orchestrators/coordinators that fan out to
+sub-agents. Fixes two dogfooding failures: an orchestrator reserving the whole budget denying
+its own sub-agents, and a root reservation being auto-voided by the confirmation-timeout sweep
+on tasks longer than the timeout. Server + Python (sync/async) + TypeScript.
+
+### `update_budget()`
+New SDK wrapper over `PATCH /budgets/{id}` (Python sync/async + TypeScript) to change
+`totalLimit` / velocity / `expiresAt` / `trustMode` / `status` — including leaving shadow mode.
+
+---
+
 ## [v1.1.2] — 2026-06-10 — Fix: broken Python import with langchain installed
 
 **Critical fix.** A duplicate triple-quote in `figuard/integrations/crewai.py` (shipped in
