@@ -73,9 +73,14 @@ public class PaymentLifecycleService {
         BigDecimal reserved   = event.getRequestedQuantity();
         BigDecimal confirmed  = request.getConfirmedQuantity();
 
-        // Update budget: reserved → spent
+        // Update budget: reserved → spent. A reserve=false event held no reservation, so only
+        // the confirmed actual is recorded as spend; quantityReserved is left untouched
+        // (subtracting it would drive the counter negative). reserve=false is flat-only, so the
+        // allocation/delegate paths below are not reached by such events.
         AgentBudget budget = loadBudgetWithLock(event);
-        budget.setQuantityReserved(budget.getQuantityReserved().subtract(reserved));
+        if (event.isReserved()) {
+            budget.setQuantityReserved(budget.getQuantityReserved().subtract(reserved));
+        }
         budget.setQuantitySpent(budget.getQuantitySpent().add(confirmed));
         budgetRepository.save(budget);
 
@@ -141,10 +146,12 @@ public class PaymentLifecycleService {
 
         BigDecimal reserved = event.getRequestedQuantity();
 
-        // Release reservation on budget
+        // Release reservation on budget — only if one was actually held (reserve=false held none).
         AgentBudget budget = loadBudgetWithLock(event);
-        budget.setQuantityReserved(budget.getQuantityReserved().subtract(reserved));
-        budgetRepository.save(budget);
+        if (event.isReserved()) {
+            budget.setQuantityReserved(budget.getQuantityReserved().subtract(reserved));
+            budgetRepository.save(budget);
+        }
 
         // Release reservation on allocation (if any)
         if (event.getAllocation() != null) {
@@ -235,10 +242,13 @@ public class PaymentLifecycleService {
         }
 
         BigDecimal reserved = event.getRequestedQuantity();
-        budget.setQuantityReserved(budget.getQuantityReserved().subtract(reserved));
-        budgetRepository.save(budget);
+        // reserve=false held no reservation, so there is nothing to release on void.
+        if (event.isReserved()) {
+            budget.setQuantityReserved(budget.getQuantityReserved().subtract(reserved));
+            budgetRepository.save(budget);
+        }
 
-        if (event.getAllocation() != null) {
+        if (event.isReserved() && event.getAllocation() != null) {
             BudgetAllocation alloc = loadAllocationWithLock(event.getAllocation().getId());
             alloc.setQuantityReserved(alloc.getQuantityReserved().subtract(reserved));
             allocationRepository.save(alloc);
