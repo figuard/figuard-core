@@ -20,7 +20,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <maven.compiler.release>17</maven.compiler.release>
         <okhttp.version>4.12.0</okhttp.version>
-        <jackson.version>2.17.2</jackson.version>
+        <jackson.version>2.22.0</jackson.version>
         <junit.version>5.11.0</junit.version>
         <mockwebserver.version>4.12.0</mockwebserver.version>
     </properties>
